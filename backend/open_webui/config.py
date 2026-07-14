@@ -1473,6 +1473,9 @@ IMAGES_GEMINI_API_KEY = os.getenv('IMAGES_GEMINI_API_KEY', GEMINI_API_KEY)
 
 IMAGES_GEMINI_ENDPOINT_METHOD = os.getenv('IMAGES_GEMINI_ENDPOINT_METHOD', '')
 
+FAL_API_BASE_URL = os.getenv('FAL_API_BASE_URL', 'https://queue.fal.run')
+FAL_API_KEY = os.getenv('FAL_API_KEY', os.getenv('FAL_KEY', ''))
+
 ENABLE_IMAGE_EDIT = os.getenv('ENABLE_IMAGE_EDIT', '').lower() == 'true'
 
 IMAGE_EDIT_ENGINE = os.getenv('IMAGE_EDIT_ENGINE', 'openai')
@@ -1491,6 +1494,8 @@ IMAGES_EDIT_OPENAI_API_KEY = os.getenv('IMAGES_EDIT_OPENAI_API_KEY', OPENAI_API_
 IMAGES_EDIT_GEMINI_API_BASE_URL = os.getenv('IMAGES_EDIT_GEMINI_API_BASE_URL', GEMINI_API_BASE_URL)
 IMAGES_EDIT_GEMINI_API_KEY = os.getenv('IMAGES_EDIT_GEMINI_API_KEY', GEMINI_API_KEY)
 
+IMAGES_EDIT_FAL_API_BASE_URL = os.getenv('IMAGES_EDIT_FAL_API_BASE_URL', FAL_API_BASE_URL)
+IMAGES_EDIT_FAL_API_KEY = os.getenv('IMAGES_EDIT_FAL_API_KEY', FAL_API_KEY)
 
 IMAGES_EDIT_COMFYUI_BASE_URL = os.getenv('IMAGES_EDIT_COMFYUI_BASE_URL', '')
 IMAGES_EDIT_COMFYUI_API_KEY = os.getenv('IMAGES_EDIT_COMFYUI_API_KEY', '')
@@ -2951,6 +2956,8 @@ DEFAULT_CONFIG = {
     'image_generation.gemini.api_base_url': IMAGES_GEMINI_API_BASE_URL,
     'image_generation.gemini.api_key': IMAGES_GEMINI_API_KEY,
     'image_generation.gemini.endpoint_method': IMAGES_GEMINI_ENDPOINT_METHOD,
+    'image_generation.fal.api_base_url': FAL_API_BASE_URL,
+    'image_generation.fal.api_key': FAL_API_KEY,
     'images.edit.enable': ENABLE_IMAGE_EDIT,
     'images.edit.engine': IMAGE_EDIT_ENGINE,
     'images.edit.model': IMAGE_EDIT_MODEL,
@@ -2960,6 +2967,8 @@ DEFAULT_CONFIG = {
     'images.edit.openai.api_key': IMAGES_EDIT_OPENAI_API_KEY,
     'images.edit.gemini.api_base_url': IMAGES_EDIT_GEMINI_API_BASE_URL,
     'images.edit.gemini.api_key': IMAGES_EDIT_GEMINI_API_KEY,
+    'images.edit.fal.api_base_url': IMAGES_EDIT_FAL_API_BASE_URL,
+    'images.edit.fal.api_key': IMAGES_EDIT_FAL_API_KEY,
     'images.edit.comfyui.base_url': IMAGES_EDIT_COMFYUI_BASE_URL,
     'images.edit.comfyui.api_key': IMAGES_EDIT_COMFYUI_API_KEY,
     'images.edit.comfyui.workflow': IMAGES_EDIT_COMFYUI_WORKFLOW,

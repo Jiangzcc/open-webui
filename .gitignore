@@ -311,3 +311,9 @@ cypress/videos
 cypress/screenshots
 .vscode/settings.json
 .cptr
+.gitignore
+findings.md
+progress.md
+task_plan.md
+.playwright-mcp
+.claude

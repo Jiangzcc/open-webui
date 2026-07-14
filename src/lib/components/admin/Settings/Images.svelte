@@ -122,6 +122,20 @@
 			config.ENABLE_IMAGE_GENERATION = false;
 
 			return null;
+		} else if (config.IMAGE_GENERATION_ENGINE === 'fal' && config.FAL_API_KEY === '') {
+			toast.error($i18n.t('fal.ai API Key is required.'));
+			config.ENABLE_IMAGE_GENERATION = false;
+
+			return null;
+		}
+
+		if (config.ENABLE_IMAGE_EDIT && config.IMAGE_EDIT_ENGINE === 'fal') {
+			if (config.IMAGES_EDIT_FAL_API_KEY === '' && config.FAL_API_KEY === '') {
+				toast.error($i18n.t('fal.ai API Key is required.'));
+				config.ENABLE_IMAGE_EDIT = false;
+
+				return null;
+			}
 		}
 
 		const res = await updateConfig(localStorage.token, {
@@ -414,6 +428,7 @@
 								<option value="comfyui">{$i18n.t('ComfyUI')}</option>
 								<option value="automatic1111">{$i18n.t('Automatic1111')}</option>
 								<option value="gemini">{$i18n.t('Gemini')}</option>
+								<option value="fal">{$i18n.t('fal.ai')}</option>
 							</select>
 						</div>
 					</div>
@@ -880,6 +895,47 @@
 								</select>
 							</div>
 						</div>
+					{:else if config?.IMAGE_GENERATION_ENGINE === 'fal'}
+						<div class="mb-2.5">
+							<div class="flex w-full justify-between items-center">
+								<div class="text-xs pr-2 shrink-0">
+									<div class="">
+										{$i18n.t('fal.ai API Base URL')}
+									</div>
+								</div>
+
+								<div class="flex w-full">
+									<div class="flex-1">
+										<input
+											class="w-full text-sm bg-transparent outline-hidden text-right"
+											placeholder="https://queue.fal.run"
+											bind:value={config.FAL_API_BASE_URL}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="mb-2.5">
+							<div class="flex w-full justify-between items-center">
+								<div class="text-xs pr-2 shrink-0">
+									<div class="">
+										{$i18n.t('fal.ai API Key')}
+									</div>
+								</div>
+
+								<div class="flex w-full">
+									<div class="flex-1">
+										<SensitiveInput
+											inputClassName="text-right w-full"
+											placeholder={$i18n.t('API Key')}
+											bind:value={config.FAL_API_KEY}
+											required={true}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
 					{/if}
 				</div>
 
@@ -961,6 +1017,7 @@
 								<option value="openai">{$i18n.t('Default (Open AI)')}</option>
 								<option value="comfyui">{$i18n.t('ComfyUI')}</option>
 								<option value="gemini">{$i18n.t('Gemini')}</option>
+								<option value="fal">{$i18n.t('fal.ai')}</option>
 							</select>
 						</div>
 					</div>
@@ -1260,6 +1317,47 @@
 											inputClassName="text-right w-full"
 											placeholder={$i18n.t('API Key')}
 											bind:value={config.IMAGES_EDIT_GEMINI_API_KEY}
+											required={true}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+					{:else if config?.IMAGE_EDIT_ENGINE === 'fal'}
+						<div class="mb-2.5">
+							<div class="flex w-full justify-between items-center">
+								<div class="text-xs pr-2 shrink-0">
+									<div class="">
+										{$i18n.t('fal.ai API Base URL')}
+									</div>
+								</div>
+
+								<div class="flex w-full">
+									<div class="flex-1">
+										<input
+											class="w-full text-sm bg-transparent outline-hidden text-right"
+											placeholder="https://queue.fal.run"
+											bind:value={config.IMAGES_EDIT_FAL_API_BASE_URL}
+										/>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="mb-2.5">
+							<div class="flex w-full justify-between items-center">
+								<div class="text-xs pr-2 shrink-0">
+									<div class="">
+										{$i18n.t('fal.ai API Key')}
+									</div>
+								</div>
+
+								<div class="flex w-full">
+									<div class="flex-1">
+										<SensitiveInput
+											inputClassName="text-right w-full"
+											placeholder={$i18n.t('API Key')}
+											bind:value={config.IMAGES_EDIT_FAL_API_KEY}
 											required={true}
 										/>
 									</div>

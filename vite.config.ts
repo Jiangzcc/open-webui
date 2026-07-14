@@ -23,6 +23,11 @@ export default defineConfig({
 	build: {
 		sourcemap: true
 	},
+	server: {
+		watch: {
+			ignored: ['**/venv/**', '**/.venv/**']
+		}
+	},
 	worker: {
 		format: 'es'
 	},

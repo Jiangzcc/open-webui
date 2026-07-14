@@ -1,0 +1,402 @@
+import { describe, expect, test } from 'vitest';
+
+import {
+	buildImageEditPayload,
+	buildImageGenerationPayload,
+	canUseImagesPage,
+	filterImageFiles,
+	getImageModelCapability,
+	getImageSizeForAspectRatio,
+	normalizeAspectRatio,
+	normalizeImageGenerationModels,
+	normalizeImageResults,
+	normalizeReferenceImages,
+	prependGeneratedImages,
+	removeReferenceImage,
+	validateImagePrompt
+} from './image-generation';
+
+describe('image generation utils', () => {
+	test('maps supported aspect ratios to backend sizes', () => {
+		expect(getImageSizeForAspectRatio('auto')).toBeUndefined();
+		expect(getImageSizeForAspectRatio('1:1')).toBe('1024x1024');
+		expect(getImageSizeForAspectRatio('16:9')).toBe('1792x1024');
+		expect(getImageSizeForAspectRatio('9:16')).toBe('1024x1792');
+		expect(getImageSizeForAspectRatio('4:3')).toBe('1024x768');
+		expect(getImageSizeForAspectRatio('3:4')).toBe('768x1024');
+		expect(getImageSizeForAspectRatio('3:2')).toBe('1536x1024');
+		expect(getImageSizeForAspectRatio('2:3')).toBe('1024x1536');
+		expect(getImageSizeForAspectRatio('21:9')).toBe('1536x640');
+	});
+
+	test('normalizes unknown aspect ratios to auto', () => {
+		expect(normalizeAspectRatio('default')).toBe('auto');
+		expect(normalizeAspectRatio('bad')).toBe('auto');
+		expect(getImageSizeForAspectRatio('bad')).toBeUndefined();
+	});
+
+	test('derives common model capabilities from model id', () => {
+		expect(getImageModelCapability('dall-e-3')).toMatchObject({
+			aspectRatios: ['1:1', '16:9', '9:16'],
+			resolutions: [],
+			imageCounts: [1]
+		});
+
+		expect(getImageModelCapability('gpt-image-1')).toMatchObject({
+			aspectRatios: ['auto', '1:1', '3:2', '2:3'],
+			resolutions: ['auto', '1024x1024', '1536x1024', '1024x1536']
+		});
+	});
+
+	test('derives fal nano banana capabilities by model id', () => {
+		expect(getImageModelCapability('fal-ai/nano-banana')).toMatchObject({
+			aspectRatios: ['1:1', '16:9', '9:16'],
+			resolutions: [],
+			imageCounts: [1, 2, 3, 4],
+			defaultAspectRatio: '1:1'
+		});
+
+		expect(getImageModelCapability('fal-ai/nano-banana-pro')).toMatchObject({
+			aspectRatios: ['auto', '16:9', '9:16', '1:1', '2:3', '3:2', '4:3', '3:4', '21:9'],
+			resolutions: ['1K', '2K', '4K'],
+			imageCounts: [1, 2, 3, 4],
+			defaultAspectRatio: 'auto',
+			defaultResolution: '1K'
+		});
+	});
+
+	test('preserves explicit unsupported capabilities without falling back to model presets', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'fal-ai/gpt-image-1.5',
+				aspect_ratios: [],
+				resolutions: ['1024x1024', '1536x1024', '1024x1536'],
+				default_resolution: '1024x1024'
+			}
+		]);
+
+		expect(model).toMatchObject({
+			aspectRatios: [],
+			resolutions: ['1024x1024', '1536x1024', '1024x1536']
+		});
+		expect(getImageModelCapability(model)).toMatchObject({
+			aspectRatios: [],
+			resolutions: ['1024x1024', '1536x1024', '1024x1536'],
+			defaultResolution: '1024x1024'
+		});
+	});
+
+	test('uses model-provided common dimensions for custom image sizes', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'openai/gpt-image-2',
+				aspect_ratios: ['auto', '1:1', '4:3', '3:4'],
+				resolutions: [],
+				default_aspect_ratio: '4:3',
+				custom_size_field: 'image_size',
+				aspect_ratio_sizes: {
+					auto: 'auto',
+					'1:1': '1024x1024',
+					'4:3': '1024x768',
+					'3:4': '768x1024'
+				}
+			}
+		]);
+
+		expect(getImageModelCapability(model)).toMatchObject({
+			aspectRatios: ['auto', '1:1', '4:3', '3:4'],
+			resolutions: [],
+			defaultAspectRatio: '4:3'
+		});
+		expect(getImageSizeForAspectRatio('auto', model)).toBe('auto');
+		expect(getImageSizeForAspectRatio('4:3', model)).toBe('1024x768');
+	});
+
+	test('normalizes model metadata with explicit capabilities', () => {
+		expect(
+			normalizeImageGenerationModels([
+				{
+					id: 'custom-image',
+					name: 'Custom Image',
+					aspect_ratios: ['1:1', '4:3', '5:4', '1:8', 'bad'],
+					size_options: ['512x512', 'auto', '0.5K', 'bad'],
+					max_n: 3,
+					default_aspect_ratio: '4:3',
+					default_resolution: '512x512',
+					output_formats: ['png', 'webp'],
+					default_output_format: 'webp'
+				}
+			])
+		).toEqual([
+			{
+				id: 'custom-image',
+				name: 'Custom Image',
+				aspectRatios: ['1:1', '4:3', '5:4', '1:8'],
+				resolutions: ['512x512', 'auto', '0.5K'],
+				maxImages: 3,
+				defaultAspectRatio: '4:3',
+				defaultResolution: '512x512',
+				outputFormats: ['png', 'webp'],
+				defaultOutputFormat: 'webp'
+			}
+		]);
+	});
+
+	test('keeps explicit auto model metadata', () => {
+		expect(
+			normalizeImageGenerationModels([
+				{
+					id: 'fal-ai/nano-banana-pro',
+					aspect_ratios: ['auto', '16:9'],
+					resolutions: ['1K', '2K'],
+					image_counts: [1, 2],
+					default_aspect_ratio: 'auto',
+					default_resolution: '1K',
+					provider: 'google',
+					task: 'text-to-image',
+					edit_model: 'fal-ai/nano-banana-pro/edit'
+				}
+			])
+		).toEqual([
+			{
+				id: 'fal-ai/nano-banana-pro',
+				name: undefined,
+				provider: 'google',
+				task: 'text-to-image',
+				editModel: 'fal-ai/nano-banana-pro/edit',
+				aspectRatios: ['auto', '16:9'],
+				resolutions: ['1K', '2K'],
+				imageCounts: [1, 2],
+				defaultResolution: '1K'
+			}
+		]);
+	});
+
+	test('normalizes fal preset resolution metadata', () => {
+		expect(
+			normalizeImageGenerationModels([
+				{
+					id: 'openai/gpt-image-2',
+					resolutions: ['auto', 'landscape_4_3', 'square_hd', 'bad'],
+					default_resolution: 'landscape_4_3'
+				},
+				{
+					id: 'fal-ai/bernini-r/edit-image',
+					resolutions: ['848', '1024', 'bad'],
+					default_resolution: '848'
+				}
+			])
+		).toEqual([
+			{
+				id: 'openai/gpt-image-2',
+				name: undefined,
+				resolutions: ['auto', 'landscape_4_3', 'square_hd'],
+				defaultResolution: 'landscape_4_3'
+			},
+			{
+				id: 'fal-ai/bernini-r/edit-image',
+				name: undefined,
+				resolutions: ['848', '1024'],
+				defaultResolution: '848'
+			}
+		]);
+	});
+
+	test('checks page access from feature flag and user permission', () => {
+		const config = { features: { enable_image_generation: true } };
+
+		expect(canUseImagesPage(config, { role: 'admin', permissions: { features: {} } })).toBe(true);
+		expect(
+			canUseImagesPage(config, {
+				role: 'user',
+				permissions: { features: { image_generation: true } }
+			})
+		).toBe(true);
+		expect(
+			canUseImagesPage(config, {
+				role: 'user',
+				permissions: { features: { image_generation: false } }
+			})
+		).toBe(false);
+		expect(
+			canUseImagesPage({ features: { enable_image_generation: false } }, { role: 'admin' })
+		).toBe(false);
+	});
+
+	test('validates and trims prompts', () => {
+		expect(validateImagePrompt('   ')).toEqual({ ok: false, reason: 'empty_prompt' });
+		expect(validateImagePrompt('  cinematic cat  ')).toEqual({
+			ok: true,
+			prompt: 'cinematic cat'
+		});
+	});
+
+	test('builds text-to-image payload with optional fields', () => {
+		expect(
+			buildImageGenerationPayload({
+				prompt: '  misty harbor ',
+				aspectRatio: '16:9',
+				model: ' imagen ',
+				n: 2,
+				steps: 30,
+				negative_prompt: ' blurry '
+			})
+		).toEqual({
+			prompt: 'misty harbor',
+			model: 'imagen',
+			size: '1792x1024',
+			aspect_ratio: '16:9',
+			output_format: 'png',
+			n: 2,
+			steps: 30,
+			negative_prompt: 'blurry'
+		});
+	});
+
+	test('omits unsupported aspect ratio fields', () => {
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'portrait',
+				model: {
+					id: 'fal-ai/gpt-image-1.5',
+					aspectRatios: [],
+					resolutions: ['1024x1024', '1536x1024', '1024x1536']
+				},
+				resolution: '1024x1536'
+			})
+		).toEqual({
+			prompt: 'portrait',
+			model: 'fal-ai/gpt-image-1.5',
+			resolution: '1024x1536',
+			output_format: 'png'
+		});
+	});
+
+	test('includes explicit resolution with aspect ratio metadata', () => {
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'portrait',
+				aspectRatio: '1:1',
+				resolution: '2K'
+			})
+		).toEqual({
+			prompt: 'portrait',
+			size: '1024x1024',
+			aspect_ratio: '1:1',
+			resolution: '2K',
+			output_format: 'png'
+		});
+	});
+
+	test('uses explicit size before aspect-ratio size', () => {
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'portrait',
+				aspectRatio: '1:1',
+				size: '512x512'
+			})
+		).toEqual({
+			prompt: 'portrait',
+			size: '512x512',
+			aspect_ratio: '1:1',
+			output_format: 'png'
+		});
+	});
+
+	test('omits optional generation fields when they are blank or invalid', () => {
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'portrait',
+				aspectRatio: 'auto',
+				model: ' ',
+				n: 0,
+				steps: -1,
+				negative_prompt: ''
+			})
+		).toEqual({ prompt: 'portrait', aspect_ratio: 'auto', output_format: 'png' });
+	});
+
+	test('normalizes reference images for edit requests', () => {
+		expect(normalizeReferenceImages([])).toBeUndefined();
+		expect(normalizeReferenceImages(['a'])).toBe('a');
+		expect(normalizeReferenceImages(['a', 'b'])).toEqual(['a', 'b']);
+	});
+
+	test('builds image-to-image payload with one or many reference images', () => {
+		expect(
+			buildImageEditPayload({
+				prompt: 'turn it into ink art',
+				referenceImages: ['data:image/png;base64,aaa'],
+				aspectRatio: '1:1'
+			})
+		).toEqual({
+			prompt: 'turn it into ink art',
+			size: '1024x1024',
+			aspect_ratio: '1:1',
+			output_format: 'png',
+			image: 'data:image/png;base64,aaa'
+		});
+
+		expect(
+			buildImageEditPayload({
+				prompt: 'combine references',
+				referenceImages: ['a', 'b'],
+				aspectRatio: '3:4',
+				resolution: '1K',
+				background: ' transparent '
+			})
+		).toEqual({
+			prompt: 'combine references',
+			size: '768x1024',
+			aspect_ratio: '3:4',
+			resolution: '1K',
+			output_format: 'png',
+			image: ['a', 'b'],
+			background: 'transparent'
+		});
+	});
+
+	test('removes reference images immutably', () => {
+		const images = ['a', 'b', 'c'];
+		const updated = removeReferenceImage(images, 1);
+
+		expect(updated).toEqual(['a', 'c']);
+		expect(images).toEqual(['a', 'b', 'c']);
+	});
+
+	test('filters image files by type, size, and count', () => {
+		const png = { name: 'a.png', type: 'image/png', size: 100 };
+		const jpeg = { name: 'b.jpg', type: 'image/jpeg', size: 100 };
+		const pdf = { name: 'c.pdf', type: 'application/pdf', size: 100 };
+		const huge = { name: 'd.png', type: 'image/png', size: 2000 };
+		const extra = { name: 'e.webp', type: 'image/webp', size: 100 };
+
+		const result = filterImageFiles([png, jpeg, pdf, huge, extra], { maxCount: 2, maxBytes: 1000 });
+
+		expect(result.accepted).toEqual([png, jpeg]);
+		expect(result.rejected).toEqual([
+			{ file: pdf, reason: 'unsupported_type' },
+			{ file: huge, reason: 'too_large' },
+			{ file: extra, reason: 'too_many' }
+		]);
+	});
+
+	test('normalizes image generation API results', () => {
+		expect(normalizeImageResults([{ url: '/a.png' }, { nope: true }, '/b.png'])).toEqual([
+			{ url: '/a.png' },
+			{ url: '/b.png' }
+		]);
+		expect(normalizeImageResults({ data: [{ url: '/c.png' }] })).toEqual([{ url: '/c.png' }]);
+	});
+
+	test('prepends generated images without mutating existing items', () => {
+		const existing = [{ url: '/old.png' }];
+		const incoming = [{ url: '/new.png' }];
+
+		expect(prependGeneratedImages(existing, incoming)).toEqual([
+			{ url: '/new.png' },
+			{ url: '/old.png' }
+		]);
+		expect(existing).toEqual([{ url: '/old.png' }]);
+	});
+});

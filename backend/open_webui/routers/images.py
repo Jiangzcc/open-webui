@@ -42,6 +42,16 @@ from open_webui.utils.images.comfyui import (
     comfyui_edit_image,
     comfyui_upload_image,
 )
+from open_webui.utils.images.fal import (
+    FAL_DEFAULT_IMAGE_MODEL,
+    build_fal_image_payload,
+    extract_fal_image_urls,
+    get_fal_edit_model,
+    get_fal_generation_model,
+    get_fal_image_models,
+    get_mock_fal_image_result,
+    run_fal_queue,
+)
 from open_webui.utils.session_pool import get_session
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,6 +94,8 @@ IMAGE_CONFIG_KEYS = {
     'IMAGES_GEMINI_API_BASE_URL': 'image_generation.gemini.api_base_url',
     'IMAGES_GEMINI_API_KEY': 'image_generation.gemini.api_key',
     'IMAGES_GEMINI_ENDPOINT_METHOD': 'image_generation.gemini.endpoint_method',
+    'FAL_API_BASE_URL': 'image_generation.fal.api_base_url',
+    'FAL_API_KEY': 'image_generation.fal.api_key',
     'ENABLE_IMAGE_EDIT': 'images.edit.enable',
     'IMAGE_EDIT_ENGINE': 'images.edit.engine',
     'IMAGE_EDIT_MODEL': 'images.edit.model',
@@ -93,6 +105,8 @@ IMAGE_CONFIG_KEYS = {
     'IMAGES_EDIT_OPENAI_API_VERSION': 'images.edit.openai.api_version',
     'IMAGES_EDIT_GEMINI_API_BASE_URL': 'images.edit.gemini.api_base_url',
     'IMAGES_EDIT_GEMINI_API_KEY': 'images.edit.gemini.api_key',
+    'IMAGES_EDIT_FAL_API_BASE_URL': 'images.edit.fal.api_base_url',
+    'IMAGES_EDIT_FAL_API_KEY': 'images.edit.fal.api_key',
     'IMAGES_EDIT_COMFYUI_BASE_URL': 'images.edit.comfyui.base_url',
     'IMAGES_EDIT_COMFYUI_API_KEY': 'images.edit.comfyui.api_key',
     'IMAGES_EDIT_COMFYUI_WORKFLOW': 'images.edit.comfyui.workflow',
@@ -204,6 +218,8 @@ async def get_image_model(request):
         return image_config.IMAGE_GENERATION_MODEL if image_config.IMAGE_GENERATION_MODEL else 'dall-e-2'
     elif image_config.IMAGE_GENERATION_ENGINE == 'gemini':
         return image_config.IMAGE_GENERATION_MODEL if image_config.IMAGE_GENERATION_MODEL else 'imagen-3.0-generate-002'
+    elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
+        return image_config.IMAGE_GENERATION_MODEL if image_config.IMAGE_GENERATION_MODEL else FAL_DEFAULT_IMAGE_MODEL
     elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
         return image_config.IMAGE_GENERATION_MODEL if image_config.IMAGE_GENERATION_MODEL else ''
     elif image_config.IMAGE_GENERATION_ENGINE == 'automatic1111' or image_config.IMAGE_GENERATION_ENGINE == '':
@@ -251,6 +267,9 @@ class ImagesConfig(BaseModel):
     IMAGES_GEMINI_API_KEY: str
     IMAGES_GEMINI_ENDPOINT_METHOD: str
 
+    FAL_API_BASE_URL: str
+    FAL_API_KEY: str
+
     ENABLE_IMAGE_EDIT: bool
     IMAGE_EDIT_ENGINE: str
     IMAGE_EDIT_MODEL: str
@@ -261,6 +280,8 @@ class ImagesConfig(BaseModel):
     IMAGES_EDIT_OPENAI_API_VERSION: str
     IMAGES_EDIT_GEMINI_API_BASE_URL: str
     IMAGES_EDIT_GEMINI_API_KEY: str
+    IMAGES_EDIT_FAL_API_BASE_URL: str
+    IMAGES_EDIT_FAL_API_KEY: str
     IMAGES_EDIT_COMFYUI_BASE_URL: str
     IMAGES_EDIT_COMFYUI_API_KEY: str
     IMAGES_EDIT_COMFYUI_WORKFLOW: str
@@ -377,6 +398,12 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
             return [
                 {'id': 'imagen-3.0-generate-002', 'name': 'imagen-3.0 generate-002'},
             ]
+        elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
+            default_model = image_config.IMAGE_GENERATION_MODEL or FAL_DEFAULT_IMAGE_MODEL
+            return [
+                {**model, 'is_default': model['id'] == default_model}
+                for model in get_fal_image_models()
+            ]
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             # TODO - get models from comfyui
             headers = {'Authorization': f'Bearer {image_config.COMFYUI_API_KEY}'}
@@ -449,6 +476,21 @@ class CreateImageForm(BaseModel):
     n: int = 1
     steps: int | None = None
     negative_prompt: str | None = None
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    output_format: str | None = None
+    system_prompt: str | None = None
+    seed: int | None = None
+    sync_mode: bool | None = None
+    safety_tolerance: str | None = None
+    limit_generations: bool | None = None
+    enable_web_search: bool | None = None
+    thinking_level: str | None = None
+    enable_safety_checker: bool | None = None
+    enable_prompt_expansion: bool | None = None
+    acceleration: str | None = None
+    quality: str | None = None
+    background: str | None = None
 
 
 GenerateImageForm = CreateImageForm  # Alias for backward compatibility
@@ -729,6 +771,34 @@ async def image_generations(
 
             return images
 
+        elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
+            fal_model = get_fal_generation_model(form_data.model or model)
+            data = build_fal_image_payload(form_data, fal_model)
+            mock_res = get_mock_fal_image_result(fal_model)
+
+            if mock_res is not None:
+                log.info(f'Using mocked fal.ai image result for {fal_model}')
+                return [
+                    image
+                    for image in mock_res.get('images', [])
+                    if isinstance(image, dict) and isinstance(image.get('url'), str)
+                ]
+
+            res = await run_fal_queue(
+                fal_model,
+                data,
+                image_config.FAL_API_KEY,
+                image_config.FAL_API_BASE_URL,
+            )
+            image_urls = extract_fal_image_urls(res)
+
+            images = []
+            for image_url in image_urls:
+                image_data, content_type = await get_image_data(image_url)
+                _, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
+                images.append({'url': url})
+            return images
+
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             data = {
                 'prompt': form_data.prompt,
@@ -828,6 +898,7 @@ async def image_generations(
                 images.append({'url': url})
             return images
     except Exception as e:
+        log.exception(f'Image generation failed: {e}')
         error = e
         if isinstance(e, aiohttp.ClientResponseError):
             error = e.message
@@ -842,6 +913,20 @@ class EditImageForm(BaseModel):
     n: int | None = None
     negative_prompt: str | None = None
     background: str | None = None
+    aspect_ratio: str | None = None
+    resolution: str | None = None
+    output_format: str | None = None
+    system_prompt: str | None = None
+    seed: int | None = None
+    sync_mode: bool | None = None
+    safety_tolerance: str | None = None
+    limit_generations: bool | None = None
+    enable_web_search: bool | None = None
+    thinking_level: str | None = None
+    quality: str | None = None
+    input_fidelity: str | None = None
+    mask_url: str | None = None
+    mask_image_url: str | None = None
 
 
 @router.post('/edit')
@@ -1095,6 +1180,26 @@ async def image_edits(
 
             return images
 
+        elif image_config.IMAGE_EDIT_ENGINE == 'fal':
+            edit_model = get_fal_edit_model(model)
+            image_urls = form_data.image if isinstance(form_data.image, list) else [form_data.image]
+            data = build_fal_image_payload(form_data, edit_model, image_urls)
+
+            res = await run_fal_queue(
+                edit_model,
+                data,
+                image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY,
+                image_config.IMAGES_EDIT_FAL_API_BASE_URL or image_config.FAL_API_BASE_URL,
+            )
+            generated_urls = extract_fal_image_urls(res)
+
+            images = []
+            for image_url in generated_urls:
+                image_data, content_type = await get_image_data(image_url)
+                _, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
+                images.append({'url': url})
+            return images
+
         elif image_config.IMAGE_EDIT_ENGINE == 'comfyui':
             try:
                 files = []
@@ -1179,6 +1284,7 @@ async def image_edits(
 
             return images
     except Exception as e:
+        log.exception(f'Image edit failed: {e}')
         error = e
         if isinstance(e, aiohttp.ClientResponseError):
             error = e.message

@@ -35,9 +35,11 @@
 	import Emoji from '$lib/components/common/Emoji.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Note from '$lib/components/icons/Note.svelte';
+	import Photo from '$lib/components/icons/Photo.svelte';
 	import Pin from '$lib/components/icons/Pin.svelte';
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
 	import { updateUserStatus, updateUserSettings } from '$lib/apis/users';
+	import { DEFAULT_PINNED_MENU_ITEMS } from '$lib/utils/sidebar-menu';
 	import { toast } from 'svelte-sonner';
 
 	const i18n = getContext('i18n');
@@ -58,9 +60,7 @@
 
 	const dispatch = createEventDispatcher();
 
-	const DEFAULT_PINNED_ITEMS = ['notes', 'workspace'];
-
-	$: pinnedItems = $settings?.pinnedMenuItems ?? DEFAULT_PINNED_ITEMS;
+	$: pinnedItems = $settings?.pinnedMenuItems ?? DEFAULT_PINNED_MENU_ITEMS;
 
 	const isPinned = (id: string) => {
 		return pinnedItems.includes(id);
@@ -502,6 +502,50 @@
 								on:click|preventDefault|stopPropagation={() => togglePin('automations')}
 							>
 								{#if isPinned('automations')}
+									<PinSlash className="size-3.5" strokeWidth="1.5" />
+								{:else}
+									<Pin className="size-3.5" strokeWidth="1.5" />
+								{/if}
+							</button>
+						</Tooltip>
+					{/if}
+				</div>
+			{/if}
+
+			{#if $config?.features?.enable_image_generation && ($user?.role === 'admin' || $user?.permissions?.features?.image_generation)}
+				<div class="flex items-center w-full">
+					<a
+						href="/images"
+						draggable="false"
+						class="flex flex-1 rounded-xl py-1.5 px-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer select-none"
+						on:click={async (e) => {
+							if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+							e.preventDefault();
+							show = false;
+							goto('/images');
+							if ($mobile) {
+								await tick();
+								showSidebar.set(false);
+							}
+						}}
+					>
+						<div class="self-center mr-3">
+							<Photo className="size-5" strokeWidth="1.5" />
+						</div>
+						<div class="self-center truncate">{$i18n.t('Images')}</div>
+					</a>
+					{#if shiftKey}
+						<Tooltip
+							content={isPinned('images')
+								? $i18n.t('Unpin from Sidebar')
+								: $i18n.t('Pin to Sidebar')}
+						>
+							<button
+								type="button"
+								class="p-1 mr-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+								on:click|preventDefault|stopPropagation={() => togglePin('images')}
+							>
+								{#if isPinned('images')}
 									<PinSlash className="size-3.5" strokeWidth="1.5" />
 								{:else}
 									<Pin className="size-3.5" strokeWidth="1.5" />

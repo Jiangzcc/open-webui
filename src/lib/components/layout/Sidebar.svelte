@@ -58,6 +58,7 @@
 	import { updateUserSettings } from '$lib/apis/users';
 	import { checkActiveChats } from '$lib/apis/tasks';
 	import { createNoteHandler } from '$lib/components/notes/utils';
+	import { DEFAULT_PINNED_MENU_ITEMS, getPinnedImagesMenuMigration } from '$lib/utils/sidebar-menu';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import ArchivedChatsModal from './ArchivedChatsModal.svelte';
@@ -81,11 +82,11 @@
 	import PinnedNoteList from './Sidebar/PinnedNoteList.svelte';
 	import Note from '../icons/Note.svelte';
 	import Code from '../icons/Code.svelte';
+	import Photo from '../icons/Photo.svelte';
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
 	const BREAKPOINT = 768;
-	const DEFAULT_PINNED_ITEMS = ['notes', 'workspace'];
 
 	let scrollTop = 0;
 
@@ -116,7 +117,7 @@
 
 	let sharedFolders: any[] = [];
 
-	$: pinnedItems = $settings?.pinnedMenuItems ?? DEFAULT_PINNED_ITEMS;
+	$: pinnedItems = $settings?.pinnedMenuItems ?? DEFAULT_PINNED_MENU_ITEMS;
 
 	const isMenuItemVisible = (id) => {
 		switch (id) {
@@ -144,6 +145,11 @@
 					$config?.features?.enable_calendar &&
 					($user?.role === 'admin' || $user?.permissions?.features?.calendar)
 				);
+			case 'images':
+				return (
+					$config?.features?.enable_image_generation &&
+					($user?.role === 'admin' || $user?.permissions?.features?.image_generation)
+				);
 			case 'playground':
 				return $user?.role === 'admin';
 			default:
@@ -157,6 +163,7 @@
 			workspace: { label: 'Workspace', href: '/workspace', iconType: 'workspace' },
 			automations: { label: 'Automations', href: '/automations', iconType: 'automations' },
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },
+			images: { label: 'Images', href: '/images', iconType: 'images' },
 			playground: { label: 'Playground', href: '/playground', iconType: 'playground' }
 		};
 		return items[id];
@@ -548,6 +555,12 @@
 	};
 
 	onMount(async () => {
+		const pinnedMenuMigration = getPinnedImagesMenuMigration($settings ?? {});
+		if (pinnedMenuMigration) {
+			await settings.set({ ...$settings, ...pinnedMenuMigration });
+			await updateUserSettings(localStorage.token, { ui: $settings });
+		}
+
 		try {
 			const width = Number(localStorage.getItem('sidebarWidth'));
 			if (!Number.isNaN(width) && width >= MIN_WIDTH && width <= MAX_WIDTH) {
@@ -965,6 +978,8 @@
 													d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"
 												/>
 											</svg>
+										{:else if itemId === 'images'}
+											<Photo className="size-4.5" strokeWidth="1.5" />
 										{:else if itemId === 'playground'}
 											<Code className="size-4.5" />
 										{/if}
@@ -1214,6 +1229,8 @@
 														d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"
 													/>
 												</svg>
+											{:else if itemId === 'images'}
+												<Photo className="size-4.5" strokeWidth="2" />
 											{:else if itemId === 'playground'}
 												<Code className="size-4.5" strokeWidth="2" />
 											{/if}
