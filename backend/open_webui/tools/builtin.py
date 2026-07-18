@@ -290,6 +290,33 @@ async def fetch_url(
 # =============================================================================
 
 
+def _image_credit_metadata(
+    metadata: object,
+    chat_id: str | None,
+    message_id: str | None,
+) -> dict[str, str | None]:
+    source = metadata if isinstance(metadata, dict) else {}
+    result: dict[str, str | None] = {'credit_channel': 'tool'}
+    for name, fallback in (('chat_id', chat_id), ('message_id', message_id)):
+        value = source.get(name, fallback)
+        if isinstance(value, str) and value:
+            result[name] = value
+    call_instance_id = source.get('call_instance_id')
+    if isinstance(call_instance_id, str) and call_instance_id:
+        result['call_instance_id'] = call_instance_id
+    return result
+
+
+def _image_tool_error(error: Exception) -> str:
+    from open_webui.extensions.credits.errors import CreditError
+
+    if isinstance(error, CreditError):
+        envelope = error.to_envelope()
+    else:
+        envelope = CreditError(code='credit_service_unavailable').to_envelope()
+    return json.dumps({'error': envelope})
+
+
 async def generate_image(
     prompt: str,
     __request__: Request = None,
@@ -297,6 +324,7 @@ async def generate_image(
     __event_emitter__: callable = None,
     __chat_id__: str = None,
     __message_id__: str = None,
+    __metadata__: dict = None,
 ) -> str:
     """
     Generate an image based on a text prompt.
@@ -305,7 +333,7 @@ async def generate_image(
     :return: Confirmation that the image was generated, or an error message
     """
     if __request__ is None:
-        return json.dumps({'error': 'Request context not available'})
+        return _image_tool_error(RuntimeError('request_context_unavailable'))
 
     try:
         user = UserModel(**__user__) if __user__ else None
@@ -313,6 +341,7 @@ async def generate_image(
         images = await image_generations(
             request=__request__,
             form_data=CreateImageForm(prompt=prompt),
+            metadata=_image_credit_metadata(__metadata__, __chat_id__, __message_id__),
             user=user,
         )
 
@@ -350,9 +379,12 @@ async def generate_image(
             )
 
         return json.dumps({'status': 'success', 'images': images}, ensure_ascii=False)
-    except Exception as e:
-        log.exception(f'generate_image error: {e}')
-        return json.dumps({'error': str(e)})
+    except Exception as error:
+        log.error(
+            'Image tool request failed',
+            extra={'image_tool': 'generate_image', 'image_error_type': type(error).__name__},
+        )
+        return _image_tool_error(error)
 
 
 async def edit_image(
@@ -363,6 +395,7 @@ async def edit_image(
     __event_emitter__: callable = None,
     __chat_id__: str = None,
     __message_id__: str = None,
+    __metadata__: dict = None,
 ) -> str:
     """
     Transform one or more existing images according to a text prompt.
@@ -373,7 +406,7 @@ async def edit_image(
     :return: Confirmation that the images were edited, or an error message
     """
     if __request__ is None:
-        return json.dumps({'error': 'Request context not available'})
+        return _image_tool_error(RuntimeError('request_context_unavailable'))
 
     try:
         user = UserModel(**__user__) if __user__ else None
@@ -381,6 +414,7 @@ async def edit_image(
         images = await image_edits(
             request=__request__,
             form_data=EditImageForm(prompt=prompt, image=image_urls),
+            metadata=_image_credit_metadata(__metadata__, __chat_id__, __message_id__),
             user=user,
         )
 
@@ -418,9 +452,12 @@ async def edit_image(
             )
 
         return json.dumps({'status': 'success', 'images': images}, ensure_ascii=False)
-    except Exception as e:
-        log.exception(f'edit_image error: {e}')
-        return json.dumps({'error': str(e)})
+    except Exception as error:
+        log.error(
+            'Image tool request failed',
+            extra={'image_tool': 'edit_image', 'image_error_type': type(error).__name__},
+        )
+        return _image_tool_error(error)
 
 
 # =============================================================================

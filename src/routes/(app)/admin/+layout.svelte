@@ -2,6 +2,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 
+	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
 	import { WEBUI_NAME, config, mobile, showSidebar, user } from '$lib/stores';
 	import { page } from '$app/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -9,6 +10,7 @@
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
 
 	const i18n = getContext('i18n');
+	registerCreditTranslations(i18n);
 
 	let loaded = false;
 
@@ -83,6 +85,14 @@
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
 							href="/admin/evaluations">{$i18n.t('Evaluations')}</a
+						>
+
+						<a
+							draggable="false"
+							class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/credits')
+								? ''
+								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
+							href="/admin/credits">{$i18n.t('credits.admin.management')}</a
 						>
 
 						<a

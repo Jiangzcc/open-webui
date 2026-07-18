@@ -25,7 +25,7 @@ export default defineConfig({
 	},
 	server: {
 		watch: {
-			ignored: ['**/venv/**', '**/.venv/**']
+			ignored: ['**/venv/**', '**/.venv/**', '**/backend/**']
 		}
 	},
 	worker: {

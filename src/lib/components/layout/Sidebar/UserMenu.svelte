@@ -38,6 +38,8 @@
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Pin from '$lib/components/icons/Pin.svelte';
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
+	import CreditMenuEntry from '$lib/components/credits/CreditMenuEntry.svelte';
+	import CreditLedgerModal from '$lib/components/credits/CreditLedgerModal.svelte';
 	import { updateUserStatus, updateUserSettings } from '$lib/apis/users';
 	import { DEFAULT_PINNED_MENU_ITEMS } from '$lib/utils/sidebar-menu';
 	import { toast } from 'svelte-sonner';
@@ -56,6 +58,8 @@
 	export let showActiveUsers = true;
 
 	let showUserStatusModal = false;
+	let showCreditLedgerModal = false;
+	let creditRefreshKey = 0;
 	let shiftKey = false;
 
 	const dispatch = createEventDispatcher();
@@ -114,6 +118,13 @@
 	bind:show={showUserStatusModal}
 	onSave={async () => {
 		user.set(await getSessionUser(localStorage.token));
+	}}
+/>
+
+<CreditLedgerModal
+	bind:show={showCreditLedgerModal}
+	on:refresh={() => {
+		creditRefreshKey += 1;
 	}}
 />
 
@@ -599,6 +610,19 @@
 					{/if}
 				</div>
 			{/if}
+
+			<hr class=" border-gray-50/30 dark:border-gray-800/30 my-1 p-0" />
+
+			<CreditMenuEntry
+				dropdownOpen={show}
+				refreshKey={creditRefreshKey}
+				on:openLedger={() => {
+					show = false;
+					showCreditLedgerModal = true;
+				}}
+			/>
+
+			<hr class=" border-gray-50/30 dark:border-gray-800/30 my-1 p-0" />
 
 			{#if help}
 				<hr class=" border-gray-50/30 dark:border-gray-800/30 my-1 p-0" />

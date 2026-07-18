@@ -1,0 +1,7 @@
+{
+	"error": {
+		"code": "fake_provider_failure",
+		"message": "The local E2E image provider intentionally failed this request.",
+		"type": "server_error"
+	}
+}

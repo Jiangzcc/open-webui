@@ -16,7 +16,6 @@ from urllib.parse import quote, urlparse
 import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from PIL import Image, ImageOps
 from open_webui.config import (
     CACHE_DIR,
     ENABLE_OPENAI_IMAGE_EDIT_NORMALIZATION,
@@ -26,6 +25,9 @@ from open_webui.config import (
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import AIOHTTP_CLIENT_ALLOW_REDIRECTS, AIOHTTP_CLIENT_SESSION_SSL, ENABLE_FORWARD_USER_INFO_HEADERS
 from open_webui.events import EVENTS, publish_event
+from open_webui.extensions.credits.errors import CreditError
+from open_webui.extensions.credits.http import public_credit_error_response
+from open_webui.extensions.credits.image_billing import bill_image_call
 from open_webui.internal.db import get_async_session
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
@@ -53,6 +55,7 @@ from open_webui.utils.images.fal import (
     run_fal_queue,
 )
 from open_webui.utils.session_pool import get_session
+from PIL import Image, ImageOps
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -400,10 +403,7 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
             ]
         elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
             default_model = image_config.IMAGE_GENERATION_MODEL or FAL_DEFAULT_IMAGE_MODEL
-            return [
-                {**model, 'is_default': model['id'] == default_model}
-                for model in get_fal_image_models()
-            ]
+            return [{**model, 'is_default': model['id'] == default_model} for model in get_fal_image_models()]
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             # TODO - get models from comfyui
             headers = {'Authorization': f'Bearer {image_config.COMFYUI_API_KEY}'}
@@ -613,7 +613,10 @@ async def generate_images(request: Request, form_data: CreateImageForm, user=Dep
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    result = await image_generations(request, form_data, user=user)
+    try:
+        result = await image_generations(request, form_data, user=user)
+    except CreditError as error:
+        return public_credit_error_response(error)
     await publish_event(
         request,
         EVENTS.IMAGE_GENERATED,
@@ -631,6 +634,22 @@ async def generate_images(request: Request, form_data: CreateImageForm, user=Dep
 
 
 async def image_generations(
+    request: Request,
+    form_data: CreateImageForm,
+    metadata: dict | None = None,
+    user=None,
+):
+    return await bill_image_call(
+        request=request,
+        raw_form_data=form_data,
+        metadata=metadata,
+        raw_user=user,
+        action='text-to-image',
+        invoke=lambda provider_form: _invoke_image_generations(request, provider_form, metadata, user),
+    )
+
+
+async def _invoke_image_generations(
     request: Request,
     form_data: CreateImageForm,
     metadata: dict | None = None,
@@ -950,7 +969,10 @@ async def edit_images(request: Request, form_data: EditImageForm, user=Depends(g
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    result = await image_edits(request, form_data, user=user)
+    try:
+        result = await image_edits(request, form_data, user=user)
+    except CreditError as error:
+        return public_credit_error_response(error)
     await publish_event(
         request,
         EVENTS.IMAGE_EDITED,
@@ -968,6 +990,22 @@ async def edit_images(request: Request, form_data: EditImageForm, user=Depends(g
 
 
 async def image_edits(
+    request: Request,
+    form_data: EditImageForm,
+    metadata: dict | None = None,
+    user=Depends(get_verified_user),
+):
+    return await bill_image_call(
+        request=request,
+        raw_form_data=form_data,
+        metadata=metadata,
+        raw_user=user,
+        action='image-to-image',
+        invoke=lambda provider_form: _invoke_image_edits(request, provider_form, metadata, user),
+    )
+
+
+async def _invoke_image_edits(
     request: Request,
     form_data: EditImageForm,
     metadata: dict | None = None,

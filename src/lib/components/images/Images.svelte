@@ -1,9 +1,23 @@
 <script lang="ts">
-	import { getContext, onMount, tick } from 'svelte';
+	import { getContext, onDestroy, onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { v4 as uuidv4 } from 'uuid';
+
+	import { quoteImageCredits, type ImageQuoteInput } from '$lib/apis/credits';
+	import {
+		createImageGeneration,
+		editImageGeneration,
+		getImageGenerationErrorCode
+	} from '$lib/apis/images/generation';
+	import ImageCreditQuoteBadge from '$lib/components/credits/ImageCreditQuoteBadge.svelte';
+	import {
+		createImageQuoteState,
+		createImageSubmissionIdempotency,
+		isImageQuoteSubmittable,
+		type ImageQuoteState
+	} from '$lib/components/credits/quote-state';
 
 	import { getImageGenerationModels } from '$lib/apis/images';
-	import { createImageGeneration, editImageGeneration } from '$lib/apis/images/generation';
 	import { config, mobile, showSidebar, user, WEBUI_NAME } from '$lib/stores';
 	import {
 		buildImageEditPayload,
@@ -34,6 +48,7 @@
 
 	const MAX_REFERENCE_IMAGES = 4;
 	const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024;
+	const CREDIT_QUOTE_PLACEHOLDER_PROMPT = 'credit-quote';
 
 	type ReferenceImage = {
 		url: string;
@@ -55,6 +70,8 @@
 	let imageCount = 1;
 	let negativePrompt = '';
 	let steps: number | null = null;
+	let imageQuoteState: ImageQuoteState = { status: 'loading' };
+	let quoteInput: ImageQuoteInput | null = null;
 
 	let models: ImageGenerationModel[] = [];
 	let referenceImages: ReferenceImage[] = [];
@@ -72,7 +89,7 @@
 	$: modeLabel = referenceImages.length > 0 ? $i18n.t('Image to Image') : $i18n.t('Text to Image');
 	$: selectedModelConfig =
 		models.find((model) => model.id === selectedModel) ??
-		(selectedModel === '' ? (models.find((model) => model.isDefault) ?? null) : null);
+		(selectedModel === '' ? (models.find((model) => model.isDefault) ?? models[0] ?? null) : null);
 	$: selectedModelCapability = getImageModelCapability(
 		selectedModelConfig ?? (selectedModel || null)
 	);
@@ -92,6 +109,18 @@
 		: selectedModelConfig
 			? getImageModelDisplayName(selectedModelConfig)
 			: $i18n.t('Default Model');
+	$: quoteInput = buildImageQuoteInput(
+		selectedAspectRatio,
+		selectedResolution,
+		selectedModelConfig ?? selectedModel,
+		imageCount,
+		steps,
+		negativePrompt,
+		referenceImages
+	);
+	$: if (loaded && quoteInput) {
+		imageQuoteStateMachine.schedule(quoteInput);
+	}
 	$: availableModels =
 		referenceImages.length > 0
 			? models.filter((model) => model.task !== 'text-to-image')
@@ -123,6 +152,78 @@
 	) {
 		imageCount = imageCountOptions[0];
 	}
+
+	const buildImageQuoteInput = (
+		aspectRatio: ImageAspectRatio,
+		resolution: string,
+		model: ImageGenerationModel | string | null,
+		count: number,
+		stepCount: number | null,
+		negative: string,
+		references: ReferenceImage[]
+	): ImageQuoteInput | null => {
+		const commonPayload = {
+			prompt: CREDIT_QUOTE_PLACEHOLDER_PROMPT,
+			aspectRatio,
+			resolution,
+			model,
+			n: count,
+			steps: stepCount,
+			negative_prompt: negative
+		};
+		const payload =
+			references.length > 0
+				? buildImageEditPayload({
+						...commonPayload,
+						referenceImages: references.map((image) => image.url)
+					})
+				: buildImageGenerationPayload(commonPayload);
+		const {
+			model: resourceId,
+			prompt: normalizedPrompt,
+			image,
+			n,
+			size,
+			resolution: normalizedResolution,
+			aspect_ratio
+		} = payload;
+
+		if (!resourceId) {
+			return null;
+		}
+
+		return {
+			resource_id: resourceId,
+			action: references.length > 0 ? 'image-to-image' : 'text-to-image',
+			prompt: normalizedPrompt,
+			...(image ? { image } : {}),
+			dimensions: {
+				...(size ? { size } : {}),
+				...(normalizedResolution ? { resolution: normalizedResolution } : {}),
+				...(aspect_ratio ? { aspect_ratio } : {}),
+				image_count: n ?? 1
+			}
+		};
+	};
+
+	const imageQuoteStateMachine = createImageQuoteState({
+		quote: (input, signal) => quoteImageCredits(localStorage.token, input, signal),
+		onChange: (state) => {
+			imageQuoteState = state;
+		}
+	});
+
+	const imageGenerationErrorMessage = (error: unknown) => {
+		switch (getImageGenerationErrorCode(error)) {
+			case 'insufficient_credits':
+				return $i18n.t('credits.insufficient');
+			case 'price_not_configured':
+			case 'price_rule_incomplete':
+				return $i18n.t('credits.unconfigured');
+			default:
+				return $i18n.t('credits.unavailable');
+		}
+	};
 
 	const getAspectRatioLabel = (ratio: ImageAspectRatio) => {
 		return ratio === DEFAULT_IMAGE_ASPECT_RATIO ? $i18n.t('Auto') : ratio;
@@ -218,7 +319,7 @@
 
 		models = normalizeImageGenerationModels(result);
 		if (!selectedModel) {
-			const defaultModel = models.find((model) => model.isDefault);
+			const defaultModel = models.find((model) => model.isDefault) ?? models[0];
 			if (defaultModel) {
 				selectedAspectRatio = getImageModelCapability(defaultModel).defaultAspectRatio;
 				selectedResolution = getImageModelCapability(defaultModel).defaultResolution ?? '';
@@ -373,6 +474,9 @@
 			toast.error($i18n.t('Please enter a prompt'));
 			return;
 		}
+		if (!isImageQuoteSubmittable(imageQuoteState)) {
+			return;
+		}
 
 		loading = true;
 		showAspectRatioPicker = false;
@@ -388,18 +492,21 @@
 				steps,
 				negative_prompt: negativePrompt
 			};
+			const payload =
+				referenceImages.length > 0
+					? buildImageEditPayload({
+							...commonPayload,
+							referenceImages: referenceImages.map((image) => image.url)
+						})
+					: buildImageGenerationPayload(commonPayload);
+			const submission = createImageSubmissionIdempotency(uuidv4);
 			const result =
 				referenceImages.length > 0
-					? await editImageGeneration(
-							localStorage.token,
-							buildImageEditPayload({
-								...commonPayload,
-								referenceImages: referenceImages.map((image) => image.url)
-							})
+					? await submission.run((idempotencyKey) =>
+							editImageGeneration(localStorage.token, payload, { idempotencyKey })
 						)
-					: await createImageGeneration(
-							localStorage.token,
-							buildImageGenerationPayload(commonPayload)
+					: await submission.run((idempotencyKey) =>
+							createImageGeneration(localStorage.token, payload, { idempotencyKey })
 						);
 
 			const images = normalizeImageResults(result).map((image) => ({
@@ -420,7 +527,9 @@
 			await tick();
 			resizePromptTextarea();
 		} catch (error) {
-			toast.error(`${error}`);
+			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+				toast.error(imageGenerationErrorMessage(error));
+			}
 		} finally {
 			loading = false;
 		}
@@ -430,6 +539,10 @@
 		loaded = true;
 		await tick();
 		resizePromptTextarea();
+	});
+
+	onDestroy(() => {
+		imageQuoteStateMachine.dispose();
 	});
 </script>
 
@@ -810,23 +923,28 @@
 											</div>
 										</div>
 
-										<button
-											type="submit"
-											class="flex size-8 items-center justify-center rounded-full transition {prompt.trim() &&
-											!loading
-												? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100'
-												: 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}"
-											disabled={!prompt.trim() || loading}
-											aria-label={referenceImages.length > 0
-												? $i18n.t('Edit Image')
-												: $i18n.t('Generate')}
-										>
-											{#if loading}
-												<Spinner className="size-4" />
-											{:else}
-												<Sparkles className="size-4" strokeWidth="2" />
-											{/if}
-										</button>
+										<div class="flex min-w-0 items-center gap-2">
+											<ImageCreditQuoteBadge quoteState={imageQuoteState} />
+											<button
+												type="submit"
+												class="flex size-8 items-center justify-center rounded-full transition {prompt.trim() &&
+												!loading
+													? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100'
+													: 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}"
+												disabled={!prompt.trim() ||
+													!isImageQuoteSubmittable(imageQuoteState) ||
+													loading}
+												aria-label={referenceImages.length > 0
+													? $i18n.t('Edit Image')
+													: $i18n.t('Generate')}
+											>
+												{#if loading}
+													<Spinner className="size-4" />
+												{:else}
+													<Sparkles className="size-4" strokeWidth="2" />
+												{/if}
+											</button>
+										</div>
 									</div>
 								</div>
 							</form>

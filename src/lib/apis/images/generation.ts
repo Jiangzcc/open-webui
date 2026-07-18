@@ -1,75 +1,102 @@
 import { IMAGES_API_BASE_URL } from '$lib/constants';
-import type { ImageEditPayload, ImageGenerationPayload } from '$lib/utils/image-generation';
+import type {
+	GeneratedImage,
+	ImageEditPayload,
+	ImageGenerationPayload
+} from '$lib/utils/image-generation';
 
-const parseImageApiError = (err: any) => {
-	if ('detail' in err) {
-		if (Array.isArray(err.detail)) {
-			return err.detail.map((e: { msg?: string }) => e.msg || JSON.stringify(e)).join(', ');
-		}
+type ImageGenerationOptions = {
+	idempotencyKey?: string;
+};
 
-		return err.detail;
+const isAbortError = (error: unknown) =>
+	error instanceof DOMException && error.name === 'AbortError';
+
+type ImageGenerationErrorCode =
+	| 'insufficient_credits'
+	| 'price_not_configured'
+	| 'price_rule_incomplete'
+	| 'idempotency_key_conflict'
+	| 'usage_processing'
+	| 'credit_account_conflict'
+	| 'invalid_adjustment'
+	| 'credit_service_unavailable'
+	| 'provider_failed'
+	| 'image_generation_failed';
+
+type ImageGenerationError = {
+	code: ImageGenerationErrorCode;
+};
+
+const publicCreditErrorCodes = new Set<ImageGenerationErrorCode>([
+	'insufficient_credits',
+	'price_not_configured',
+	'price_rule_incomplete',
+	'idempotency_key_conflict',
+	'usage_processing',
+	'credit_account_conflict',
+	'invalid_adjustment',
+	'credit_service_unavailable',
+	'provider_failed'
+]);
+
+export const getImageGenerationErrorCode = (error: unknown): ImageGenerationErrorCode => {
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		'code' in error &&
+		typeof error.code === 'string' &&
+		publicCreditErrorCodes.has(error.code as ImageGenerationErrorCode)
+	) {
+		return error.code as ImageGenerationErrorCode;
 	}
 
-	return 'Server connection failed';
+	return 'image_generation_failed';
+};
+
+const parseImageApiError = (error: unknown): ImageGenerationError => ({
+	code: getImageGenerationErrorCode(error)
+});
+
+const requestImageGeneration = async (
+	path: string,
+	token: string,
+	payload: ImageGenerationPayload | ImageEditPayload,
+	options?: ImageGenerationOptions
+): Promise<GeneratedImage[]> => {
+	try {
+		const response = await fetch(`${IMAGES_API_BASE_URL}${path}`, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				...(token && { authorization: `Bearer ${token}` }),
+				...(options?.idempotencyKey && { 'Idempotency-Key': options.idempotencyKey })
+			},
+			body: JSON.stringify(payload)
+		});
+
+		if (!response.ok) {
+			throw await response.json().catch(() => null);
+		}
+
+		return (await response.json()) as GeneratedImage[];
+	} catch (error) {
+		if (isAbortError(error)) {
+			throw error;
+		}
+		throw parseImageApiError(error);
+	}
 };
 
 export const createImageGeneration = async (
 	token: string = '',
-	payload: ImageGenerationPayload
-) => {
-	let error = null;
+	payload: ImageGenerationPayload,
+	options?: ImageGenerationOptions
+) => requestImageGeneration('/generations', token, payload, options);
 
-	const res = await fetch(`${IMAGES_API_BASE_URL}/generations`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		},
-		body: JSON.stringify(payload)
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			console.error(err);
-			error = parseImageApiError(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-export const editImageGeneration = async (token: string = '', payload: ImageEditPayload) => {
-	let error = null;
-
-	const res = await fetch(`${IMAGES_API_BASE_URL}/edit`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		},
-		body: JSON.stringify(payload)
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			console.error(err);
-			error = parseImageApiError(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
+export const editImageGeneration = async (
+	token: string = '',
+	payload: ImageEditPayload,
+	options?: ImageGenerationOptions
+) => requestImageGeneration('/edit', token, payload, options);

@@ -209,10 +209,9 @@ def get_fal_image_models() -> list[dict[str, Any]]:
 
 
 def get_mock_fal_image_result(model: str | None) -> dict[str, Any] | None:
-    # 暂时注释，所有模型都先使用 Mock 数据
-    # normalized_model = _normalize_model_id(model)
-    # if normalized_model not in FAL_MOCK_MODELS:
-    #     return None
+    normalized_model = _normalize_model_id(model)
+    if normalized_model not in FAL_MOCK_MODELS:
+        return None
 
     count = random.randint(*FAL_MOCK_IMAGE_COUNT_RANGE)
     urls = random.sample(FAL_MOCK_IMAGE_URLS, k=count)

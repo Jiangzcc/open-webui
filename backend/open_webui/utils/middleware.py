@@ -1557,6 +1557,37 @@ async def add_file_context(messages: list, chat_id: str, user) -> list:
     return messages
 
 
+def build_chat_image_credit_metadata(
+    chat_id: object,
+    message_id: object,
+    action: str,
+    action_sequences: dict[str, int] | None = None,
+) -> dict[str, str]:
+    metadata: dict[str, str] = {'credit_channel': 'chat'}
+    if isinstance(chat_id, str) and chat_id:
+        metadata['chat_id'] = chat_id
+    if isinstance(message_id, str) and message_id:
+        metadata['message_id'] = message_id
+    if 'chat_id' in metadata and 'message_id' in metadata:
+        sequences = action_sequences if action_sequences is not None else {}
+        action_sequence = sequences.get(action, 0) + 1
+        sequences[action] = action_sequence
+        metadata['call_instance_id'] = f'{action}:{action_sequence}'
+    return metadata
+
+
+def build_tool_credit_metadata(metadata: object, tool_call_id: object) -> dict[str, str]:
+    source = metadata if isinstance(metadata, dict) else {}
+    credit_metadata: dict[str, str] = {'credit_channel': 'tool'}
+    for field in ('chat_id', 'message_id'):
+        value = source.get(field)
+        if isinstance(value, str) and value:
+            credit_metadata[field] = value
+    if isinstance(tool_call_id, str) and tool_call_id:
+        credit_metadata['call_instance_id'] = tool_call_id
+    return credit_metadata
+
+
 async def chat_image_generation_handler(request: Request, form_data: dict, extra_params: dict, user):
     metadata = extra_params.get('__metadata__', {})
     chat_id = metadata.get('chat_id', None)
@@ -1595,6 +1626,7 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
             input_images.append(image)
 
     system_message_content = ''
+    action_sequences: dict[str, int] = {}
 
     if len(input_images) > 0 and await Config.get('images.edit.enable'):
         # Edit image(s)
@@ -1602,10 +1634,12 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
             images = await image_edits(
                 request=request,
                 form_data=EditImageForm(**{'prompt': prompt, 'image': input_images}),
-                metadata={
-                    'chat_id': metadata.get('chat_id', None),
-                    'message_id': metadata.get('message_id', None),
-                },
+                metadata=build_chat_image_credit_metadata(
+                    metadata.get('chat_id'),
+                    metadata.get('message_id'),
+                    'image-to-image',
+                    action_sequences,
+                ),
                 user=user,
             )
 
@@ -1700,10 +1734,12 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
             images = await image_generations(
                 request=request,
                 form_data=CreateImageForm(**{'prompt': prompt}),
-                metadata={
-                    'chat_id': metadata.get('chat_id', None),
-                    'message_id': metadata.get('message_id', None),
-                },
+                metadata=build_chat_image_credit_metadata(
+                    metadata.get('chat_id'),
+                    metadata.get('message_id'),
+                    'text-to-image',
+                    action_sequences,
+                ),
                 user=user,
             )
 
@@ -4737,6 +4773,7 @@ async def streaming_chat_response_handler(response, ctx):
                                         extra_params={
                                             '__messages__': form_data.get('messages', []),
                                             '__files__': metadata.get('files', []),
+                                            '__metadata__': build_tool_credit_metadata(metadata, tool_call_id),
                                         },
                                     )
 

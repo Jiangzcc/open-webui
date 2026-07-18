@@ -62,4 +62,48 @@ describe('images page controls', () => {
 		expect(nav).not.toContain("$i18n.t('Images')");
 		expect(nav).not.toContain('bind:this={modelSelectorElement}');
 	});
+
+	test('quotes the selected or default model before a prompt is entered', () => {
+		expect(source).toContain('const CREDIT_QUOTE_PLACEHOLDER_PROMPT =');
+		expect(source).toContain('prompt: CREDIT_QUOTE_PLACEHOLDER_PROMPT');
+		expect(source).not.toContain('quotePrompt: string');
+		expect(source).toContain('$: selectedModelConfig =');
+		expect(source).toContain('models.find((model) => model.isDefault) ?? models[0] ?? null');
+		expect(source).toContain('buildImageQuoteInput(\n\t\tselectedAspectRatio,');
+		expect(source).toContain('\n\t\treferenceImages\n\t)');
+		expect(source).toContain('$: if (loaded && quoteInput) {');
+	});
+
+	test('uses a generic localized error instead of stringifying submission API errors', () => {
+		const submitHandlerStart = source.indexOf('const submitHandler = async () => {');
+		const submitHandlerEnd = source.indexOf('\n\tonMount', submitHandlerStart);
+		const submitHandler = source.slice(submitHandlerStart, submitHandlerEnd);
+
+		expect(submitHandler).toContain('toast.error(imageGenerationErrorMessage(error))');
+		expect(submitHandler).not.toContain('toast.error(`${error}`)');
+	});
+
+	test('places the credit quote directly before the submit button on the right', () => {
+		const toolbarStart = source.indexOf(
+			'<div class="mt-2 flex h-8 items-center justify-between gap-2">'
+		);
+		const toolbarEnd = source.indexOf('</form>', toolbarStart);
+		const toolbar = source.slice(toolbarStart, toolbarEnd);
+
+		expect(toolbar.indexOf('<ImageCreditQuoteBadge')).toBeGreaterThan(
+			toolbar.indexOf('bind:this={imageOptionsElement}')
+		);
+		expect(toolbar.indexOf('<ImageCreditQuoteBadge')).toBeLessThan(
+			toolbar.indexOf('type="submit"')
+		);
+	});
+
+	test('does not render loading text while the credit quote is pending', () => {
+		const badgeSource = readFileSync(
+			fileURLToPath(new URL('../credits/ImageCreditQuoteBadge.svelte', import.meta.url)),
+			'utf-8'
+		);
+
+		expect(badgeSource).not.toContain("$i18n.t('credits.common.loading')");
+	});
 });

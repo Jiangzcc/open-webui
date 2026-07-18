@@ -309,6 +309,8 @@ dist
 # cypress artifacts
 cypress/videos
 cypress/screenshots
+**/__pycache__/
+*.py[cod]
 .vscode/settings.json
 .cptr
 .gitignore
@@ -317,3 +319,5 @@ progress.md
 task_plan.md
 .playwright-mcp
 .claude
+.superpowers
+.codegraph
