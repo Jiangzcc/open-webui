@@ -9,6 +9,7 @@ from open_webui.utils.images.fal_models import (
     FAL_DEFAULT_IMAGE_EDIT_MODEL,
     FAL_DEFAULT_IMAGE_MODEL,
     FAL_IMAGE_MODELS,
+    internal_fal_image_model_id,
 )
 from open_webui.utils.session_pool import get_session
 
@@ -209,9 +210,10 @@ def get_fal_image_models() -> list[dict[str, Any]]:
 
 
 def get_mock_fal_image_result(model: str | None) -> dict[str, Any] | None:
-    normalized_model = _normalize_model_id(model)
-    if normalized_model not in FAL_MOCK_MODELS:
-        return None
+    # 暂时注释，所有模型都先使用 Mock 数据
+    # normalized_model = _normalize_model_id(model)
+    # if normalized_model not in FAL_MOCK_MODELS:
+    #     return None
 
     count = random.randint(*FAL_MOCK_IMAGE_COUNT_RANGE)
     urls = random.sample(FAL_MOCK_IMAGE_URLS, k=count)
@@ -240,6 +242,10 @@ def get_fal_generation_model(model: str | None) -> str:
     if not normalized_model:
         return FAL_DEFAULT_IMAGE_MODEL
 
+    internal_model = internal_fal_image_model_id(normalized_model)
+    if internal_model is not None:
+        normalized_model = internal_model
+
     model_info = _get_fal_model_info(normalized_model)
     if model_info and model_info.get('task') == 'image-to-image':
         return model_info.get('generation_model') or FAL_DEFAULT_IMAGE_MODEL
@@ -251,6 +257,10 @@ def get_fal_edit_model(model: str | None) -> str:
     normalized_model = _normalize_model_id(model)
     if not normalized_model:
         return FAL_DEFAULT_IMAGE_EDIT_MODEL
+
+    internal_model = internal_fal_image_model_id(normalized_model)
+    if internal_model is not None:
+        normalized_model = internal_model
 
     model_info = _get_fal_model_info(normalized_model)
     if model_info and model_info.get('task') == 'image-to-image':

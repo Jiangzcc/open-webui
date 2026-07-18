@@ -54,6 +54,7 @@ from open_webui.utils.images.fal import (
     get_mock_fal_image_result,
     run_fal_queue,
 )
+from open_webui.utils.images.fal_models import public_fal_image_models
 from open_webui.utils.session_pool import get_session
 from PIL import Image, ImageOps
 from pydantic import BaseModel
@@ -403,6 +404,8 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
             ]
         elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
             default_model = image_config.IMAGE_GENERATION_MODEL or FAL_DEFAULT_IMAGE_MODEL
+            if user.role != 'admin':
+                return public_fal_image_models(default_model)
             return [{**model, 'is_default': model['id'] == default_model} for model in get_fal_image_models()]
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             # TODO - get models from comfyui

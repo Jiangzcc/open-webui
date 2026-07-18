@@ -1,10 +1,29 @@
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from .router_test_support import AuthenticatedUser
+
+
+def _stub_openai_image_config(monkeypatch, credits_router) -> None:
+    monkeypatch.setattr(
+        credits_router.prepare_generation_call.__globals__['compat'],
+        'get_runtime_image_config',
+        AsyncMock(
+            return_value=SimpleNamespace(
+                IMAGE_GENERATION_ENGINE='openai',
+                IMAGE_GENERATION_MODEL='model-a',
+                IMAGE_EDIT_ENGINE='openai',
+                IMAGE_EDIT_MODEL='model-a',
+                IMAGE_SIZE='1024x1024',
+                IMAGE_EDIT_SIZE='512x512',
+            )
+        ),
+    )
 
 
 def test_image_quote_request_accepts_one_remote_reference() -> None:
@@ -503,6 +522,7 @@ def test_quote_returns_incomplete_price_state(monkeypatch) -> None:
     monkeypatch.setattr(credits_router, 'get_balance_if_exists', balance)
     monkeypatch.setattr(credits_router, 'get_enabled_price', configured_price)
     monkeypatch.setattr(credits_router, 'compute_price', incomplete)
+    _stub_openai_image_config(monkeypatch, credits_router)
 
     result = __import__('asyncio').run(
         credits_router.quote_image(
@@ -530,6 +550,7 @@ def test_quote_returns_not_configured_state(monkeypatch) -> None:
 
     monkeypatch.setattr(credits_router, 'get_balance_if_exists', balance)
     monkeypatch.setattr(credits_router, 'get_enabled_price', no_price)
+    _stub_openai_image_config(monkeypatch, credits_router)
 
     result = __import__('asyncio').run(
         credits_router.quote_image(
@@ -579,6 +600,7 @@ def test_quote_does_not_create_an_account(monkeypatch) -> None:
 
     monkeypatch.setattr(credits_router, 'get_balance_if_exists', no_account_creation)
     monkeypatch.setattr(credits_router, 'get_enabled_price', configured_price)
+    _stub_openai_image_config(monkeypatch, credits_router)
 
     async def compute(_price, _dimensions):
         raise AssertionError('compute_price must remain synchronous')

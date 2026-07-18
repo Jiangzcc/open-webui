@@ -484,3 +484,78 @@ FAL_IMAGE_MODELS: list[dict[str, Any]] = [
         generation_model='xai/grok-imagine-image/quality/text-to-image',
     ),
 ]
+
+
+_FAL_INTERNAL_TO_PUBLIC_ID = {
+    'fal-ai/z-image/turbo': 'z-image-turbo',
+    'fal-ai/nano-banana': 'nano-banana',
+    'fal-ai/nano-banana/edit': 'nano-banana/edit',
+    'fal-ai/nano-banana-pro': 'nano-banana-pro',
+    'fal-ai/nano-banana-pro/edit': 'nano-banana-pro/edit',
+    'fal-ai/nano-banana-2': 'nano-banana-2',
+    'fal-ai/nano-banana-2/edit': 'nano-banana-2/edit',
+    'google/nano-banana-lite': 'nano-banana-lite',
+    'google/nano-banana-lite/edit': 'nano-banana-lite/edit',
+    'google/nano-banana-2-lite': 'nano-banana-2-lite',
+    'openai/gpt-image-2': 'gpt-image-2',
+    'openai/gpt-image-2/edit': 'gpt-image-2/edit',
+    'fal-ai/gpt-image-1.5': 'gpt-image-1.5',
+    'fal-ai/gpt-image-1.5/edit': 'gpt-image-1.5/edit',
+    'fal-ai/gpt-image-1-mini': 'gpt-image-1-mini',
+    'fal-ai/gpt-image-1-mini/edit': 'gpt-image-1-mini/edit',
+    'fal-ai/gpt-image-1/text-to-image': 'gpt-image-1',
+    'fal-ai/gpt-image-1/edit-image': 'gpt-image-1/edit-image',
+    'xai/grok-imagine-image': 'grok-imagine-image',
+    'xai/grok-imagine-image/edit': 'grok-imagine-image/edit',
+    'xai/grok-imagine-image/quality/text-to-image': 'grok-imagine-image-pro',
+    'xai/grok-imagine-image/quality/edit': 'grok-imagine-image-pro/edit',
+}
+_FAL_PUBLIC_TO_INTERNAL_ID = {public_id: internal_id for internal_id, public_id in _FAL_INTERNAL_TO_PUBLIC_ID.items()}
+_FAL_PUBLIC_MODEL_FIELDS = {
+    'id',
+    'name',
+    'task',
+    'generation_model',
+    'edit_model',
+    'is_default',
+    'image_counts',
+    'aspect_ratios',
+    'aspect_ratio_sizes',
+    'resolutions',
+    'default_aspect_ratio',
+    'default_resolution',
+    'output_formats',
+    'default_output_format',
+    'image_input_max_count',
+}
+
+
+def public_fal_image_model_id(internal_id: str | None) -> str | None:
+    if not isinstance(internal_id, str):
+        return None
+    return _FAL_INTERNAL_TO_PUBLIC_ID.get(internal_id.strip().strip('/'))
+
+
+def internal_fal_image_model_id(public_id: str | None) -> str | None:
+    if not isinstance(public_id, str):
+        return None
+    return _FAL_PUBLIC_TO_INTERNAL_ID.get(public_id.strip().strip('/'))
+
+
+def public_fal_image_models(default_model: str | None = None) -> list[dict[str, Any]]:
+    public_models: list[dict[str, Any]] = []
+    for model in FAL_IMAGE_MODELS:
+        public_id = public_fal_image_model_id(model['id'])
+        if public_id is None:
+            continue
+        public_model = {key: value for key, value in model.items() if key in _FAL_PUBLIC_MODEL_FIELDS}
+        public_model['id'] = public_id
+        for relation in ('generation_model', 'edit_model'):
+            public_relation = public_fal_image_model_id(model.get(relation))
+            if public_relation:
+                public_model[relation] = public_relation
+            else:
+                public_model.pop(relation, None)
+        public_model['is_default'] = model['id'] == default_model
+        public_models.append(public_model)
+    return public_models

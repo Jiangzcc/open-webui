@@ -303,10 +303,10 @@ async def test_fal_effective_model_changes_hash(monkeypatch) -> None:
         'get_runtime_image_config',
         AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='')),
     )
-    first = await adapter.prepare_generation_call(request(), image_input(model='fal-ai/one'), None, user())
-    second = await adapter.prepare_generation_call(request(), image_input(model='fal-ai/two'), None, user())
-    assert first.provider_input.model == first.billing.resource_id == 'fal-ai/one'
-    assert second.provider_input.model == second.billing.resource_id == 'fal-ai/two'
+    first = await adapter.prepare_generation_call(request(), image_input(model='z-image-turbo'), None, user())
+    second = await adapter.prepare_generation_call(request(), image_input(model='nano-banana-pro'), None, user())
+    assert first.provider_input.model == first.billing.resource_id == 'fal-ai/z-image/turbo'
+    assert second.provider_input.model == second.billing.resource_id == 'fal-ai/nano-banana-pro'
     assert first.billing.request_hash != second.billing.request_hash
 
 
@@ -430,7 +430,7 @@ def test_generation_provider_resolution(engine, configured, requested, resource)
     [
         ('openai', 'configured-edit', 'request-edit', 'request-edit'),
         ('gemini', 'gemini-edit:generateContent', None, 'gemini-edit'),
-        ('fal', 'fal-ai/flux/dev', None, 'fal-ai/flux/dev/edit'),
+        ('fal', 'fal-ai/nano-banana/edit', None, 'fal-ai/nano-banana/edit'),
         ('comfyui', 'edit-workflow', None, 'edit-workflow'),
     ],
 )

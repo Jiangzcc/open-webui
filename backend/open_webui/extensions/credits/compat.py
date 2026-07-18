@@ -364,6 +364,14 @@ def resolve_provider_model(
         raise _price_error('unsupported_image_engine', engine if isinstance(engine, str) else None)
 
     requested = _clean_model(image_input.model)
+    if engine == 'fal' and requested:
+        from open_webui.utils.images.fal_models import internal_fal_image_model_id
+
+        internal_requested = internal_fal_image_model_id(requested)
+        if internal_requested is None:
+            raise _price_error('invalid_image_model')
+        requested = internal_requested
+
     model = (
         _generation_model(engine, configured, requested)
         if action == 'text-to-image'

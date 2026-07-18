@@ -193,6 +193,41 @@ def _public_error_response(error: CreditError) -> JSONResponse:
     return JSONResponse(status_code=error.status_code, content=error.to_envelope())
 
 
+def _public_user_error_response(error: CreditError) -> JSONResponse:
+    return JSONResponse(status_code=error.status_code, content={**error.to_envelope(), 'context': {}})
+
+
+def _public_pricing_snapshot(snapshot: Mapping[str, object] | None) -> dict[str, object] | None:
+    if not isinstance(snapshot, Mapping):
+        return None
+    return {
+        key: value
+        for key, value in snapshot.items()
+        if key in {'factors', 'charged_credits', 'rounding'}
+    }
+
+
+def _public_user_ledger_item(item: object) -> dict[str, object]:
+    from open_webui.utils.images.fal_models import public_fal_image_model_id
+
+    serialized = item.model_dump(mode='json') if hasattr(item, 'model_dump') else dict(item)
+    resource_id = serialized.get('resource_id')
+    public_resource_id = public_fal_image_model_id(resource_id) if isinstance(resource_id, str) else None
+    serialized['resource_id'] = public_resource_id
+    serialized['pricing_snapshot'] = _public_pricing_snapshot(serialized.get('pricing_snapshot'))
+    serialized['metadata_snapshot'] = None
+    return serialized
+
+
+def _public_user_ledger_page(page: object) -> dict[str, object]:
+    if not hasattr(page, 'items'):
+        return page.model_dump()
+    return {
+        'items': [_public_user_ledger_item(item) for item in page.items],
+        'next_cursor': page.next_cursor.model_dump(mode='json') if page.next_cursor else None,
+    }
+
+
 def _unexpected_error_response(error: Exception) -> JSONResponse:
     correlation_id = str(uuid4())
     log.error(
@@ -404,7 +439,7 @@ async def get_image_credit_quote(
     try:
         return await quote_image(session, snapshot, payload)
     except CreditError as error:
-        return _public_error_response(error)
+        return _public_user_error_response(error)
     except Exception as error:
         return _unexpected_error_response(error)
 
@@ -417,7 +452,7 @@ async def get_my_credits(
     try:
         return {'balance': await get_balance(session, _user_snapshot(user))}
     except CreditError as error:
-        return _public_error_response(error)
+        return _public_user_error_response(error)
     except Exception as error:
         return _unexpected_error_response(error)
 
@@ -432,10 +467,10 @@ async def get_my_credit_ledger(
     try:
         page = await list_user_ledger(session, _user_snapshot(user).id, query)
     except CreditError as error:
-        return _public_error_response(error)
+        return _public_user_error_response(error)
     except Exception as error:
         return _unexpected_error_response(error)
-    return page.model_dump()
+    return _public_user_ledger_page(page)
 
 
 @router.get('/admin/ledger')
