@@ -9,7 +9,7 @@ from open_webui.utils.images.fal_models import (
     FAL_DEFAULT_IMAGE_EDIT_MODEL,
     FAL_DEFAULT_IMAGE_MODEL,
     FAL_IMAGE_MODELS,
-    internal_fal_image_model_id,
+    normalize_fal_image_model_id,
 )
 from open_webui.utils.session_pool import get_session
 
@@ -242,7 +242,7 @@ def get_fal_generation_model(model: str | None) -> str:
     if not normalized_model:
         return FAL_DEFAULT_IMAGE_MODEL
 
-    internal_model = internal_fal_image_model_id(normalized_model)
+    internal_model = normalize_fal_image_model_id(normalized_model)
     if internal_model is not None:
         normalized_model = internal_model
 
@@ -258,7 +258,7 @@ def get_fal_edit_model(model: str | None) -> str:
     if not normalized_model:
         return FAL_DEFAULT_IMAGE_EDIT_MODEL
 
-    internal_model = internal_fal_image_model_id(normalized_model)
+    internal_model = normalize_fal_image_model_id(normalized_model)
     if internal_model is not None:
         normalized_model = internal_model
 

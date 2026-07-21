@@ -469,6 +469,58 @@ def test_provider_resolution_fails_closed(action, config_overrides, reason) -> N
     assert_credit_error(exc, 'price_rule_incomplete', reason)
 
 
+@pytest.mark.parametrize(
+    ('requested', 'expected_resource'),
+    [
+        ('fal-ai/z-image/turbo', 'fal-ai/z-image/turbo'),
+        ('z-image-turbo', 'fal-ai/z-image/turbo'),
+        ('fal-ai/nano-banana-pro', 'fal-ai/nano-banana-pro'),
+        ('nano-banana-pro', 'fal-ai/nano-banana-pro'),
+    ],
+)
+def test_fal_generation_accepts_both_public_alias_and_internal_id(requested, expected_resource) -> None:
+    compat, _ = modules()
+    resolved = compat.resolve_provider_model(
+        config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL=''),
+        image_input(model=requested),
+        'text-to-image',
+    )
+    assert resolved.resource_id == expected_resource
+    assert resolved.transport_model == expected_resource
+
+
+@pytest.mark.parametrize(
+    ('requested', 'expected_resource'),
+    [
+        ('fal-ai/nano-banana/edit', 'fal-ai/nano-banana/edit'),
+        ('nano-banana/edit', 'fal-ai/nano-banana/edit'),
+        ('fal-ai/nano-banana-pro/edit', 'fal-ai/nano-banana-pro/edit'),
+        ('nano-banana-pro/edit', 'fal-ai/nano-banana-pro/edit'),
+    ],
+)
+def test_fal_edit_accepts_both_public_alias_and_internal_id(requested, expected_resource) -> None:
+    compat, _ = modules()
+    resolved = compat.resolve_provider_model(
+        config(IMAGE_EDIT_ENGINE='fal', IMAGE_EDIT_MODEL=''),
+        image_input(model=requested),
+        'image-to-image',
+    )
+    assert resolved.resource_id == expected_resource
+    assert resolved.transport_model == expected_resource
+
+
+@pytest.mark.parametrize('requested', ['fal-ai/not-a-real-model', 'made-up-public-id', 'fal-ai/'])
+def test_fal_generation_rejects_truly_unknown_model_id(requested) -> None:
+    compat, _ = modules()
+    with pytest.raises(CreditError) as exc:
+        compat.resolve_provider_model(
+            config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL=''),
+            image_input(model=requested),
+            'text-to-image',
+        )
+    assert_credit_error(exc, 'price_rule_incomplete', 'invalid_image_model')
+
+
 def test_gemini_transport_suffix_is_derived_once() -> None:
     compat, _ = modules()
     resolved = compat.resolve_provider_model(

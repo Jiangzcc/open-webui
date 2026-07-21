@@ -3,6 +3,9 @@ import { defineConfig } from 'vite';
 
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
+const DEV_BACKEND_URL = process.env.VITE_DEV_BACKEND_URL || 'http://localhost:9000';
+const DEV_PROXY_PATHS = ['/api', '/ollama', '/openai', '/health', '/oauth', '/ws'];
+
 export default defineConfig({
 	plugins: [
 		sveltekit(),
@@ -24,6 +27,16 @@ export default defineConfig({
 		sourcemap: true
 	},
 	server: {
+		proxy: Object.fromEntries(
+			DEV_PROXY_PATHS.map((path) => [
+				path,
+				{
+					target: DEV_BACKEND_URL,
+					changeOrigin: true,
+					ws: true
+				}
+			])
+		),
 		watch: {
 			ignored: ['**/venv/**', '**/.venv/**', '**/backend/**']
 		}

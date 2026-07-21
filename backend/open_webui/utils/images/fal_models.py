@@ -542,6 +542,20 @@ def internal_fal_image_model_id(public_id: str | None) -> str | None:
     return _FAL_PUBLIC_TO_INTERNAL_ID.get(public_id.strip().strip('/'))
 
 
+def normalize_fal_image_model_id(candidate: str | None) -> str | None:
+    if not isinstance(candidate, str):
+        return None
+    normalized = candidate.strip().strip('/')
+    if not normalized:
+        return None
+    mapped = _FAL_PUBLIC_TO_INTERNAL_ID.get(normalized)
+    if mapped is not None:
+        return mapped
+    if normalized in _FAL_INTERNAL_TO_PUBLIC_ID:
+        return normalized
+    return None
+
+
 def public_fal_image_models(default_model: str | None = None) -> list[dict[str, Any]]:
     public_models: list[dict[str, Any]] = []
     for model in FAL_IMAGE_MODELS:
