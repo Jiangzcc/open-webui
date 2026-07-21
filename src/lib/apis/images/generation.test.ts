@@ -51,6 +51,41 @@ describe('image generation API', () => {
 		);
 	});
 
+	test('sends selected sizing fields in the generation request body', async () => {
+		fetchMock.mockResolvedValue(
+			new Response(JSON.stringify([{ url: '/generated.png' }]), { status: 200 })
+		);
+
+		await createImageGeneration('token', {
+			prompt: 'paint a landscape',
+			model: 'nano-banana-pro',
+			aspect_ratio: '16:9',
+			resolution: '2K'
+		});
+
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+			aspect_ratio: '16:9',
+			resolution: '2K'
+		});
+	});
+
+	test('sends selected sizing fields in the edit request body', async () => {
+		fetchMock.mockResolvedValue(
+			new Response(JSON.stringify([{ url: '/edited.png' }]), { status: 200 })
+		);
+
+		await editImageGeneration('token', {
+			prompt: 'make it blue',
+			image: 'data:image/png;base64,abc',
+			model: 'z-image-turbo/edit',
+			size: '1536x864'
+		});
+
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+			size: '1536x864'
+		});
+	});
+
 	test('does not expose structured server errors', async () => {
 		fetchMock.mockResolvedValue(
 			new Response(JSON.stringify({ detail: { database: 'internal details' } }), { status: 500 })

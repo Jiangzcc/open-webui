@@ -632,6 +632,7 @@ export const buildImageGenerationPayload = ({
 			model.sizeField !== undefined ||
 			model.supportsAspectRatioField !== undefined);
 	const supportsAspectRatio = capability.aspectRatios.length > 0;
+	const hasAspectRatioSizeMap = Object.keys(capability.aspectRatioSizes).length > 0;
 	const outputSize =
 		trimmedSize ??
 		(supportsAspectRatio ? getImageSizeForAspectRatio(aspectRatio, model) : undefined);
@@ -642,13 +643,18 @@ export const buildImageGenerationPayload = ({
 	}
 	if (
 		outputSize &&
-		(trimmedSize || !usesExplicitPayloadCapability || capability.sizeField === 'image_size')
+		(trimmedSize ||
+			!usesExplicitPayloadCapability ||
+			capability.sizeField === 'image_size' ||
+			hasAspectRatioSizeMap)
 	) {
 		payload.size = outputSize;
 	}
 	if (
 		supportsAspectRatio &&
-		(!usesExplicitPayloadCapability || capability.supportsAspectRatioField)
+		(!usesExplicitPayloadCapability ||
+			capability.supportsAspectRatioField ||
+			(!capability.sizeField && !hasAspectRatioSizeMap))
 	) {
 		payload.aspect_ratio = getApiAspectRatio(aspectRatio);
 	}

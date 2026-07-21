@@ -18,17 +18,17 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
     serialized = json.dumps(public)
     assert 'fal-ai/' not in serialized
     assert all(not item['id'].startswith(('fal-ai/', 'google/', 'openai/', 'xai/')) for item in public)
+    assert all(not item.get('edit_model', '').startswith(('fal-ai/', 'google/', 'openai/', 'xai/')) for item in public)
     assert all(
-        not item.get('edit_model', '').startswith(('fal-ai/', 'google/', 'openai/', 'xai/')) for item in public
-    )
-    assert all(
-        not item.get('generation_model', '').startswith(('fal-ai/', 'google/', 'openai/', 'xai/'))
-        for item in public
+        not item.get('generation_model', '').startswith(('fal-ai/', 'google/', 'openai/', 'xai/')) for item in public
     )
     assert sum(item.get('is_default') is True for item in public) == 1
 
     by_id = {item['id']: item for item in public}
     assert by_id['z-image-turbo']['is_default'] is True
+    assert by_id['z-image-turbo']['aspect_ratio_sizes']['16:9'] == '1536x864'
+    assert by_id['nano-banana-pro']['aspect_ratios']
+    assert by_id['nano-banana-pro']['resolutions'] == ['1K', '2K', '4K']
     assert by_id['nano-banana']['edit_model'] == 'nano-banana/edit'
     assert by_id['nano-banana/edit']['generation_model'] == 'nano-banana'
     assert 'internal_model' not in serialized

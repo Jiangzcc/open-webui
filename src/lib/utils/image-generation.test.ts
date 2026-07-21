@@ -272,6 +272,59 @@ describe('image generation utils', () => {
 		});
 	});
 
+	test('sends selected aspect ratio and resolution from the public model catalog', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'nano-banana-pro',
+				aspect_ratios: ['auto', '1:1', '16:9'],
+				resolutions: ['1K', '2K', '4K'],
+				default_resolution: '1K'
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'landscape',
+				model,
+				aspectRatio: '16:9',
+				resolution: '2K'
+			})
+		).toEqual({
+			prompt: 'landscape',
+			model: 'nano-banana-pro',
+			aspect_ratio: '16:9',
+			resolution: '2K',
+			output_format: 'png'
+		});
+	});
+
+	test('sends the mapped size selected through a public custom-size model', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'z-image-turbo',
+				aspect_ratios: ['1:1', '16:9'],
+				aspect_ratio_sizes: {
+					'1:1': '1024x1024',
+					'16:9': '1536x864'
+				},
+				resolutions: []
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'landscape',
+				model,
+				aspectRatio: '16:9'
+			})
+		).toEqual({
+			prompt: 'landscape',
+			model: 'z-image-turbo',
+			size: '1536x864',
+			output_format: 'png'
+		});
+	});
+
 	test('includes explicit resolution with aspect ratio metadata', () => {
 		expect(
 			buildImageGenerationPayload({
@@ -335,6 +388,27 @@ describe('image generation utils', () => {
 			aspect_ratio: '1:1',
 			output_format: 'png',
 			image: 'data:image/png;base64,aaa'
+		});
+
+		const [publicEditModel] = normalizeImageGenerationModels([
+			{
+				id: 'nano-banana-pro/edit',
+				aspect_ratios: ['auto', '1:1', '16:9'],
+				resolutions: ['1K', '2K', '4K']
+			}
+		]);
+		expect(
+			buildImageEditPayload({
+				prompt: 'turn it into ink art',
+				referenceImages: ['data:image/png;base64,aaa'],
+				model: publicEditModel,
+				aspectRatio: '16:9',
+				resolution: '4K'
+			})
+		).toMatchObject({
+			model: 'nano-banana-pro/edit',
+			aspect_ratio: '16:9',
+			resolution: '4K'
 		});
 
 		expect(
