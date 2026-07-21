@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
+	import type { Writable } from 'svelte/store';
+	import type { i18n as I18n } from 'i18next';
 
 	import {
 		createCreditPrice,
@@ -12,9 +14,18 @@
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import { validatePriceForm, type FormErrors, type PriceForm } from './admin-form-state';
+	import {
+		addExactMapEntry,
+		hasBlankExactMapEntry,
+		removeExactMapEntry,
+		updateExactMapEntryKey,
+		updateExactMapEntryMultiplier,
+		validatePriceForm,
+		type FormErrors,
+		type PriceForm
+	} from './admin-form-state';
 
-	const i18n = getContext('i18n');
+	const i18n = getContext<Writable<I18n>>('i18n');
 
 	const emptyForm = (): PriceForm => ({
 		serviceType: 'image',
@@ -88,6 +99,13 @@
 			dimensions: form.dimensions.map((rule, ruleIndex) =>
 				ruleIndex === index ? { ...rule, ...updates } : rule
 			)
+		};
+	};
+
+	const replaceRule = (index: number, nextRule: PriceRule) => {
+		form = {
+			...form,
+			dimensions: form.dimensions.map((rule, ruleIndex) => (ruleIndex === index ? nextRule : rule))
 		};
 	};
 
@@ -331,30 +349,94 @@
 							>
 						</div>
 						{#if rule.kind === 'exact_map'}
-							<div class="grid grid-cols-2 gap-2">
-								<input
-									class="rounded-lg border border-gray-200 bg-transparent px-2 py-1 text-xs outline-hidden dark:border-gray-700"
-									value={Object.keys(rule.values as Record<string, string>)[0] ?? ''}
-									on:input={(event) =>
-										updateRule(index, {
-											values: {
-												[event.currentTarget.value]:
-													Object.values(rule.values as Record<string, string>)[0] ?? ''
-											}
-										})}
-									placeholder={$i18n.t('credits.common.value')}
-								/><input
-									class="rounded-lg border border-gray-200 bg-transparent px-2 py-1 text-xs outline-hidden dark:border-gray-700"
-									value={Object.values(rule.values as Record<string, string>)[0] ?? ''}
-									on:input={(event) =>
-										updateRule(index, {
-											values: {
-												[Object.keys(rule.values as Record<string, string>)[0] ?? 'default']:
-													event.currentTarget.value
-											}
-										})}
-									placeholder={$i18n.t('credits.common.multiplier')}
-								/>
+							<div class="space-y-2">
+								<div
+									class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 px-1 text-[0.7rem] text-gray-500"
+								>
+									<span>{$i18n.t('credits.common.value')}</span>
+									<span>{$i18n.t('credits.common.multiplier')}</span>
+									<span class="sr-only">{$i18n.t('credits.common.actions')}</span>
+								</div>
+								{#each Object.entries(rule.values as Record<string, string>) as [entryKey, multiplier]}
+									<div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+										<input
+											aria-label={$i18n.t('credits.common.value')}
+											class="min-w-0 rounded-lg border border-gray-200 bg-transparent px-2 py-1 text-xs outline-hidden disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700"
+											disabled={entryKey === 'default'}
+											value={entryKey}
+											on:input={(event) =>
+												replaceRule(
+													index,
+													updateExactMapEntryKey(
+														rule as PriceRule & {
+															kind: 'exact_map';
+															values: Record<string, string>;
+														},
+														entryKey,
+														event.currentTarget.value
+													)
+												)}
+											placeholder={$i18n.t('credits.common.value')}
+										/><input
+											aria-label={$i18n.t('credits.common.multiplier')}
+											class="min-w-0 rounded-lg border border-gray-200 bg-transparent px-2 py-1 text-xs outline-hidden dark:border-gray-700"
+											inputmode="decimal"
+											value={multiplier}
+											on:input={(event) =>
+												replaceRule(
+													index,
+													updateExactMapEntryMultiplier(
+														rule as PriceRule & {
+															kind: 'exact_map';
+															values: Record<string, string>;
+														},
+														entryKey,
+														event.currentTarget.value
+													)
+												)}
+											placeholder={$i18n.t('credits.common.multiplier')}
+										/>{#if entryKey === 'default'}
+											<span class="w-10" aria-hidden="true"></span>
+										{:else}
+											<button
+												aria-label={$i18n.t('credits.common.remove')}
+												class="w-10 text-xs text-red-600"
+												on:click={() =>
+													replaceRule(
+														index,
+														removeExactMapEntry(
+															rule as PriceRule & {
+																kind: 'exact_map';
+																values: Record<string, string>;
+															},
+															entryKey
+														)
+													)}
+												type="button">{$i18n.t('credits.common.remove')}</button
+											>
+										{/if}
+									</div>
+								{/each}
+								<button
+									class="text-xs font-medium text-gray-600 underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300"
+									disabled={hasBlankExactMapEntry(
+										rule as PriceRule & {
+											kind: 'exact_map';
+											values: Record<string, string>;
+										}
+									)}
+									on:click={() =>
+										replaceRule(
+											index,
+											addExactMapEntry(
+												rule as PriceRule & {
+													kind: 'exact_map';
+													values: Record<string, string>;
+												}
+											)
+										)}
+									type="button">{$i18n.t('credits.admin.pricing.addMapping')}</button
+								>
 							</div>
 						{:else}
 							<div class="text-xs text-gray-500">

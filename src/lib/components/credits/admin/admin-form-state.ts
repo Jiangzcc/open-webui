@@ -17,6 +17,11 @@ export type PriceForm = {
 
 export type FormErrors = Partial<Record<keyof AdjustmentForm | keyof PriceForm, string>>;
 
+type ExactMapRule = PriceRule & {
+	kind: 'exact_map';
+	values: Record<string, string>;
+};
+
 export const creditValidationKeys = {
 	positiveWholeNumber: 'credits.validation.positiveWholeNumber',
 	explainAdjustment: 'credits.validation.explainAdjustment',
@@ -73,16 +78,69 @@ export const toCreditAdjustmentInput = (form: AdjustmentForm): CreditAdjustmentI
 	return input;
 };
 
+export const hasBlankExactMapEntry = (rule: ExactMapRule): boolean =>
+	Object.keys(rule.values).some((key) => !key.trim());
+
+export const addExactMapEntry = (rule: ExactMapRule): ExactMapRule =>
+	hasBlankExactMapEntry(rule) ? rule : { ...rule, values: { ...rule.values, '': '1' } };
+
+export const updateExactMapEntryKey = (
+	rule: ExactMapRule,
+	currentKey: string,
+	nextKey: string
+): ExactMapRule => {
+	const normalizedNextKey = nextKey.trim();
+	const normalizedKeyExists = Object.keys(rule.values).some(
+		(key) => key !== currentKey && key.trim() === normalizedNextKey
+	);
+	if (
+		currentKey === 'default' ||
+		currentKey === nextKey ||
+		!Object.prototype.hasOwnProperty.call(rule.values, currentKey) ||
+		normalizedKeyExists
+	) {
+		return rule;
+	}
+
+	const values = Object.fromEntries(
+		Object.entries(rule.values).map(([key, multiplier]) =>
+			key === currentKey ? [nextKey, multiplier] : [key, multiplier]
+		)
+	);
+	return { ...rule, values };
+};
+
+export const updateExactMapEntryMultiplier = (
+	rule: ExactMapRule,
+	key: string,
+	multiplier: string
+): ExactMapRule =>
+	Object.prototype.hasOwnProperty.call(rule.values, key)
+		? { ...rule, values: { ...rule.values, [key]: multiplier } }
+		: rule;
+
+export const removeExactMapEntry = (rule: ExactMapRule, key: string): ExactMapRule => {
+	if (key === 'default' || !Object.prototype.hasOwnProperty.call(rule.values, key)) return rule;
+	return {
+		...rule,
+		values: Object.fromEntries(Object.entries(rule.values).filter(([entryKey]) => entryKey !== key))
+	};
+};
+
 const isValidRule = (rule: PriceRule) => {
 	if (!rule.key.trim()) {
 		return false;
 	}
 
 	if (rule.kind === 'exact_map') {
+		const valueKeys = isRecord(rule.values) ? Object.keys(rule.values) : [];
+		const normalizedValueKeys = valueKeys.map((key) => key.trim());
 		return (
 			isRecord(rule.values) &&
 			Object.prototype.hasOwnProperty.call(rule.values, 'default') &&
-			Object.keys(rule.values).length > 0 &&
+			valueKeys.length > 0 &&
+			normalizedValueKeys.every(Boolean) &&
+			new Set(normalizedValueKeys).size === normalizedValueKeys.length &&
 			Object.values(rule.values).every(isPositiveDecimal)
 		);
 	}

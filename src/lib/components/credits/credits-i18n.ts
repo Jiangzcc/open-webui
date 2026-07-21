@@ -132,6 +132,7 @@ const zh = {
 				serviceType: '服务类型',
 				resourceId: '资源 ID',
 				addDimension: '添加维度',
+				addMapping: '添加映射',
 				dimensionKey: '维度键',
 				quantityDescription: '按请求的正数数量乘以价格。',
 				ruleKinds: {
@@ -303,6 +304,7 @@ const en = {
 				serviceType: 'Service type',
 				resourceId: 'Resource ID',
 				addDimension: 'Add dimension',
+				addMapping: 'Add mapping',
 				dimensionKey: 'Dimension key',
 				quantityDescription: 'Multiplies price by the requested positive quantity.',
 				ruleKinds: {

@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+	addExactMapEntry,
 	createAdjustmentForm,
+	removeExactMapEntry,
 	toCreditAdjustmentInput,
+	updateExactMapEntryKey,
+	updateExactMapEntryMultiplier,
 	validateAdjustmentForm,
 	validatePriceForm
 } from './admin-form-state';
@@ -45,6 +49,80 @@ describe('admin credit form state', () => {
 				note: 'not submitted'
 			})
 		).toEqual({ direction: 'increase', amount: 8, reason_code: 'promotion_gift' });
+	});
+
+	test('updates one exact-map multiplier without losing other mappings', () => {
+		const rule = {
+			key: 'aspect_ratio',
+			kind: 'exact_map' as const,
+			values: { default: '1', '1:1': '1', '16:9': '1.5' }
+		};
+
+		expect(updateExactMapEntryMultiplier(rule, '16:9', '2')).toEqual({
+			...rule,
+			values: { default: '1', '1:1': '1', '16:9': '2' }
+		});
+		expect(rule.values).toEqual({ default: '1', '1:1': '1', '16:9': '1.5' });
+	});
+
+	test('renames one exact-map entry without mutating or overwriting mappings', () => {
+		const rule = {
+			key: 'aspect_ratio',
+			kind: 'exact_map' as const,
+			values: { default: '1', '1:1': '1', '16:9': '1.5' }
+		};
+		const originalValues = rule.values;
+
+		expect(updateExactMapEntryKey(rule, '1:1', '4:3')).toEqual({
+			...rule,
+			values: { default: '1', '4:3': '1', '16:9': '1.5' }
+		});
+		expect(updateExactMapEntryKey(rule, '1:1', '16:9')).toBe(rule);
+		expect(updateExactMapEntryKey(rule, '1:1', ' 16:9 ')).toBe(rule);
+		expect(rule.values).toBe(originalValues);
+		expect(rule.values).toEqual({ default: '1', '1:1': '1', '16:9': '1.5' });
+	});
+
+	test('adds and removes exact-map entries while preserving the default mapping', () => {
+		const rule = {
+			key: 'aspect_ratio',
+			kind: 'exact_map' as const,
+			values: { default: '1', '1:1': '1' }
+		};
+		const added = addExactMapEntry(rule);
+
+		expect(added).toEqual({ ...rule, values: { default: '1', '1:1': '1', '': '1' } });
+		expect(addExactMapEntry(added)).toBe(added);
+		const whitespaceEntry = { ...rule, values: { ...rule.values, '   ': '1' } };
+		expect(addExactMapEntry(whitespaceEntry)).toBe(whitespaceEntry);
+		expect(removeExactMapEntry(rule, '1:1')).toEqual({ ...rule, values: { default: '1' } });
+		expect(removeExactMapEntry(rule, 'default')).toBe(rule);
+		expect(rule.values).toEqual({ default: '1', '1:1': '1' });
+	});
+
+	test('rejects blank exact-map keys and invalid multipliers', () => {
+		const base = {
+			serviceType: 'image',
+			resourceId: 'model-a',
+			action: 'text-to-image',
+			basePrice: '10'
+		};
+
+		for (const values of [
+			{ default: '1', '': '1' },
+			{ default: '1', '   ': '1' },
+			{ default: '1', '16:9': '1', ' 16:9 ': '2' },
+			{ default: '1', '16:9': '' },
+			{ default: '1', '16:9': '0' },
+			{ default: '1', '16:9': '-1' }
+		]) {
+			expect(
+				validatePriceForm({
+					...base,
+					dimensions: [{ key: 'aspect_ratio', kind: 'exact_map', values }]
+				}).dimensions
+			).toBe('credits.validation.validMultipliers');
+		}
 	});
 
 	test('accepts multiple supported dimension rules together', () => {
