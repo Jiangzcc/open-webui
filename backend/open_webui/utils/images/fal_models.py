@@ -15,10 +15,15 @@ FAL_COMMON_IMAGE_ASPECT_RATIO_SIZES = {
     '3:2': '1536x1024',
     '2:3': '1024x1536',
 }
-FAL_COMMON_IMAGE_RATIOS = list(FAL_COMMON_IMAGE_ASPECT_RATIO_SIZES)
 FAL_OPENAI_GPT_IMAGE_2_EDIT_ASPECT_RATIO_SIZES = {
     'auto': 'auto',
-    **FAL_COMMON_IMAGE_ASPECT_RATIO_SIZES,
+    '1:1': '1024x1024',
+    '16:9': '1536x864',
+    '9:16': '864x1536',
+    '4:3': '1024x768',
+    '3:4': '768x1024',
+    '3:2': '1536x1024',
+    '2:3': '1024x1536',
 }
 FAL_OPENAI_GPT_IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536']
 FAL_OPENAI_GPT_IMAGE_15_SIZES = ['1024x1024', '1536x1024', '1024x1536']
@@ -160,21 +165,23 @@ def _custom_size_model(
 def _alibaba_model(
     id: str,
     name: str,
+    resolutions: list[str],
+    default_resolution: str,
 ) -> dict[str, Any]:
+    image_size_whitelist = {resolution: resolution for resolution in resolutions}
     return {
-        **_custom_size_model(
-            id,
-            name,
-            'alibaba',
-            'text-to-image',
-            FAL_COMMON_IMAGE_ASPECT_RATIO_SIZES,
-            '4:3',
-        ),
+        **_base_model(id, name, 'alibaba', 'text-to-image'),
+        'resolutions': list(resolutions),
+        'default_resolution': default_resolution,
+        'image_size_whitelist': image_size_whitelist,
+        'output_formats': FAL_OUTPUT_FORMATS,
+        'default_output_format': 'png',
+        'custom_size_field': 'image_size',
         'option_fields': [_option_field('acceleration', FAL_ALIBABA_ACCELERATION_OPTIONS, 'regular')],
         'boolean_fields': [
             _boolean_field('sync_mode'),
-            _boolean_field('enable_safety_checker', True),
-            _boolean_field('enable_prompt_expansion'),
+            _boolean_field('enable_safety_checker', False),
+            _boolean_field('enable_prompt_expansion', False),
         ],
         'integer_fields': [_integer_field('seed'), _integer_field('num_inference_steps', 'steps', 1, 8)],
     }
@@ -194,7 +201,7 @@ def _google_model(
     supports_thinking: bool = False,
     supports_web_search: bool = False,
 ) -> dict[str, Any]:
-    option_fields = [_option_field('safety_tolerance', FAL_GOOGLE_SAFETY_TOLERANCE_OPTIONS, '4')]
+    option_fields = [_option_field('safety_tolerance', FAL_GOOGLE_SAFETY_TOLERANCE_OPTIONS, '6')]
     if supports_thinking:
         option_fields.append(_option_field('thinking_level', FAL_GOOGLE_THINKING_LEVEL_OPTIONS))
 
@@ -281,6 +288,8 @@ FAL_IMAGE_MODELS: list[dict[str, Any]] = [
     _alibaba_model(
         'fal-ai/z-image/turbo',
         'Alibaba / Z Image Turbo',
+        ['1024x1024', '512x512', '1024x576', '576x1024', '1024x768', '768x1024'],
+        '1024x768',
     ),
     _google_model(
         'fal-ai/nano-banana',

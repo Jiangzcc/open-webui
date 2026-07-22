@@ -411,7 +411,9 @@ export const getImageModelCapability = (
 		? (explicit.aspectRatios ?? [])
 		: preset.aspectRatios?.length
 			? preset.aspectRatios
-			: DEFAULT_MODEL_CAPABILITY.aspectRatios;
+			: usesExplicitCapability
+				? []
+				: DEFAULT_MODEL_CAPABILITY.aspectRatios;
 	const resolutions = hasExplicitResolutions
 		? (explicit.resolutions ?? [])
 		: preset.resolutions?.length

@@ -301,7 +301,7 @@ describe('image generation utils', () => {
 	test('sends the mapped size selected through a public custom-size model', () => {
 		const [model] = normalizeImageGenerationModels([
 			{
-				id: 'z-image-turbo',
+				id: 'openai/gpt-image-2',
 				aspect_ratios: ['1:1', '16:9'],
 				aspect_ratio_sizes: {
 					'1:1': '1024x1024',
@@ -319,8 +319,31 @@ describe('image generation utils', () => {
 			})
 		).toEqual({
 			prompt: 'landscape',
-			model: 'z-image-turbo',
+			model: 'openai/gpt-image-2',
 			size: '1536x864',
+			output_format: 'png'
+		});
+	});
+
+	test('sends only the resolution for a resolution-driven model like z-image', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'z-image-turbo',
+				resolutions: ['1024x1024', '1024x576', '576x1024', '1024x768', '768x1024'],
+				default_resolution: '1024x768'
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'wide shot',
+				model,
+				resolution: '1024x576'
+			})
+		).toEqual({
+			prompt: 'wide shot',
+			model: 'z-image-turbo',
+			resolution: '1024x576',
 			output_format: 'png'
 		});
 	});

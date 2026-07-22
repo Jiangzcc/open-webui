@@ -25,8 +25,16 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
     assert sum(item.get('is_default') is True for item in public) == 1
 
     by_id = {item['id']: item for item in public}
-    assert by_id['z-image-turbo']['is_default'] is True
-    assert by_id['z-image-turbo']['aspect_ratio_sizes']['16:9'] == '1536x864'
+
+    # z-image exposes fixed pixel buckets directly as resolutions instead of routing
+    # through an aspect-ratio abstraction; neither aspect_ratios nor aspect_ratio_sizes
+    # should survive into the public catalog for this model.
+    z_image = by_id['z-image-turbo']
+    assert z_image['is_default'] is True
+    assert z_image['resolutions'] == ['1024x1024', '1024x576', '576x1024', '1024x768', '768x1024']
+    assert z_image.get('aspect_ratios') in ([], None)
+    assert 'aspect_ratio_sizes' not in z_image
+
     assert by_id['nano-banana-pro']['aspect_ratios']
     assert by_id['nano-banana-pro']['resolutions'] == ['1K', '2K', '4K']
     assert by_id['nano-banana']['edit_model'] == 'nano-banana/edit'

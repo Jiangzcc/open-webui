@@ -297,12 +297,16 @@ def build_fal_image_payload(form_data: Any, model: str | None, image_urls: list[
             model_info.get('aspect_ratios', []),
             model_info.get('default_aspect_ratio'),
         )
+        # Custom-size models carry their allowed pixel buckets either as a dedicated
+        # `image_size_whitelist` (preferred, kept out of the public catalog) or, for
+        # legacy aspect-ratio-driven models, as `aspect_ratio_sizes`.
+        image_size_whitelist = model_info.get('image_size_whitelist') or model_info.get('aspect_ratio_sizes')
         if model_info.get('custom_size_field'):
             _set_custom_image_size(
                 data,
                 model_info.get('custom_size_field'),
                 form_data,
-                model_info.get('aspect_ratio_sizes'),
+                image_size_whitelist,
             )
         else:
             _set_option(

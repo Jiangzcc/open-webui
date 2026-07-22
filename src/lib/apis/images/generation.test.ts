@@ -77,7 +77,7 @@ describe('image generation API', () => {
 		await editImageGeneration('token', {
 			prompt: 'make it blue',
 			image: 'data:image/png;base64,abc',
-			model: 'z-image-turbo/edit',
+			model: 'openai/gpt-image-2/edit',
 			size: '1536x864'
 		});
 
