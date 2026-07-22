@@ -37,6 +37,7 @@ export type ImageGenerationPayload = {
 	negative_prompt?: string;
 	aspect_ratio?: string;
 	resolution?: string;
+	quality?: string;
 	output_format?: string;
 	system_prompt?: string;
 };
@@ -72,6 +73,8 @@ export type ImageGenerationModel = {
 	supportsAspectRatioField?: boolean;
 	outputFormats?: string[];
 	defaultOutputFormat?: string;
+	qualityOptions?: string[];
+	defaultQuality?: string;
 };
 
 export type ImageModelCapability = {
@@ -83,6 +86,8 @@ export type ImageModelCapability = {
 	aspectRatioSizes: Partial<Record<ImageAspectRatio, string>>;
 	sizeField?: string;
 	supportsAspectRatioField?: boolean;
+	qualityOptions: string[];
+	defaultQuality?: string;
 };
 
 type ImagePayloadInput = {
@@ -91,6 +96,7 @@ type ImagePayloadInput = {
 	model?: ImageGenerationModel | string | null;
 	size?: string | null;
 	resolution?: string | null;
+	quality?: string | null;
 	n?: number | null;
 	steps?: number | null;
 	negative_prompt?: string | null;
@@ -160,7 +166,8 @@ const DEFAULT_MODEL_CAPABILITY: ImageModelCapability = {
 	resolutions: [],
 	imageCounts: [...DEFAULT_IMAGE_COUNT_OPTIONS],
 	defaultAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
-	aspectRatioSizes: DEFAULT_IMAGE_ASPECT_RATIO_SIZES
+	aspectRatioSizes: DEFAULT_IMAGE_ASPECT_RATIO_SIZES,
+	qualityOptions: []
 };
 
 const isPositiveInteger = (value?: number | null) => {
@@ -379,7 +386,9 @@ const getExplicitModelCapability = (model?: ImageGenerationModel | string | null
 		defaultResolution: model.defaultResolution,
 		aspectRatioSizes: model.aspectRatioSizes,
 		sizeField: model.sizeField,
-		supportsAspectRatioField: model.supportsAspectRatioField
+		supportsAspectRatioField: model.supportsAspectRatioField,
+		qualityOptions: model.qualityOptions,
+		defaultQuality: model.defaultQuality
 	};
 };
 
@@ -442,6 +451,8 @@ export const getImageModelCapability = (
 		(!usesExplicitCapability ? preset.aspectRatioSizes : undefined) ??
 		(!usesExplicitCapability ? DEFAULT_MODEL_CAPABILITY.aspectRatioSizes : {});
 
+	const qualityOptions = explicit.qualityOptions ?? [];
+
 	return {
 		aspectRatios,
 		resolutions,
@@ -450,7 +461,9 @@ export const getImageModelCapability = (
 		defaultResolution,
 		sizeField: explicit.sizeField,
 		supportsAspectRatioField: explicit.supportsAspectRatioField,
-		aspectRatioSizes
+		aspectRatioSizes,
+		qualityOptions,
+		defaultQuality: explicit.defaultQuality
 	};
 };
 
@@ -553,6 +566,14 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 		const aspectRatioSizes = normalizeAspectRatioSizeMap(
 			model.aspectRatioSizes ?? model.aspect_ratio_sizes
 		);
+		const qualityOptions = normalizeStringList(model.qualityOptions ?? model.quality_options);
+		const defaultQuality = trimOptional(
+			typeof model.defaultQuality === 'string'
+				? model.defaultQuality
+				: typeof model.default_quality === 'string'
+					? model.default_quality
+					: undefined
+		);
 
 		return [
 			{
@@ -573,7 +594,9 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 				...(sizeField && { sizeField }),
 				...(supportsAspectRatioField && { supportsAspectRatioField: true }),
 				...(outputFormats.length && { outputFormats }),
-				...(defaultOutputFormat && { defaultOutputFormat })
+				...(defaultOutputFormat && { defaultOutputFormat }),
+				...(qualityOptions.length && { qualityOptions }),
+				...(defaultQuality && { defaultQuality })
 			}
 		];
 	});
@@ -614,6 +637,7 @@ export const buildImageGenerationPayload = ({
 	model,
 	size,
 	resolution,
+	quality,
 	n,
 	steps,
 	negative_prompt
@@ -662,6 +686,10 @@ export const buildImageGenerationPayload = ({
 	}
 	if (trimmedResolution) {
 		payload.resolution = trimmedResolution;
+	}
+	const trimmedQuality = trimOptional(quality);
+	if (trimmedQuality && capability.qualityOptions.includes(trimmedQuality)) {
+		payload.quality = trimmedQuality;
 	}
 	payload.output_format = 'png';
 	if (isPositiveInteger(n)) {

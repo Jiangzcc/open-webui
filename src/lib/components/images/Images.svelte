@@ -67,6 +67,7 @@
 	let selectedAspectRatio: ImageAspectRatio = DEFAULT_IMAGE_ASPECT_RATIO;
 	let selectedModel = '';
 	let selectedResolution = '';
+	let selectedQuality = '';
 	let imageCount = 1;
 	let negativePrompt = '';
 	let steps: number | null = null;
@@ -96,6 +97,7 @@
 	$: aspectRatioOptions = selectedModelCapability.aspectRatios;
 	$: resolutionOptions = selectedModelCapability.resolutions;
 	$: imageCountOptions = selectedModelCapability.imageCounts;
+	$: qualityOptions = selectedModelCapability.qualityOptions;
 	$: hasImageSizingOptions = aspectRatioOptions.length > 0 || resolutionOptions.length > 0;
 	$: selectedImageSizeLabel = hasImageSizingOptions
 		? aspectRatioOptions.length > 0
@@ -112,6 +114,7 @@
 	$: quoteInput = buildImageQuoteInput(
 		selectedAspectRatio,
 		selectedResolution,
+		selectedQuality,
 		selectedModelConfig ?? selectedModel,
 		imageCount,
 		steps,
@@ -145,6 +148,12 @@
 	$: if (loaded && selectedResolution && !resolutionOptions.includes(selectedResolution)) {
 		selectedResolution = selectedModelCapability.defaultResolution ?? '';
 	}
+	$: if (loaded && qualityOptions.length > 0 && !qualityOptions.includes(selectedQuality)) {
+		selectedQuality = selectedModelCapability.defaultQuality ?? qualityOptions[0];
+	}
+	$: if (loaded && qualityOptions.length === 0 && selectedQuality) {
+		selectedQuality = '';
+	}
 	$: if (
 		loaded &&
 		imageCountOptions.length > 0 &&
@@ -156,6 +165,7 @@
 	const buildImageQuoteInput = (
 		aspectRatio: ImageAspectRatio,
 		resolution: string,
+		quality: string,
 		model: ImageGenerationModel | string | null,
 		count: number,
 		stepCount: number | null,
@@ -166,6 +176,7 @@
 			prompt: CREDIT_QUOTE_PLACEHOLDER_PROMPT,
 			aspectRatio,
 			resolution,
+			quality: quality || null,
 			model,
 			n: count,
 			steps: stepCount,
@@ -185,6 +196,7 @@
 			n,
 			size,
 			resolution: normalizedResolution,
+			quality: normalizedQuality,
 			aspect_ratio
 		} = payload;
 
@@ -201,6 +213,7 @@
 				...(size ? { size } : {}),
 				...(normalizedResolution ? { resolution: normalizedResolution } : {}),
 				...(aspect_ratio ? { aspect_ratio } : {}),
+				...(normalizedQuality ? { quality: normalizedQuality } : {}),
 				image_count: n ?? 1
 			}
 		};
@@ -231,6 +244,21 @@
 
 	const getResolutionLabel = (resolution: string) => {
 		return resolution === 'auto' ? $i18n.t('Auto') : resolution;
+	};
+
+	const getQualityLabel = (quality: string) => {
+		switch (quality) {
+			case 'auto':
+				return $i18n.t('Auto');
+			case 'low':
+				return $i18n.t('Low');
+			case 'medium':
+				return $i18n.t('Medium');
+			case 'high':
+				return $i18n.t('High');
+			default:
+				return quality;
+		}
 	};
 
 	const getAspectRatioPreviewClass = (ratio: ImageAspectRatio) => {
@@ -487,6 +515,7 @@
 				prompt: validation.prompt,
 				aspectRatio: selectedAspectRatio,
 				resolution: selectedResolution,
+				quality: selectedQuality || null,
 				model: selectedModelConfig ?? selectedModel,
 				n: imageCount,
 				steps,
@@ -823,6 +852,11 @@
 															{getResolutionLabel(selectedResolution)}
 														</span>
 													{/if}
+													{#if qualityOptions.length > 0 && selectedQuality}
+														<span class="hidden truncate min-[360px]:inline">
+															{getQualityLabel(selectedQuality)}
+														</span>
+													{/if}
 													<span class="inline-flex items-center gap-1">
 														<Photo className="size-4" strokeWidth="2" />
 														{imageCount}
@@ -887,6 +921,33 @@
 																			aria-pressed={selectedResolution === resolution}
 																		>
 																			{getResolutionLabel(resolution)}
+																		</button>
+																	{/each}
+																</div>
+															</section>
+														{/if}
+
+														{#if qualityOptions.length > 0}
+															<section class={hasImageSizingOptions ? 'mt-5' : ''}>
+																<h3
+																	class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+																>
+																	{$i18n.t('Quality')}
+																</h3>
+																<div class="grid grid-cols-4 gap-1.5">
+																	{#each qualityOptions as quality}
+																		<button
+																			type="button"
+																			class="h-9 rounded-xl border text-sm capitalize transition {selectedQuality ===
+																			quality
+																				? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																				: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																			on:click={() => {
+																				selectedQuality = quality;
+																			}}
+																			aria-pressed={selectedQuality === quality}
+																		>
+																			{getQualityLabel(quality)}
 																		</button>
 																	{/each}
 																</div>

@@ -496,4 +496,53 @@ describe('image generation utils', () => {
 		]);
 		expect(existing).toEqual([{ url: '/old.png' }]);
 	});
+
+	test('lifts backend quality options onto the normalized model and capability', () => {
+		const [withQuality, withoutQuality] = normalizeImageGenerationModels([
+			{
+				id: 'gpt-image-2',
+				quality_options: ['low', 'medium', 'high'],
+				default_quality: 'low'
+			},
+			{
+				id: 'z-image-turbo',
+				resolutions: ['1024x1024']
+			}
+		]);
+
+		expect(withQuality).toMatchObject({
+			id: 'gpt-image-2',
+			qualityOptions: ['low', 'medium', 'high'],
+			defaultQuality: 'low'
+		});
+		expect('qualityOptions' in withoutQuality).toBe(false);
+
+		expect(getImageModelCapability(withQuality)).toMatchObject({
+			qualityOptions: ['low', 'medium', 'high'],
+			defaultQuality: 'low'
+		});
+		expect(getImageModelCapability(withoutQuality).qualityOptions).toEqual([]);
+	});
+
+	test('sends the selected quality for supporting models and omits it otherwise', () => {
+		const [withQuality] = normalizeImageGenerationModels([
+			{
+				id: 'gpt-image-2',
+				quality_options: ['low', 'medium', 'high'],
+				default_quality: 'low'
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'crisp photo',
+				model: withQuality,
+				quality: 'high'
+			})
+		).toMatchObject({ model: 'gpt-image-2', quality: 'high' });
+
+		expect(buildImageGenerationPayload({ prompt: 'plain', quality: 'high' })).not.toHaveProperty(
+			'quality'
+		);
+	});
 });

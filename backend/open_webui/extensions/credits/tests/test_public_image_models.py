@@ -31,7 +31,7 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
     # should survive into the public catalog for this model.
     z_image = by_id['z-image-turbo']
     assert z_image['is_default'] is True
-    assert z_image['resolutions'] == ['1024x1024', '1024x576', '576x1024', '1024x768', '768x1024']
+    assert z_image['resolutions'] == ['1024x1024', '512x512', '1024x576', '576x1024', '1024x768', '768x1024']
     assert z_image.get('aspect_ratios') in ([], None)
     assert 'aspect_ratio_sizes' not in z_image
 
@@ -41,6 +41,30 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
     assert by_id['nano-banana/edit']['generation_model'] == 'nano-banana'
     assert 'internal_model' not in serialized
     assert 'provider' not in serialized
+
+
+def test_public_fal_catalog_exposes_openai_quality_without_leaking_option_fields() -> None:
+    from open_webui.utils.images import fal_models
+
+    public = fal_models.public_fal_image_models('fal-ai/z-image/turbo')
+    by_id = {item['id']: item for item in public}
+    serialized = json.dumps(public)
+
+    # OpenAI models declare a `quality` option internally; the public catalog lifts it
+    # into flat `quality_options` + `default_quality` fields instead of leaking the
+    # heterogeneous `option_fields` machinery (which also carries background /
+    # input_fidelity / safety_tolerance knobs that belong to admins/providers, not users).
+    openai_model = by_id['gpt-image-2']
+    assert openai_model['quality_options'] == ['low', 'medium', 'high']
+    assert openai_model['default_quality'] == 'low'
+
+    # Models without a quality knob must not advertise one, and no model should leak the
+    # internal option_fields envelope.
+    assert 'quality_options' not in by_id['z-image-turbo']
+    assert 'quality_options' not in by_id['nano-banana-pro']
+    assert 'option_fields' not in serialized
+    assert 'background' not in serialized
+    assert 'input_fidelity' not in serialized
 
 
 def test_public_fal_model_mapping_is_bidirectional_and_fail_closed() -> None:

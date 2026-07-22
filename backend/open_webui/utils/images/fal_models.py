@@ -71,7 +71,6 @@ FAL_XAI_EDIT_IMAGE_RATIOS = ['auto', *FAL_XAI_IMAGE_RATIOS]
 FAL_XAI_RESOLUTIONS = ['1k', '2k']
 
 FAL_BACKGROUND_OPTIONS = ['auto', 'transparent', 'opaque']
-FAL_OPENAI_QUALITY_OPTIONS = ['auto', 'low', 'medium', 'high']
 FAL_OPENAI_QUALITY_OPTIONS_WITHOUT_AUTO = ['low', 'medium', 'high']
 FAL_OPENAI_INPUT_FIDELITY_OPTIONS = ['low', 'high']
 FAL_ALIBABA_ACCELERATION_OPTIONS = ['none', 'regular', 'high']
@@ -235,13 +234,15 @@ def _openai_model(
     default_image_size: str,
     generation_model: str | None = None,
     edit_model: str | None = None,
-    quality_default: str = 'auto',
+    quality_default: str = 'low',
     supports_background: bool = True,
     quality_options: list[str] | None = None,
     supports_input_fidelity: bool = False,
     mask_field: str | None = None,
 ) -> dict[str, Any]:
-    option_fields = [_option_field('quality', quality_options or FAL_OPENAI_QUALITY_OPTIONS, quality_default)]
+    option_fields = [
+        _option_field('quality', quality_options or FAL_OPENAI_QUALITY_OPTIONS_WITHOUT_AUTO, quality_default)
+    ]
     if supports_background:
         option_fields.append(_option_field('background', FAL_BACKGROUND_OPTIONS, 'auto'))
     if supports_input_fidelity:
@@ -396,7 +397,7 @@ FAL_IMAGE_MODELS: list[dict[str, Any]] = [
             '4:3',
             edit_model='openai/gpt-image-2/edit',
         ),
-        'option_fields': [_option_field('quality', FAL_OPENAI_QUALITY_OPTIONS, 'high')],
+        'option_fields': [_option_field('quality', FAL_OPENAI_QUALITY_OPTIONS_WITHOUT_AUTO, 'low')],
     },
     {
         **_custom_size_model(
@@ -408,7 +409,7 @@ FAL_IMAGE_MODELS: list[dict[str, Any]] = [
             'auto',
             generation_model='openai/gpt-image-2',
         ),
-        'option_fields': [_option_field('quality', FAL_OPENAI_QUALITY_OPTIONS, 'high')],
+        'option_fields': [_option_field('quality', FAL_OPENAI_QUALITY_OPTIONS_WITHOUT_AUTO, 'low')],
         'text_fields': [_text_field('mask_url')],
     },
     _openai_model(
@@ -418,7 +419,7 @@ FAL_IMAGE_MODELS: list[dict[str, Any]] = [
         FAL_OPENAI_GPT_IMAGE_15_SIZES,
         '1024x1024',
         edit_model='fal-ai/gpt-image-1.5/edit',
-        quality_default='high',
+        quality_default='low',
         quality_options=FAL_OPENAI_QUALITY_OPTIONS_WITHOUT_AUTO,
     ),
     _openai_model(
@@ -428,7 +429,7 @@ FAL_IMAGE_MODELS: list[dict[str, Any]] = [
         FAL_OPENAI_GPT_IMAGE_SIZES,
         'auto',
         generation_model='fal-ai/gpt-image-1.5',
-        quality_default='high',
+        quality_default='low',
         quality_options=FAL_OPENAI_QUALITY_OPTIONS_WITHOUT_AUTO,
         supports_input_fidelity=True,
         mask_field='mask_image_url',
@@ -536,7 +537,19 @@ _FAL_PUBLIC_MODEL_FIELDS = {
     'output_formats',
     'default_output_format',
     'image_input_max_count',
+    'quality_options',
+    'default_quality',
 }
+
+
+def _extract_quality_option(model: dict[str, Any]) -> tuple[list[str], str] | None:
+    for item in model.get('option_fields') or []:
+        if item.get('field') == 'quality':
+            options = item.get('options') or []
+            default = item.get('default')
+            if options and isinstance(options, list) and isinstance(default, str):
+                return list(options), default
+    return None
 
 
 def public_fal_image_model_id(internal_id: str | None) -> str | None:
@@ -580,5 +593,9 @@ def public_fal_image_models(default_model: str | None = None) -> list[dict[str, 
             else:
                 public_model.pop(relation, None)
         public_model['is_default'] = model['id'] == default_model
+        quality = _extract_quality_option(model)
+        if quality is not None:
+            public_model['quality_options'] = quality[0]
+            public_model['default_quality'] = quality[1]
         public_models.append(public_model)
     return public_models
