@@ -296,6 +296,63 @@ async def test_provider_input_uses_resolved_model_and_dimensions(monkeypatch) ->
 
 
 @pytest.mark.asyncio
+async def test_provider_input_does_not_let_configured_size_override_requested_resolution(monkeypatch) -> None:
+    compat, adapter = modules()
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(
+            return_value=config(
+                IMAGE_GENERATION_ENGINE='fal',
+                IMAGE_GENERATION_MODEL='',
+                IMAGE_SIZE='512x512',
+            )
+        ),
+    )
+    prepared = await adapter.prepare_generation_call(
+        request(),
+        image_input(model='z-image-turbo', resolution='1024x768'),
+        None,
+        user(),
+    )
+    assert prepared.provider_input.size is None
+    assert prepared.provider_input.resolution == '1024x768'
+    assert prepared.billing.dimensions == {
+        'size': 'default',
+        'resolution': '1024x768',
+        'aspect_ratio': 'default',
+        'quality': 'default',
+        'image_count': 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_provider_input_does_not_let_configured_size_override_requested_aspect_ratio(monkeypatch) -> None:
+    compat, adapter = modules()
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(
+            return_value=config(
+                IMAGE_GENERATION_ENGINE='fal',
+                IMAGE_GENERATION_MODEL='',
+                IMAGE_SIZE='512x512',
+            )
+        ),
+    )
+    prepared = await adapter.prepare_generation_call(
+        request(),
+        image_input(model='nano-banana', aspect_ratio='16:9'),
+        None,
+        user(),
+    )
+    assert prepared.provider_input.size is None
+    assert prepared.provider_input.aspect_ratio == '16:9'
+    assert prepared.billing.dimensions['size'] == 'default'
+    assert prepared.billing.dimensions['aspect_ratio'] == '16:9'
+
+
+@pytest.mark.asyncio
 async def test_fal_effective_model_changes_hash(monkeypatch) -> None:
     compat, adapter = modules()
     monkeypatch.setattr(

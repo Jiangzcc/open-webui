@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from open_webui.extensions.creations import registration
+
+
+def _app() -> SimpleNamespace:
+    return SimpleNamespace(state=SimpleNamespace())
+
+
+@pytest.mark.asyncio
+async def test_initialization_runs_migration_then_schema_validation(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def run_sync(function):
+        calls.append(function.__name__)
+        function()
+
+    monkeypatch.setattr(registration.anyio.to_thread, 'run_sync', run_sync)
+
+    def run_creation_migrations():  # noqa: A001 - mirrors the registered name
+        calls.append('migrated')
+
+    def _validate_creation_schema():  # noqa: A001 - mirrors the registered name
+        calls.append('validated')
+
+    monkeypatch.setattr(registration, 'run_creation_migrations', run_creation_migrations)
+    monkeypatch.setattr(registration, '_validate_creation_schema', _validate_creation_schema)
+    await registration.initialize_creations_extension(_app())
+    assert calls == [
+        'run_creation_migrations',
+        'migrated',
+        '_validate_creation_schema',
+        'validated',
+    ]
+
+
+@pytest.mark.asyncio
+async def test_initialization_failure_propagates(monkeypatch) -> None:
+    async def fail(_function):
+        raise RuntimeError('creation migration failed')
+
+    monkeypatch.setattr(registration.anyio.to_thread, 'run_sync', fail)
+    with pytest.raises(RuntimeError, match='creation migration failed'):
+        await registration.initialize_creations_extension(_app())
+
+
+@pytest.mark.asyncio
+async def test_initialization_does_not_register_background_worker(monkeypatch) -> None:
+    app = _app()
+    await registration.initialize_creations_extension(_app())
+    assert not hasattr(app.state, 'creations_worker_task')
+    assert not hasattr(app.state, 'credit_recovery_task')
+
+
+def test_initialize_creations_extension_has_no_shutdown_partner() -> None:
+    assert not hasattr(registration, 'shutdown_creations_extension')
+
+
+def test_main_py_initializes_creations_after_credits_and_includes_router_once() -> None:
+    from pathlib import Path
+
+    main_path = Path(__file__).resolve().parents[3] / 'main.py'
+    source = main_path.read_text(encoding='utf-8')
+    assert 'initialize_creations_extension' in source
+    assert 'creations_router' in source
+    assert 'initialize_credit_extension' in source
+    # creations initializer must come after the credits initializer
+    assert source.index('initialize_credit_extension') < source.index('initialize_creations_extension')
+    # router included exactly once
+    assert source.count('include_router(creations_router)') == 1
+    # no creations shutdown hook
+    assert 'shutdown_creations_extension' not in source

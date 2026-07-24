@@ -1,0 +1,280 @@
+from __future__ import annotations
+
+import base64
+import binascii
+import json
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+AuthorizationScope = Literal['direct', 'chat', 'tool']
+CreationTask = Literal['text-to-image', 'image-to-image']
+CreationSource = Literal['web', 'api', 'chat', 'tool']
+CreationKind = Literal['image']
+CreationAvailability = Literal['available', 'missing']
+
+_CURSOR_VERSION = 1
+_MAX_ENCODED_CURSOR_LENGTH = 512
+_MIN_CREATED_AT = 0
+_MAX_CREATED_AT = 2**63 - 1
+_MIN_CREATION_ID_LENGTH = 1
+_MAX_CREATION_ID_LENGTH = 128
+_MAX_CAPTION_CODE_POINTS = 1000
+_PROMPT_PREVIEW_CHARS = 200
+
+
+@dataclass(frozen=True)
+class PreparedReference:
+    payload: bytes
+    mime_type: str
+    sha256: str
+    position: int
+
+
+@dataclass(frozen=True)
+class CapturedImageResult:
+    url: str
+    file_id: str
+    file_user_id: str
+    file_created_at: int
+    mime_type: str
+
+
+@dataclass(frozen=True)
+class ReusedImageResult:
+    url: str
+
+
+@dataclass(frozen=True)
+class CapturedReferenceResult:
+    file_id: str
+    file_user_id: str
+    file_created_at: int
+    mime_type: str
+    sha256: str
+    position: int
+
+
+@dataclass(frozen=True)
+class CapturedImageBatch:
+    images: tuple[CapturedImageResult | ReusedImageResult, ...]
+    references: tuple[CapturedReferenceResult, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.images, tuple):
+            object.__setattr__(self, 'images', tuple(self.images))
+        if not isinstance(self.references, tuple):
+            object.__setattr__(self, 'references', tuple(self.references))
+
+
+@dataclass(frozen=True)
+class CreationCaptureContext:
+    user_id: str
+    task: CreationTask
+    source: CreationSource
+    prompt: str
+    negative_prompt: str | None
+    public_model_id: str | None
+    model_name_snapshot: str | None
+    params: Mapping[str, object]
+    batch_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, 'params', MappingProxyType(dict(self.params)))
+
+
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+
+class CaptionUpdateForm(_StrictModel):
+    caption: str | None = Field(default=None, max_length=_MAX_CAPTION_CODE_POINTS)
+
+    @field_validator('caption', mode='before')
+    @classmethod
+    def _normalize_caption(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError('caption must be a string or null')
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if len(stripped) > _MAX_CAPTION_CODE_POINTS:
+            raise ValueError('caption exceeds the maximum unicode code point length')
+        return stripped
+
+
+class CreationReference(_StrictModel):
+    position: int = Field(ge=0)
+    content_url: str | None
+    availability: CreationAvailability
+    mime_type: str | None
+
+
+class CreationSummary(_StrictModel):
+    id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
+    kind: CreationKind
+    content_url: str | None
+    availability: CreationAvailability
+    mime_type: str | None
+    caption: str | None
+    prompt_preview: str | None
+    model_name: str | None
+    task: CreationTask
+    created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+
+
+class CreationDetail(_StrictModel):
+    id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
+    kind: CreationKind
+    content_url: str | None
+    availability: CreationAvailability
+    mime_type: str | None
+    caption: str | None
+    model_id: str | None
+    model_name: str | None
+    task: CreationTask
+    prompt: str
+    negative_prompt: str | None
+    params: dict[str, object] | None
+    source: CreationSource
+    batch_id: str
+    references: tuple[CreationReference, ...]
+    created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+
+
+class CreationListResponse(_StrictModel):
+    items: tuple[CreationSummary, ...]
+    next_cursor: str | None
+
+
+class AdminOwner(_StrictModel):
+    user_id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
+    name: str | None = None
+    email: str | None = None
+    profile_image_url: str | None = None
+    deleted: bool = False
+
+
+class AdminCreationSummary(_StrictModel):
+    id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
+    kind: CreationKind
+    content_url: str | None
+    availability: CreationAvailability
+    mime_type: str | None
+    caption: str | None
+    prompt_preview: str | None
+    model_name: str | None
+    task: CreationTask
+    created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    owner: AdminOwner
+
+
+class AdminCreationDetail(_StrictModel):
+    id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
+    kind: CreationKind
+    content_url: str | None
+    availability: CreationAvailability
+    mime_type: str | None
+    caption: str | None
+    model_id: str | None
+    model_name: str | None
+    task: CreationTask
+    prompt: str
+    negative_prompt: str | None
+    params: dict[str, object] | None
+    source: CreationSource
+    batch_id: str
+    references: tuple[CreationReference, ...]
+    created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    owner: AdminOwner
+
+
+class AdminCreationListResponse(_StrictModel):
+    items: tuple[AdminCreationSummary, ...]
+    next_cursor: str | None
+
+
+def encode_creation_cursor(created_at: int, creation_id: str) -> str:
+    if not isinstance(created_at, int) or isinstance(created_at, bool):
+        raise ValueError('created_at must be an integer')
+    if not (_MIN_CREATED_AT <= created_at <= _MAX_CREATED_AT):
+        raise ValueError('created_at out of signed 64-bit range')
+    if not isinstance(creation_id, str) or not (_MIN_CREATION_ID_LENGTH <= len(creation_id) <= _MAX_CREATION_ID_LENGTH):
+        raise ValueError('creation id length must be between 1 and 128')
+
+    payload = json.dumps(
+        {'v': _CURSOR_VERSION, 'created_at': created_at, 'id': creation_id},
+        separators=(',', ':'),
+        sort_keys=True,
+    )
+    encoded = base64.urlsafe_b64encode(payload.encode('utf-8')).rstrip(b'=').decode('ascii')
+    if len(encoded) > _MAX_ENCODED_CURSOR_LENGTH:
+        raise ValueError('encoded cursor exceeds the maximum length')
+    return encoded
+
+
+def decode_creation_cursor(cursor: str) -> tuple[int, str]:
+    if not isinstance(cursor, str) or not cursor:
+        raise ValueError('invalid creation cursor')
+    if len(cursor) > _MAX_ENCODED_CURSOR_LENGTH or re.fullmatch(r'[A-Za-z0-9_-]+', cursor) is None:
+        raise ValueError('invalid creation cursor')
+
+    padding = '=' * (-len(cursor) % 4)
+    try:
+        decoded = base64.b64decode((cursor + padding).encode('ascii'), altchars=b'-_', validate=True)
+        canonical = base64.urlsafe_b64encode(decoded).rstrip(b'=').decode('ascii')
+        if canonical != cursor:
+            raise ValueError('non-canonical cursor')
+        payload = json.loads(decoded.decode('utf-8'))
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        raise ValueError('invalid creation cursor') from None
+
+    if not isinstance(payload, dict):
+        raise ValueError('invalid creation cursor')
+    if payload.get('v') != _CURSOR_VERSION:
+        raise ValueError('invalid creation cursor')
+    created_at = payload.get('created_at')
+    creation_id = payload.get('id')
+    if not isinstance(created_at, int) or isinstance(created_at, bool):
+        raise ValueError('invalid creation cursor')
+    if not (_MIN_CREATED_AT <= created_at <= _MAX_CREATED_AT):
+        raise ValueError('invalid creation cursor')
+    if not isinstance(creation_id, str) or not (_MIN_CREATION_ID_LENGTH <= len(creation_id) <= _MAX_CREATION_ID_LENGTH):
+        raise ValueError('invalid creation cursor')
+    return created_at, creation_id
+
+
+__all__ = [
+    'AdminCreationDetail',
+    'AdminCreationListResponse',
+    'AdminCreationSummary',
+    'AdminOwner',
+    'AuthorizationScope',
+    'CaptionUpdateForm',
+    'CapturedImageBatch',
+    'CapturedImageResult',
+    'CapturedReferenceResult',
+    'CreationAvailability',
+    'CreationCaptureContext',
+    'CreationDetail',
+    'CreationKind',
+    'CreationListResponse',
+    'CreationReference',
+    'CreationSource',
+    'CreationSummary',
+    'CreationTask',
+    'PreparedReference',
+    'ReusedImageResult',
+    'decode_creation_cursor',
+    'encode_creation_cursor',
+]

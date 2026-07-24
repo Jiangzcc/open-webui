@@ -106,4 +106,66 @@ describe('images page controls', () => {
 
 		expect(badgeSource).not.toContain("$i18n.t('credits.common.loading')");
 	});
+
+	test('uses accessible generate and library tabs without unmounting page state', () => {
+		expect(source).toContain("let selection: 'generate' | 'mine' | 'all' = 'generate';");
+		expect(source).toContain('role="tablist"');
+		expect(source).toContain('role="tab"');
+		expect(source).toContain('aria-selected={selection ===');
+		expect(source).toContain('on:keydown={handleTabKeydown}');
+		expect(source).toContain('aria-labelledby="images-generate-tab"');
+		expect(source).toContain(
+			"aria-labelledby={selection === 'all' ? 'images-admin-tab' : 'images-library-tab'}"
+		);
+		expect(source).toContain('id="images-library-panel"');
+		expect(source).toContain("hidden={view !== 'library'}");
+		expect(source).not.toContain('{#if canUseImages}');
+	});
+
+	test('lifts the three-segment pill out of flow so the library tops out', () => {
+		expect(source).toContain('pointer-events-none absolute inset-x-0');
+		expect(source).toContain('pointer-events-auto');
+		expect(source).toContain("$i18n.t('My creations')");
+		expect(source).toContain('{#if isAdmin}');
+		expect(source).toContain('id="images-admin-tab"');
+		expect(source).toContain("$i18n.t('All creations')");
+		expect(source).toContain("selectSelection('all')");
+	});
+
+	test('lets the library scroller hug the viewport edge', () => {
+		const panelStart = source.indexOf('id="images-library-panel"');
+		const panelDecl = source.slice(panelStart, panelStart + 280);
+		expect(panelDecl).toContain('overflow-y-auto');
+		expect(panelDecl).not.toContain('px-3');
+		expect(panelDecl).not.toContain('md:px-6');
+	});
+
+	test('styles image tabs as a centered floating pill while preserving accessibility', () => {
+		expect(source).toContain('rounded-full border border-gray-200/80');
+		expect(source).toContain('bg-white/80');
+		expect(source).toContain('backdrop-blur-xl');
+		expect(source).toContain('shadow-lg shadow-black/10');
+		expect(source).toContain('aria-selected={selection ===');
+		expect(source).toContain('on:keydown={handleTabKeydown}');
+	});
+
+	test('derives view and library scope from the unified selection', () => {
+		expect(source).toContain("$: view = selection === 'generate' ? 'generate' : 'library';");
+		expect(source).toContain("$: libraryScope = selection === 'all' ? 'all' : 'mine';");
+		expect(source).toMatch(/hidden=\{view !== 'generate'\}|hidden=\{view === 'library'\}/);
+	});
+
+	test('increments library revision after a successful generation', () => {
+		const success = source.slice(
+			source.indexOf('generatedImages = ['),
+			source.indexOf('} catch', source.indexOf('generatedImages = ['))
+		);
+		expect(success).toContain('libraryRevision += 1;');
+	});
+
+	test('drops the canUseImagesPage import and reactive gate', () => {
+		expect(source).not.toContain('canUseImagesPage');
+		expect(source).not.toContain('$: canUseImages =');
+		expect(source).not.toContain("$i18n.t('Image generation is not available')");
+	});
 });

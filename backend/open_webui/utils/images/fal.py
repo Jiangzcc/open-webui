@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import re
 from copy import deepcopy
 from typing import Any
 
@@ -19,12 +20,30 @@ FAL_QUEUE_BASE_URL = 'https://queue.fal.run'
 FAL_REQUEST_TIMEOUT_SECONDS = 180
 FAL_POLL_INTERVAL_SECONDS = 1
 FAL_MOCK_MODELS = {'fal-ai/z-image/turbo'}
-FAL_MOCK_IMAGE_URLS = [
-    'http://localhost:8080/api/v1/files/2f41a8f7-a7e9-4b91-8978-b1782b94558e/content',
-    'http://localhost:8080/api/v1/files/2618b65c-0ab5-40fb-bafb-00287e4ef21e/content',
-    'http://localhost:8080/api/v1/files/320b1eee-9bfc-42ac-9279-be088967e27b/content',
-]
-FAL_MOCK_IMAGE_COUNT_RANGE = (1, 3)
+FAL_MOCK_IMAGE_BASE_URL = 'https://picsum.photos'
+FAL_MOCK_DEFAULT_SIZE = (1024, 1024)
+FAL_MOCK_ASPECT_RATIO_SIZES = {
+    '1:1': (1024, 1024),
+    '16:9': (1792, 1024),
+    '9:16': (1024, 1792),
+    '3:4': (768, 1024),
+    '4:3': (1024, 768),
+    '3:2': (1536, 1024),
+    '2:3': (1024, 1536),
+    '21:9': (1536, 640),
+    '2:1': (1536, 768),
+    '1:2': (768, 1536),
+    '20:9': (1536, 691),
+    '9:20': (691, 1536),
+    '19.5:9': (1536, 709),
+    '9:19.5': (709, 1536),
+    '5:4': (1280, 1024),
+    '4:5': (1024, 1280),
+    '4:1': (1536, 384),
+    '1:4': (384, 1536),
+    '8:1': (1536, 192),
+    '1:8': (192, 1536),
+}
 
 
 class FalImageError(Exception):
@@ -209,30 +228,69 @@ def get_fal_image_models() -> list[dict[str, Any]]:
     return deepcopy(FAL_IMAGE_MODELS)
 
 
-def get_mock_fal_image_result(model: str | None) -> dict[str, Any] | None:
-    # 暂时注释，所有模型都先使用 Mock 数据
-    # normalized_model = _normalize_model_id(model)
-    # if normalized_model not in FAL_MOCK_MODELS:
-    #     return None
+def _mock_named_resolution_size(resolution: object, aspect_ratio: object) -> tuple[int, int] | None:
+    if not isinstance(resolution, str):
+        return None
+    resolution_match = re.fullmatch(r'(\d+(?:\.\d+)?)K', resolution.strip(), re.IGNORECASE)
+    if resolution_match is None:
+        return None
 
-    count = random.randint(*FAL_MOCK_IMAGE_COUNT_RANGE)
-    urls = random.sample(FAL_MOCK_IMAGE_URLS, k=count)
+    longest_edge = round(float(resolution_match.group(1)) * 1024)
+    ratio_match = (
+        re.fullmatch(r'(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)', aspect_ratio.strip())
+        if isinstance(aspect_ratio, str)
+        else None
+    )
+    if ratio_match is None:
+        return longest_edge, longest_edge
+
+    ratio_width, ratio_height = map(float, ratio_match.groups())
+    if ratio_width >= ratio_height:
+        return longest_edge, max(1, round(longest_edge * ratio_height / ratio_width))
+    return max(1, round(longest_edge * ratio_width / ratio_height)), longest_edge
+
+
+def _mock_image_size(form_data: Any) -> tuple[int, int]:
+    for value in (getattr(form_data, 'size', None), getattr(form_data, 'resolution', None)):
+        if not isinstance(value, str):
+            continue
+        match = re.fullmatch(r'(\d{1,4})x(\d{1,4})', value.strip(), re.IGNORECASE)
+        if match:
+            width, height = map(int, match.groups())
+            if width > 0 and height > 0:
+                return width, height
+
+    aspect_ratio = getattr(form_data, 'aspect_ratio', None)
+    named_resolution_size = _mock_named_resolution_size(getattr(form_data, 'resolution', None), aspect_ratio)
+    if named_resolution_size is not None:
+        return named_resolution_size
+    if isinstance(aspect_ratio, str):
+        return FAL_MOCK_ASPECT_RATIO_SIZES.get(aspect_ratio.strip(), FAL_MOCK_DEFAULT_SIZE)
+    return FAL_MOCK_DEFAULT_SIZE
+
+
+def get_mock_fal_image_result(model: str | None, form_data: Any) -> dict[str, Any] | None:
+    width, height = _mock_image_size(form_data)
+    requested_count = getattr(form_data, 'n', 1)
+    count = requested_count if isinstance(requested_count, int) and requested_count > 0 else 1
+    batch_seed = random.getrandbits(64)
+    seeds = [f'{batch_seed}-{index}' for index in range(count)]
 
     return {
         'images': [
             {
-                'url': url,
-                'content_type': 'image/png',
-                'file_name': url.rsplit('/', 2)[-2] + '.png',
+                'url': f'{FAL_MOCK_IMAGE_BASE_URL}/seed/{seed}/{width}/{height}',
+                'content_type': 'image/jpeg',
+                'file_name': f'{seed}.jpg',
                 'file_size': None,
             }
-            for url in urls
+            for seed in seeds
         ],
         'timings': {
             'inference': 0.7322960860001331,
             'safety_checker': 0.014431928999329102,
         },
-        'seed': random.randint(0, 2**31 - 1),
+        'seed': seeds[0],
         'has_nsfw_concepts': [False] * count,
     }
 

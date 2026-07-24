@@ -121,7 +121,10 @@ def test_idempotency_header_reaches_the_service_validation_and_blocks_provider(m
     from open_webui.extensions.credits import image_billing, service
 
     identity = BillingIdentity(user_id='user-1', name='User', email='user@example.test', role='user')
-    prepared = SimpleNamespace(billing=SimpleNamespace(request_hash='a' * 64), provider_input=object())
+    prepared = SimpleNamespace(
+        billing=SimpleNamespace(request_hash='a' * 64, channel='web'),
+        provider_input=object(),
+    )
     provider = AsyncMock()
     received_keys = []
 
@@ -145,7 +148,9 @@ def test_idempotency_header_reaches_the_service_validation_and_blocks_provider(m
                 metadata=None,
                 raw_user=object(),
                 action='text-to-image',
+                authorization_scope='direct',
                 invoke=provider,
+                finalize=AsyncMock(),
             )
         )
 
@@ -280,12 +285,15 @@ def test_structured_credit_log_fields_exclude_authorization_prompt_base64_and_ra
 def test_security_source_guard_does_not_allow_direct_private_image_invocations() -> None:
     images_path = ROOT / 'backend/open_webui/routers/images.py'
     tree = ast.parse(images_path.read_text(encoding='utf-8'))
-    public = {'_invoke_image_generations': 'image_generations', '_invoke_image_edits': 'image_edits'}
+    allowed_owners = {
+        '_invoke_image_generations': {'image_generations'},
+        '_invoke_image_edits': {'invoke_edit_creations'},
+    }
     parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
 
     for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
-        expected_public = public.get(call.func.id)
-        if expected_public is None:
+        expected_owners = allowed_owners.get(call.func.id)
+        if expected_owners is None:
             continue
         current = call
         owner = None
@@ -294,4 +302,4 @@ def test_security_source_guard_does_not_allow_direct_private_image_invocations()
             if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 owner = current.name
                 break
-        assert owner == expected_public
+        assert owner in expected_owners

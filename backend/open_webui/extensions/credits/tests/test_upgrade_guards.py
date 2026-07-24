@@ -94,15 +94,20 @@ def _assert_lifecycle_bridge(source: str) -> None:
 
 
 def _assert_image_wrapper(source: str, public_name: str, private_name: str, action: str) -> None:
-    function = _function(ast.parse(source), public_name)
+    tree = ast.parse(source)
+    function = _function(tree, public_name)
     calls = _calls(function, 'bill_image_call')
     assert len(calls) == 1
     call = calls[0]
     action_value = _keyword(call, 'action')
     invoke = _keyword(call, 'invoke')
     assert isinstance(action_value, ast.Constant) and action_value.value == action
-    assert isinstance(invoke, ast.Lambda)
-    assert len(_calls(invoke, private_name)) == 1
+    if isinstance(invoke, ast.Lambda):
+        assert len(_calls(invoke, private_name)) == 1
+        return
+    assert isinstance(invoke, ast.Call) and _call_name(invoke) == 'invoke_edit_creations_factory'
+    factory = _function(tree, 'invoke_edit_creations_factory')
+    assert len(_calls(factory, private_name)) == 1
 
 
 def _assert_frontend_mount(source: str, component: str) -> None:
@@ -184,8 +189,8 @@ def test_guard_helpers_reject_a_fixture_with_removed_or_bypassed_bridges() -> No
 
     image_source = _source('backend/open_webui/routers/images.py')
     bypassed_wrapper = image_source.replace(
-        'invoke=lambda provider_form: _invoke_image_generations',
-        'invoke=lambda provider_form: provider_form',
+        'invoke=lambda _prepared, provider_form: _invoke_image_generations',
+        'invoke=lambda _prepared, provider_form: provider_form',
         1,
     )
     try:
@@ -250,9 +255,12 @@ def test_all_image_production_callers_use_public_wrappers_and_only_wrappers_call
             if called in {'image_generations', 'image_edits'}:
                 observed_public_callers.setdefault(relative, set()).add(called)
             if called in {'_invoke_image_generations', '_invoke_image_edits'}:
-                required_public = called.removeprefix('_invoke_')
                 assert relative == 'backend/open_webui/routers/images.py'
-                assert _containing_function(node, parents) == required_public
+                allowed_owners = {
+                    '_invoke_image_generations': {'image_generations'},
+                    '_invoke_image_edits': {'invoke_edit_creations'},
+                }
+                assert _containing_function(node, parents) in allowed_owners[called]
 
     for path, public_functions in expected_public_callers.items():
         assert public_functions <= observed_public_callers.get(path, set())

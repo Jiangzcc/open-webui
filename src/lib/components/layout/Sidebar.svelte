@@ -146,10 +146,10 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.calendar)
 				);
 			case 'images':
-				return (
-					$config?.features?.enable_image_generation &&
-					($user?.role === 'admin' || $user?.permissions?.features?.image_generation)
-				);
+				// The /images entry stays visible to every verified user (user or admin)
+				// regardless of the image feature switches; the backend direct endpoints
+				// remain the authorization boundary, and the library is always reachable.
+				return $user?.role === 'admin' || $user?.role === 'user';
 			case 'playground':
 				return $user?.role === 'admin';
 			default:

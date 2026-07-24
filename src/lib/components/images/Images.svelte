@@ -22,7 +22,6 @@
 	import {
 		buildImageEditPayload,
 		buildImageGenerationPayload,
-		canUseImagesPage,
 		DEFAULT_IMAGE_ASPECT_RATIO,
 		filterImageFiles,
 		getImageModelCapability,
@@ -43,6 +42,7 @@
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import CreationsLibrary from '$lib/components/images/CreationsLibrary.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -62,6 +62,13 @@
 	let draggedOver = false;
 	let showAspectRatioPicker = false;
 	let showModelSelector = false;
+
+	let selection: 'generate' | 'mine' | 'all' = 'generate';
+	let libraryRevision = 0;
+
+	$: view = selection === 'generate' ? 'generate' : 'library';
+	$: libraryScope = selection === 'all' ? 'all' : 'mine';
+	$: isAdmin = $user?.role === 'admin';
 
 	let prompt = '';
 	let selectedAspectRatio: ImageAspectRatio = DEFAULT_IMAGE_ASPECT_RATIO;
@@ -86,7 +93,6 @@
 	let modelSelectorElement: HTMLDivElement;
 	let imageOptionsElement: HTMLDivElement;
 
-	$: canUseImages = canUseImagesPage($config, $user);
 	$: modeLabel = referenceImages.length > 0 ? $i18n.t('Image to Image') : $i18n.t('Text to Image');
 	$: selectedModelConfig =
 		models.find((model) => model.id === selectedModel) ??
@@ -135,7 +141,7 @@
 	$: if (loaded && selectedModelConfig?.task === 'image-to-image' && referenceImages.length === 0) {
 		selectModel(selectedModelConfig.generationModel ?? '');
 	}
-	$: if (loaded && canUseImages && !modelsLoaded && !modelsLoading) {
+	$: if (loaded && !modelsLoaded && !modelsLoading) {
 		void loadModels();
 	}
 	$: if (
@@ -496,6 +502,32 @@
 		}
 	};
 
+	const selectSelection = async (next: 'generate' | 'mine' | 'all') => {
+		selection = next;
+		await tick();
+		const tabId =
+			next === 'generate'
+				? 'images-generate-tab'
+				: next === 'all'
+					? 'images-admin-tab'
+					: 'images-library-tab';
+		document.getElementById(tabId)?.focus();
+	};
+
+	const handleTabKeydown = (event: KeyboardEvent) => {
+		if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+			event.preventDefault();
+			const order: Array<'generate' | 'mine' | 'all'> = isAdmin
+				? ['generate', 'mine', 'all']
+				: ['generate', 'mine'];
+			const idx = order.indexOf(selection);
+			if (idx === -1) return;
+			const dir = event.key === 'ArrowRight' ? 1 : -1;
+			const nextIdx = (idx + dir + order.length) % order.length;
+			void selectSelection(order[nextIdx]);
+		}
+	};
+
 	const submitHandler = async () => {
 		const validation = validateImagePrompt(prompt);
 		if (!validation.ok) {
@@ -551,6 +583,7 @@
 			}
 
 			generatedImages = [...images, ...generatedImages];
+			libraryRevision += 1;
 			referenceImages = [];
 			prompt = '';
 			await tick();
@@ -583,7 +616,7 @@
 
 {#if loaded}
 	<div
-		class="flex flex-col w-full h-screen max-h-[100dvh] transition-width duration-200 ease-in-out {$showSidebar
+		class="relative flex flex-col w-full h-screen max-h-[100dvh] transition-width duration-200 ease-in-out {$showSidebar
 			? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 			: ''} max-w-full"
 	>
@@ -609,425 +642,518 @@
 			</nav>
 		{/if}
 
-		{#if canUseImages}
-			<div class="flex-1 min-h-0 overflow-y-auto px-3 md:px-6">
-				<div class="mx-auto max-w-6xl min-h-full flex flex-col">
-					<div class="flex-1">
-						{#if generatedImages.length === 0}
-							<section class="min-h-[calc(100dvh-20rem)] flex items-center justify-center py-12">
-								<div class="text-center px-4">
-									<div
-										class="mx-auto mb-5 size-16 rounded-[1.5rem] bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-200 flex items-center justify-center"
-									>
-										<Sparkles className="size-7" strokeWidth="1.75" />
-									</div>
-									<h1
-										class="text-3xl md:text-4xl font-semibold tracking-tight text-gray-900 dark:text-gray-100"
-									>
-										{$i18n.t('What do you want to create?')}
-									</h1>
-									<p class="mt-3 text-base text-gray-500 dark:text-gray-400">
-										{$i18n.t(
-											'Describe an image, or upload a reference image to create a new version.'
-										)}
-									</p>
+		<!-- Floating tab switcher: lifted out of the flow so the panels beneath reclaim the height -->
+		<div
+			class="pointer-events-none absolute inset-x-0 top-14 z-30 flex justify-center px-3 sm:top-0 sm:pt-2"
+			role="tablist"
+			aria-label={$i18n.t('Images')}
+			on:keydown={handleTabKeydown}
+		>
+			<div
+				class="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-gray-700/80 dark:bg-gray-900/80 dark:shadow-black/30"
+			>
+				<button
+					id="images-generate-tab"
+					type="button"
+					role="tab"
+					aria-selected={selection === 'generate'}
+					aria-controls="images-generate-panel"
+					tabindex={selection === 'generate' ? 0 : -1}
+					class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
+					'generate'
+						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+					on:click={() => selectSelection('generate')}
+				>
+					{$i18n.t('New')}
+				</button>
+				<button
+					id="images-library-tab"
+					type="button"
+					role="tab"
+					aria-selected={selection === 'mine'}
+					aria-controls="images-library-panel"
+					tabindex={selection === 'mine' ? 0 : -1}
+					class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
+					'mine'
+						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+					on:click={() => selectSelection('mine')}
+				>
+					{$i18n.t('My creations')}
+				</button>
+				{#if isAdmin}
+					<button
+						id="images-admin-tab"
+						type="button"
+						role="tab"
+						aria-selected={selection === 'all'}
+						aria-controls="images-library-panel"
+						tabindex={selection === 'all' ? 0 : -1}
+						class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
+						'all'
+							? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+							: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+						on:click={() => selectSelection('all')}
+					>
+						{$i18n.t('All creations')}
+					</button>
+				{/if}
+			</div>
+		</div>
+
+		<div
+			id="images-generate-panel"
+			role="tabpanel"
+			aria-labelledby="images-generate-tab"
+			class="flex-1 min-h-0 overflow-y-auto px-3 md:px-6"
+			hidden={view !== 'generate'}
+		>
+			<div class="mx-auto max-w-6xl min-h-full flex flex-col">
+				<div class="flex-1">
+					{#if generatedImages.length === 0}
+						<section class="min-h-[calc(100dvh-20rem)] flex items-center justify-center py-12">
+							<div class="text-center px-4">
+								<div
+									class="mx-auto mb-5 size-16 rounded-[1.5rem] bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-200 flex items-center justify-center"
+								>
+									<Sparkles className="size-7" strokeWidth="1.75" />
 								</div>
-							</section>
-						{:else}
-							<section class="mt-4">
-								<div class={getGeneratedBatchLayoutClass(generatedImages.length)}>
-									{#each generatedImages as image, index (`${image.url}-${index}`)}
-										<div
-											class="group rounded-3xl overflow-hidden border border-gray-100 dark:border-gray-850 bg-white dark:bg-gray-900/60 shadow-sm {getGeneratedImageCardClass(
-												generatedImages.length
-											)}"
+								<h1
+									class="text-3xl md:text-4xl font-semibold tracking-tight text-gray-900 dark:text-gray-100"
+								>
+									{$i18n.t('What do you want to create?')}
+								</h1>
+								<p class="mt-3 text-base text-gray-500 dark:text-gray-400">
+									{$i18n.t(
+										'Describe an image, or upload a reference image to create a new version.'
+									)}
+								</p>
+							</div>
+						</section>
+					{:else}
+						<section class="mt-4">
+							<div class={getGeneratedBatchLayoutClass(generatedImages.length)}>
+								{#each generatedImages as image, index (`${image.url}-${index}`)}
+									<div
+										class="group rounded-3xl overflow-hidden border border-gray-100 dark:border-gray-850 bg-white dark:bg-gray-900/60 shadow-sm {getGeneratedImageCardClass(
+											generatedImages.length
+										)}"
+									>
+										<button
+											type="button"
+											class={getGeneratedImageFrameClass(generatedImages.length)}
+											on:click={() => openImagePreview(image)}
+											aria-label={$i18n.t('Preview generated image')}
 										>
-											<button
-												type="button"
-												class={getGeneratedImageFrameClass(generatedImages.length)}
-												on:click={() => openImagePreview(image)}
-												aria-label={$i18n.t('Preview generated image')}
+											<img
+												src={image.url}
+												alt={image.prompt ?? $i18n.t('Generated image')}
+												class={getGeneratedImageClass(generatedImages.length)}
+											/>
+											<div
+												class="absolute inset-x-3 bottom-3 flex justify-end opacity-0 transition group-hover:opacity-100"
 											>
-												<img
-													src={image.url}
-													alt={image.prompt ?? $i18n.t('Generated image')}
-													class={getGeneratedImageClass(generatedImages.length)}
-												/>
-												<div
-													class="absolute inset-x-3 bottom-3 flex justify-end opacity-0 transition group-hover:opacity-100"
+												<span
+													class="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-gray-800 shadow-sm backdrop-blur dark:bg-gray-950/90 dark:text-gray-100"
 												>
-													<span
-														class="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-gray-800 shadow-sm backdrop-blur dark:bg-gray-950/90 dark:text-gray-100"
-													>
-														{$i18n.t('Preview')}
-													</span>
+													{$i18n.t('Preview')}
+												</span>
+											</div>
+										</button>
+										<div class="px-3 py-2.5">
+											<div
+												class="text-xs text-gray-500 dark:text-gray-400 flex justify-between gap-2"
+											>
+												<span>
+													{image.aspectRatio
+														? getAspectRatioLabel(image.aspectRatio)
+														: $i18n.t('Smart')}
+												</span>
+												<span>{modeLabel}</span>
+											</div>
+											{#if image.prompt}
+												<div class="mt-1 text-sm text-gray-800 dark:text-gray-200 line-clamp-2">
+													{image.prompt}
 												</div>
-											</button>
-											<div class="px-3 py-2.5">
-												<div
-													class="text-xs text-gray-500 dark:text-gray-400 flex justify-between gap-2"
+											{/if}
+											<div class="mt-2 flex items-center justify-end gap-2">
+												<button
+													type="button"
+													class="rounded-full px-3 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
+													on:click={() => openImagePreview(image)}
 												>
-													<span>
-														{image.aspectRatio
-															? getAspectRatioLabel(image.aspectRatio)
-															: $i18n.t('Smart')}
-													</span>
-													<span>{modeLabel}</span>
-												</div>
-												{#if image.prompt}
-													<div class="mt-1 text-sm text-gray-800 dark:text-gray-200 line-clamp-2">
-														{image.prompt}
-													</div>
-												{/if}
-												<div class="mt-2 flex items-center justify-end gap-2">
-													<button
-														type="button"
-														class="rounded-full px-3 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
-														on:click={() => openImagePreview(image)}
-													>
-														{$i18n.t('Preview')}
-													</button>
-													<button
-														type="button"
-														class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-850 dark:text-gray-200 dark:hover:bg-gray-800"
-														on:click={() => downloadImage(image, index)}
-													>
-														{$i18n.t('Download')}
-													</button>
-												</div>
+													{$i18n.t('Preview')}
+												</button>
+												<button
+													type="button"
+													class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-850 dark:text-gray-200 dark:hover:bg-gray-800"
+													on:click={() => downloadImage(image, index)}
+												>
+													{$i18n.t('Download')}
+												</button>
 											</div>
 										</div>
-									{/each}
-								</div>
-							</section>
-						{/if}
-					</div>
+									</div>
+								{/each}
+							</div>
+						</section>
+					{/if}
+				</div>
 
-					<div
-						class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
-					>
-						<div class="mx-auto w-full max-w-[42rem]">
-							<form
-								class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
-								on:submit|preventDefault={submitHandler}
-								on:dragover={(event) => {
-									event.preventDefault();
-									draggedOver = event.dataTransfer?.types?.includes('Files') ?? false;
-								}}
-								on:dragleave={() => {
-									draggedOver = false;
-								}}
-								on:drop={handleDrop}
-							>
-								{#if draggedOver}
-									<div
-										class="absolute inset-2 z-20 rounded-[1.25rem] border-2 border-dashed border-gray-400 bg-white/85 text-sm font-medium text-gray-700 dark:border-gray-500 dark:bg-gray-950/85 dark:text-gray-200 flex items-center justify-center"
-									>
-										{$i18n.t('Drop reference images here')}
+				<div
+					class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
+				>
+					<div class="mx-auto w-full max-w-[42rem]">
+						<form
+							class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
+							on:submit|preventDefault={submitHandler}
+							on:dragover={(event) => {
+								event.preventDefault();
+								draggedOver = event.dataTransfer?.types?.includes('Files') ?? false;
+							}}
+							on:dragleave={() => {
+								draggedOver = false;
+							}}
+							on:drop={handleDrop}
+						>
+							{#if draggedOver}
+								<div
+									class="absolute inset-2 z-20 rounded-[1.25rem] border-2 border-dashed border-gray-400 bg-white/85 text-sm font-medium text-gray-700 dark:border-gray-500 dark:bg-gray-950/85 dark:text-gray-200 flex items-center justify-center"
+								>
+									{$i18n.t('Drop reference images here')}
+								</div>
+							{/if}
+
+							<input
+								bind:this={fileInputElement}
+								type="file"
+								accept="image/*"
+								multiple
+								class="hidden"
+								on:change={handleFileUpload}
+							/>
+
+							<div class="p-4">
+								{#if referenceImages.length > 0}
+									<div class="mb-3 flex gap-2 overflow-x-auto scrollbar-hidden pb-1">
+										{#each referenceImages as image, index (`${image.url}-${index}`)}
+											<div class="relative shrink-0 group">
+												<Image
+													src={image.url}
+													alt={image.name}
+													className="size-14"
+													imageClassName="size-14 rounded-2xl object-cover border border-gray-100 dark:border-gray-800"
+												/>
+												<button
+													type="button"
+													class="absolute -right-1.5 -top-1.5 rounded-full bg-white p-0.5 text-gray-900 shadow border border-gray-100 opacity-100 transition dark:border-gray-700 dark:bg-gray-800 dark:text-white md:opacity-0 md:group-hover:opacity-100"
+													on:click={() => removeImage(index)}
+													aria-label={$i18n.t('Remove image')}
+												>
+													<XMark className="size-4" strokeWidth="2" />
+												</button>
+											</div>
+										{/each}
 									</div>
 								{/if}
 
-								<input
-									bind:this={fileInputElement}
-									type="file"
-									accept="image/*"
-									multiple
-									class="hidden"
-									on:change={handleFileUpload}
-								/>
+								<div class="flex gap-4">
+									<button
+										type="button"
+										class="mt-2 flex h-[3.8rem] w-[3.125rem] shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
+										on:click={() => fileInputElement?.click()}
+										aria-label={$i18n.t('Upload reference image')}
+									>
+										<Plus className="size-6" strokeWidth="1.8" />
+									</button>
 
-								<div class="p-4">
-									{#if referenceImages.length > 0}
-										<div class="mb-3 flex gap-2 overflow-x-auto scrollbar-hidden pb-1">
-											{#each referenceImages as image, index (`${image.url}-${index}`)}
-												<div class="relative shrink-0 group">
-													<Image
-														src={image.url}
-														alt={image.name}
-														className="size-14"
-														imageClassName="size-14 rounded-2xl object-cover border border-gray-100 dark:border-gray-800"
-													/>
+									<textarea
+										bind:this={promptTextareaElement}
+										bind:value={prompt}
+										class="min-h-20 max-h-44 flex-1 resize-none bg-transparent py-2 text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
+										placeholder={$i18n.t(
+											'Upload a reference image, then describe the image you want to create.'
+										)}
+										on:input={resizePromptTextarea}
+										aria-label={$i18n.t('Image prompt')}
+									></textarea>
+								</div>
+
+								<div class="mt-2 flex h-8 items-center justify-between gap-2">
+									<div class="flex min-w-0 items-center gap-2">
+										<div
+											class="relative inline-flex min-w-0 max-w-[12rem] shrink"
+											bind:this={modelSelectorElement}
+										>
+											<button
+												type="button"
+												class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
+												on:click={toggleModelSelector}
+												aria-expanded={showModelSelector}
+												aria-haspopup="listbox"
+											>
+												<Photo className="size-4 shrink-0" strokeWidth="2" />
+												<span class="truncate">{selectedModelLabel}</span>
+												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
+											</button>
+
+											{#if showModelSelector}
+												<div
+													class="fixed inset-x-3 bottom-14 z-50 max-h-[calc(100dvh-5rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:max-h-96 sm:w-80 dark:border-gray-800 dark:bg-gray-900"
+													role="listbox"
+													aria-label={$i18n.t('Select image model')}
+												>
 													<button
 														type="button"
-														class="absolute -right-1.5 -top-1.5 rounded-full bg-white p-0.5 text-gray-900 shadow border border-gray-100 opacity-100 transition dark:border-gray-700 dark:bg-gray-800 dark:text-white md:opacity-0 md:group-hover:opacity-100"
-														on:click={() => removeImage(index)}
-														aria-label={$i18n.t('Remove image')}
+														class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-850 {selectedModel ===
+														''
+															? 'bg-gray-50 text-gray-900 dark:bg-gray-850 dark:text-gray-100'
+															: 'text-gray-700 dark:text-gray-200'}"
+														on:click={() => selectModel('')}
+														role="option"
+														aria-selected={selectedModel === ''}
 													>
-														<XMark className="size-4" strokeWidth="2" />
+														<span>{$i18n.t('Default Model')}</span>
+														{#if selectedModel === ''}<span>✓</span>{/if}
 													</button>
-												</div>
-											{/each}
-										</div>
-									{/if}
 
-									<div class="flex gap-4">
-										<button
-											type="button"
-											class="mt-2 flex h-[3.8rem] w-[3.125rem] shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
-											on:click={() => fileInputElement?.click()}
-											aria-label={$i18n.t('Upload reference image')}
-										>
-											<Plus className="size-6" strokeWidth="1.8" />
-										</button>
-
-										<textarea
-											bind:this={promptTextareaElement}
-											bind:value={prompt}
-											class="min-h-20 max-h-44 flex-1 resize-none bg-transparent py-2 text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
-											placeholder={$i18n.t(
-												'Upload a reference image, then describe the image you want to create.'
-											)}
-											on:input={resizePromptTextarea}
-											aria-label={$i18n.t('Image prompt')}
-										></textarea>
-									</div>
-
-									<div class="mt-2 flex h-8 items-center justify-between gap-2">
-										<div class="flex min-w-0 items-center gap-2">
-											<div
-												class="relative inline-flex min-w-0 max-w-[12rem] shrink"
-												bind:this={modelSelectorElement}
-											>
-												<button
-													type="button"
-													class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
-													on:click={toggleModelSelector}
-													aria-expanded={showModelSelector}
-													aria-haspopup="listbox"
-												>
-													<Photo className="size-4 shrink-0" strokeWidth="2" />
-													<span class="truncate">{selectedModelLabel}</span>
-													<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
-												</button>
-
-												{#if showModelSelector}
-													<div
-														class="fixed inset-x-3 bottom-14 z-50 max-h-[calc(100dvh-5rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:max-h-96 sm:w-80 dark:border-gray-800 dark:bg-gray-900"
-														role="listbox"
-														aria-label={$i18n.t('Select image model')}
-													>
+													{#each availableModels as model}
 														<button
 															type="button"
 															class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-850 {selectedModel ===
-															''
+															model.id
 																? 'bg-gray-50 text-gray-900 dark:bg-gray-850 dark:text-gray-100'
 																: 'text-gray-700 dark:text-gray-200'}"
-															on:click={() => selectModel('')}
+															on:click={() => selectModel(model.id)}
 															role="option"
-															aria-selected={selectedModel === ''}
+															aria-selected={selectedModel === model.id}
 														>
-															<span>{$i18n.t('Default Model')}</span>
-															{#if selectedModel === ''}<span>✓</span>{/if}
+															<span class="truncate">{model.name ?? model.id}</span>
+															{#if selectedModel === model.id}<span>✓</span>{/if}
 														</button>
+													{/each}
+												</div>
+											{/if}
+										</div>
 
-														{#each availableModels as model}
-															<button
-																type="button"
-																class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-850 {selectedModel ===
-																model.id
-																	? 'bg-gray-50 text-gray-900 dark:bg-gray-850 dark:text-gray-100'
-																	: 'text-gray-700 dark:text-gray-200'}"
-																on:click={() => selectModel(model.id)}
-																role="option"
-																aria-selected={selectedModel === model.id}
-															>
-																<span class="truncate">{model.name ?? model.id}</span>
-																{#if selectedModel === model.id}<span>✓</span>{/if}
-															</button>
-														{/each}
-													</div>
-												{/if}
-											</div>
-
-											<div class="relative" bind:this={imageOptionsElement}>
-												<button
-													type="button"
-													class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] sm:gap-4 dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
-													on:click={toggleAspectRatioPicker}
-													aria-expanded={showAspectRatioPicker}
-												>
-													<span class="truncate">{selectedImageSizeLabel}</span>
-													{#if aspectRatioOptions.length > 0 && selectedResolution}
-														<span class="hidden truncate min-[360px]:inline">
-															{getResolutionLabel(selectedResolution)}
-														</span>
-													{/if}
-													{#if qualityOptions.length > 0 && selectedQuality}
-														<span class="hidden truncate min-[360px]:inline">
-															{getQualityLabel(selectedQuality)}
-														</span>
-													{/if}
-													<span class="inline-flex items-center gap-1">
-														<Photo className="size-4" strokeWidth="2" />
-														{imageCount}
+										<div class="relative" bind:this={imageOptionsElement}>
+											<button
+												type="button"
+												class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] sm:gap-4 dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
+												on:click={toggleAspectRatioPicker}
+												aria-expanded={showAspectRatioPicker}
+											>
+												<span class="truncate">{selectedImageSizeLabel}</span>
+												{#if aspectRatioOptions.length > 0 && selectedResolution}
+													<span class="hidden truncate min-[360px]:inline">
+														{getResolutionLabel(selectedResolution)}
 													</span>
-												</button>
+												{/if}
+												{#if qualityOptions.length > 0 && selectedQuality}
+													<span class="hidden truncate min-[360px]:inline">
+														{getQualityLabel(selectedQuality)}
+													</span>
+												{/if}
+												<span class="inline-flex items-center gap-1">
+													<Photo className="size-4" strokeWidth="2" />
+													{imageCount}
+												</span>
+											</button>
 
-												{#if showAspectRatioPicker}
-													<div
-														class="fixed inset-x-3 bottom-14 z-50 max-h-[calc(100dvh-5rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:w-[27rem] sm:max-w-[calc(100vw-2rem)] sm:p-4 dark:border-gray-800 dark:bg-gray-900"
-													>
-														{#if aspectRatioOptions.length > 0}
-															<section>
-																<h3
-																	class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-																>
-																	{$i18n.t('Ratio')}
-																</h3>
-																<div class="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5">
-																	{#each aspectRatioOptions as ratio}
-																		<button
-																			type="button"
-																			class="flex h-14 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition {selectedAspectRatio ===
-																			ratio
-																				? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																				: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																			on:click={() => selectAspectRatio(ratio)}
-																			aria-pressed={selectedAspectRatio === ratio}
-																		>
-																			<span class="flex size-6 items-center justify-center">
-																				<span
-																					class="border border-current/60 {getAspectRatioPreviewClass(
-																						ratio
-																					)}"
-																					style={getAspectRatioPreviewStyle(ratio)}
-																				></span>
-																			</span>
-																			<span class="min-w-0 truncate"
-																				>{getAspectRatioLabel(ratio)}</span
-																			>
-																		</button>
-																	{/each}
-																</div>
-															</section>
-														{/if}
-
-														{#if resolutionOptions.length > 0}
-															<section class="mt-5">
-																<h3
-																	class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-																>
-																	{$i18n.t('Resolution')}
-																</h3>
-																<div class="grid grid-cols-3 gap-1.5">
-																	{#each resolutionOptions as resolution}
-																		<button
-																			type="button"
-																			class="h-9 rounded-xl border text-sm transition {selectedResolution ===
-																			resolution
-																				? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																				: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																			on:click={() => selectResolution(resolution)}
-																			aria-pressed={selectedResolution === resolution}
-																		>
-																			{getResolutionLabel(resolution)}
-																		</button>
-																	{/each}
-																</div>
-															</section>
-														{/if}
-
-														{#if qualityOptions.length > 0}
-															<section class={hasImageSizingOptions ? 'mt-5' : ''}>
-																<h3
-																	class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-																>
-																	{$i18n.t('Quality')}
-																</h3>
-																<div class="grid grid-cols-4 gap-1.5">
-																	{#each qualityOptions as quality}
-																		<button
-																			type="button"
-																			class="h-9 rounded-xl border text-sm capitalize transition {selectedQuality ===
-																			quality
-																				? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																				: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																			on:click={() => {
-																				selectedQuality = quality;
-																			}}
-																			aria-pressed={selectedQuality === quality}
-																		>
-																			{getQualityLabel(quality)}
-																		</button>
-																	{/each}
-																</div>
-															</section>
-														{/if}
-
-														<section class={hasImageSizingOptions ? 'mt-5' : ''}>
+											{#if showAspectRatioPicker}
+												<div
+													class="fixed inset-x-3 bottom-14 z-50 max-h-[calc(100dvh-5rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:w-[27rem] sm:max-w-[calc(100vw-2rem)] sm:p-4 dark:border-gray-800 dark:bg-gray-900"
+												>
+													{#if aspectRatioOptions.length > 0}
+														<section>
 															<h3
 																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
 															>
-																{$i18n.t('Quantity')}
+																{$i18n.t('Ratio')}
 															</h3>
-															<div class="grid grid-cols-4 gap-1.5">
-																{#each imageCountOptions as count}
+															<div class="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5">
+																{#each aspectRatioOptions as ratio}
 																	<button
 																		type="button"
-																		class="h-9 rounded-xl border text-sm transition {Number(
-																			imageCount
-																		) === count
+																		class="flex h-14 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition {selectedAspectRatio ===
+																		ratio
 																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
 																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																		on:click={() => {
-																			imageCount = count;
-																		}}
-																		aria-pressed={Number(imageCount) === count}
+																		on:click={() => selectAspectRatio(ratio)}
+																		aria-pressed={selectedAspectRatio === ratio}
 																	>
-																		{count}
+																		<span class="flex size-6 items-center justify-center">
+																			<span
+																				class="border border-current/60 {getAspectRatioPreviewClass(
+																					ratio
+																				)}"
+																				style={getAspectRatioPreviewStyle(ratio)}
+																			></span>
+																		</span>
+																		<span class="min-w-0 truncate"
+																			>{getAspectRatioLabel(ratio)}</span
+																		>
 																	</button>
 																{/each}
 															</div>
 														</section>
-													</div>
-												{/if}
-											</div>
-										</div>
+													{/if}
 
-										<div class="flex min-w-0 items-center gap-2">
-											<ImageCreditQuoteBadge quoteState={imageQuoteState} />
-											<button
-												type="submit"
-												class="flex size-8 items-center justify-center rounded-full transition {prompt.trim() &&
-												!loading
-													? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100'
-													: 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}"
-												disabled={!prompt.trim() ||
-													!isImageQuoteSubmittable(imageQuoteState) ||
-													loading}
-												aria-label={referenceImages.length > 0
-													? $i18n.t('Edit Image')
-													: $i18n.t('Generate')}
-											>
-												{#if loading}
-													<Spinner className="size-4" />
-												{:else}
-													<Sparkles className="size-4" strokeWidth="2" />
-												{/if}
-											</button>
+													{#if resolutionOptions.length > 0}
+														<section class="mt-5">
+															<h3
+																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+															>
+																{$i18n.t('Resolution')}
+															</h3>
+															<div class="grid grid-cols-3 gap-1.5">
+																{#each resolutionOptions as resolution}
+																	<button
+																		type="button"
+																		class="h-9 rounded-xl border text-sm transition {selectedResolution ===
+																		resolution
+																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																		on:click={() => selectResolution(resolution)}
+																		aria-pressed={selectedResolution === resolution}
+																	>
+																		{getResolutionLabel(resolution)}
+																	</button>
+																{/each}
+															</div>
+														</section>
+													{/if}
+
+													{#if qualityOptions.length > 0}
+														<section class={hasImageSizingOptions ? 'mt-5' : ''}>
+															<h3
+																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+															>
+																{$i18n.t('Quality')}
+															</h3>
+															<div class="grid grid-cols-4 gap-1.5">
+																{#each qualityOptions as quality}
+																	<button
+																		type="button"
+																		class="h-9 rounded-xl border text-sm capitalize transition {selectedQuality ===
+																		quality
+																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																		on:click={() => {
+																			selectedQuality = quality;
+																		}}
+																		aria-pressed={selectedQuality === quality}
+																	>
+																		{getQualityLabel(quality)}
+																	</button>
+																{/each}
+															</div>
+														</section>
+													{/if}
+
+													<section class={hasImageSizingOptions ? 'mt-5' : ''}>
+														<h3
+															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+														>
+															{$i18n.t('Quantity')}
+														</h3>
+														<div class="grid grid-cols-4 gap-1.5">
+															{#each imageCountOptions as count}
+																<button
+																	type="button"
+																	class="h-9 rounded-xl border text-sm transition {Number(
+																		imageCount
+																	) === count
+																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																	on:click={() => {
+																		imageCount = count;
+																	}}
+																	aria-pressed={Number(imageCount) === count}
+																>
+																	{count}
+																</button>
+															{/each}
+														</div>
+													</section>
+												</div>
+											{/if}
 										</div>
 									</div>
+
+									<div class="flex min-w-0 items-center gap-2">
+										<ImageCreditQuoteBadge quoteState={imageQuoteState} />
+										<button
+											type="submit"
+											class="flex size-8 items-center justify-center rounded-full transition {prompt.trim() &&
+											!loading
+												? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100'
+												: 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}"
+											disabled={!prompt.trim() ||
+												!isImageQuoteSubmittable(imageQuoteState) ||
+												loading}
+											aria-label={referenceImages.length > 0
+												? $i18n.t('Edit Image')
+												: $i18n.t('Generate')}
+										>
+											{#if loading}
+												<Spinner className="size-4" />
+											{:else}
+												<Sparkles className="size-4" strokeWidth="2" />
+											{/if}
+										</button>
+									</div>
 								</div>
-							</form>
-						</div>
+							</div>
+						</form>
 					</div>
 				</div>
 			</div>
-		{:else}
-			<div class="flex-1 flex items-center justify-center px-6">
-				<div class="max-w-md text-center">
-					<div
-						class="mx-auto size-14 rounded-3xl bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-300 flex items-center justify-center mb-4"
-					>
-						<Photo className="size-6" strokeWidth="2" />
-					</div>
-					<div class="text-xl font-medium text-gray-900 dark:text-gray-100">
-						{$i18n.t('Image generation is not available')}
-					</div>
-					<div class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-						{$i18n.t('Ask an administrator to enable image generation for your account.')}
-					</div>
-				</div>
+		</div>
+
+		<div
+			id="images-library-panel"
+			role="tabpanel"
+			aria-labelledby={selection === 'all' ? 'images-admin-tab' : 'images-library-tab'}
+			class="flex-1 min-h-0 overflow-y-auto"
+			hidden={view !== 'library'}
+		>
+			<!--
+				Top clearance belongs to the scrolling content, not to the
+				panel frame: it pushes the first row below the floating tab
+				pill on first paint, then scrolls away so later rows settle
+				flush against the top while the absolutely-positioned pill
+				keeps floating over them. Mobile sits the pill at top-14 +
+				sm:pt-2, hence the taller mobile cushion.
+			-->
+			<div class="pt-18 sm:pt-18">
+				<CreationsLibrary
+					active={view === 'library'}
+					scope={libraryScope}
+					revision={libraryRevision}
+				/>
+			</div>
+		</div>
+
+		{#if view === 'library'}
+			<!-- Floating "start creating" capsule: mirrors the tab pill's glass
+			     styling so the two float as siblings. Lifted out of the rolling
+			     panels so neither scroll nor the narrow sidebar shift moves it. -->
+			<div
+				class="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-4 sm:pb-5"
+			>
+				<button
+					type="button"
+					class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full border border-gray-200/80 bg-white/85 px-5 text-sm font-medium text-gray-800 shadow-lg shadow-black/10 backdrop-blur-xl transition hover:bg-white hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:border-gray-700/80 dark:bg-gray-900/85 dark:text-gray-100 dark:hover:bg-gray-900 dark:hover:text-white"
+					on:click={() => selectSelection('generate')}
+				>
+					<Sparkles
+						className="size-4 shrink-0 text-gray-500 dark:text-gray-400"
+						strokeWidth="1.5"
+					/>
+					{$i18n.t('Start creating')}
+				</button>
 			</div>
 		{/if}
 

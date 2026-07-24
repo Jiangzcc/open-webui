@@ -203,18 +203,27 @@ def _channel(request: object, metadata: object) -> Literal['web', 'api', 'chat',
 
 
 def _dimensions(config: object, image_input: CompatImageInput, action: str) -> Mapping[str, str | int]:
+    requested_non_size_dimension = bool(image_input.resolution or image_input.aspect_ratio)
     if action == 'text-to-image':
         configured_size = getattr(config, 'IMAGE_SIZE', None)
         size = (
             image_input.size
-            or (_bounded_string(configured_size, name='size', limit=MAX_IMAGE_DIMENSION_LENGTH))
+            or (
+                'default'
+                if requested_non_size_dimension
+                else _bounded_string(configured_size, name='size', limit=MAX_IMAGE_DIMENSION_LENGTH)
+            )
             or '512x512'
         )
     else:
         configured_size = getattr(config, 'IMAGE_EDIT_SIZE', None)
         size = (
             image_input.size
-            or (_bounded_string(configured_size, name='size', limit=MAX_IMAGE_DIMENSION_LENGTH))
+            or (
+                'default'
+                if requested_non_size_dimension
+                else _bounded_string(configured_size, name='size', limit=MAX_IMAGE_DIMENSION_LENGTH)
+            )
             or 'default'
         )
     return MappingProxyType(

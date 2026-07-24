@@ -317,6 +317,18 @@ class UsersTable:
             user = await session.get(User, id)
             return UserModel.model_validate(user) if user else None
 
+    async def get_users_by_ids(
+        self,
+        ids: list[str],
+        db: AsyncSession | None = None,
+    ) -> list[UserModel]:
+        """Fetch multiple users by primary key in a single query; ignores unknown ids."""
+        if not ids:
+            return []
+        async with get_async_db_context(db) as session:
+            rows = (await session.execute(select(User).where(User.id.in_(ids)))).scalars().all()
+            return [UserModel.model_validate(row) for row in rows]
+
     # api key auth helper
     async def get_user_by_api_key(
         self,

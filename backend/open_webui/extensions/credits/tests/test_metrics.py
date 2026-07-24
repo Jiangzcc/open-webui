@@ -202,8 +202,12 @@ async def test_service_metrics_do_not_change_usage_status_transitions(monkeypatc
     async def update(_usage_id, _allowed, _values):
         return 1
 
+    async def succeeded_in_session(_session, _usage_id, _urls):
+        return 1
+
     sink = RecordingMetrics()
     monkeypatch.setattr(service, '_update_usage_status', update)
+    monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeeded_in_session)
     monkeypatch.setattr(service, 'credit_metrics', sink)
 
     assert await service.mark_usage_invoking('usage-1') == 1

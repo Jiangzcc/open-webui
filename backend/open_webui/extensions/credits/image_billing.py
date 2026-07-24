@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.extensions.credits import compat
 from open_webui.extensions.credits.errors import CreditError
+from open_webui.extensions.credits.metrics import credit_metrics
 from open_webui.extensions.credits.schemas import UserSnapshot
 from open_webui.models.users import User
 from open_webui.utils.access_control import has_permission
@@ -20,6 +21,10 @@ from sqlalchemy import select
 
 Action = Literal['text-to-image', 'image-to-image']
 _INTERNAL_IMAGE_URL = re.compile(r'^/api/v1/files/[A-Za-z0-9_-]{1,128}/content$')
+
+
+class ImageTerminalPreparationError(Exception):
+    """Signal that provider output exists but terminal image preparation failed."""
 
 
 @asynccontextmanager
@@ -48,10 +53,31 @@ async def mark_usage_succeeded(usage_id: str, urls: Sequence[str]) -> int:
     return await mark(usage_id, urls)
 
 
+async def mark_usage_succeeded_in_session(session: object, usage_id: str, urls: Sequence[str]) -> int:
+    from open_webui.extensions.credits.service import mark_usage_succeeded_in_session as mark
+
+    return await mark(session, usage_id, urls)
+
+
 async def mark_usage_failed(usage_id: str, error: object) -> int:
     from open_webui.extensions.credits.service import mark_usage_failed as mark
 
     return await mark(usage_id, error)
+
+
+AuthorizationScope = Literal['direct', 'chat', 'tool']
+_ALLOWED_SCOPE_CHANNELS = {
+    'direct': frozenset({'web', 'api'}),
+    'chat': frozenset({'chat'}),
+    'tool': frozenset({'tool'}),
+}
+
+
+def validate_authorization_scope(scope: object, channel: object) -> None:
+    """Raise a sanitized CreditError when the server-supplied scope disagrees with the billed channel."""
+    allowed = _ALLOWED_SCOPE_CHANNELS.get(scope)  # type: ignore[arg-type]
+    if allowed is None or channel not in allowed:
+        raise _unavailable(reason='invalid_authorization_scope')
 
 
 def _unavailable(usage_id: str | None = None, *, reason: str | None = None) -> CreditError:
@@ -126,14 +152,31 @@ def _normalize_internal_url(value: str) -> str:
 
 
 def _result_urls(result: object) -> list[str]:
+    images = getattr(result, 'images', None)
+    if images is not None and not isinstance(images, (str, bytes)):
+        try:
+            iter(images)
+        except TypeError:
+            images = None
+    if images is not None:
+        urls: list[str] = []
+        for item in images:
+            url = getattr(item, 'url', None)
+            if not isinstance(url, str):
+                raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
+            urls.append(_normalize_internal_url(url))
+        if not urls:
+            raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
+        return urls
+
     if not isinstance(result, Sequence) or isinstance(result, (str, bytes)) or not result:
         raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-    urls: list[str] = []
+    legacy_urls: list[str] = []
     for item in result:
         if not isinstance(item, Mapping) or not isinstance(item.get('url'), str):
             raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-        urls.append(_normalize_internal_url(item['url']))
-    return urls
+        legacy_urls.append(_normalize_internal_url(item['url']))
+    return legacy_urls
 
 
 def _replay_result(usage: object) -> list[dict[str, str]]:
@@ -157,7 +200,11 @@ def _replay_error(usage: object) -> CreditError:
     return CreditError(code='provider_failed', context=context)
 
 
-async def _authorize_image_call(identity: compat.BillingIdentity, action: Action) -> UserSnapshot:
+async def _authorize_image_call(
+    identity: compat.BillingIdentity,
+    action: Action,
+    scope: AuthorizationScope = 'chat',
+) -> UserSnapshot:
     try:
         async with credit_session() as session:
             row = await session.execute(
@@ -166,6 +213,12 @@ async def _authorize_image_call(identity: compat.BillingIdentity, action: Action
             current_user = row.one_or_none()
             if current_user is None or current_user.role not in ('user', 'admin') or current_user.role != identity.role:
                 raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
+
+            if scope == 'direct':
+                # Verified users may call the direct HTTP endpoints regardless of the
+                # image feature switches or per-user image_generation permission; the
+                # chat/tool paths below keep the existing gates.
+                return UserSnapshot(id=current_user.id, name=current_user.name, email=current_user.email)
 
             config = await compat.get_runtime_image_config()
             enabled = (
@@ -262,12 +315,23 @@ async def bill_image_call(
     metadata: dict | None,
     raw_user: object | None,
     action: Action,
-    invoke: Callable[[object], Awaitable[list[dict[str, str]]]],
+    authorization_scope: AuthorizationScope,
+    invoke: Callable[[object, object], Awaitable[object]],
+    finalize: Callable[..., Awaitable[None]],
 ) -> list[dict[str, str]]:
-    """Prepare, prepay and invoke one image request without repeating terminal usages."""
+    """Prepare, prepay, invoke, and terminally finalize one image request.
+
+    ``authorization_scope`` is a required server-supplied value; clients cannot
+    provide it. ``invoke`` receives both the prepared call and the converted
+    provider form and returns an opaque internal result; ``finalize`` writes any
+    creation rows inside the same terminal transaction that flips usage to
+    succeeded, so a finalization failure leaves usage ``invoking`` for the
+    existing recovery path instead of masking a provider success.
+    """
     identity = compat.map_billing_identity(raw_user)
-    user = await _authorize_image_call(identity, action)
+    user = await _authorize_image_call(identity, action, authorization_scope)
     prepared = await _prepare_image_call(request, raw_form_data, metadata, raw_user, action)
+    validate_authorization_scope(authorization_scope, prepared.billing.channel)
     idempotency_key = _idempotency_key(request, metadata, identity, action)
 
     try:
@@ -290,16 +354,34 @@ async def bill_image_call(
 
     provider_form = _to_provider_form(prepared, action)
     try:
-        result = await invoke(provider_form)
+        result = await invoke(prepared, provider_form)
         urls = _result_urls(result)
     except asyncio.CancelledError:
         raise
+    except ImageTerminalPreparationError:
+        raise _unavailable(begin.usage.id, reason='terminal_preparation_failed') from None
     except Exception as error:
         await _mark_failed_or_unavailable(begin.usage.id, error)
         raise CreditError(code='provider_failed', context={'usage_id': begin.usage.id}) from None
 
-    await _mark_succeeded_or_unavailable(begin.usage.id, urls)
+    try:
+        async with credit_session() as session, session.begin():
+            await finalize(session, prepared, result, begin.usage.id)
+            changed = await mark_usage_succeeded_in_session(session, begin.usage.id, urls)
+            if changed != 1:
+                raise _unavailable(begin.usage.id, reason='success_status_not_updated')
+    except CreditError:
+        raise
+    except Exception:
+        raise _unavailable(begin.usage.id, reason='terminal_finalize_failed') from None
+
+    credit_metrics.usage_status(status='succeeded')
     return [{'url': url} for url in urls]
 
 
-__all__ = ['bill_image_call']
+__all__ = [
+    'AuthorizationScope',
+    'ImageTerminalPreparationError',
+    'bill_image_call',
+    'validate_authorization_scope',
+]

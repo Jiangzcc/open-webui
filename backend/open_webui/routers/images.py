@@ -27,7 +27,17 @@ from open_webui.env import AIOHTTP_CLIENT_ALLOW_REDIRECTS, AIOHTTP_CLIENT_SESSIO
 from open_webui.events import EVENTS, publish_event
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.http import public_credit_error_response
-from open_webui.extensions.credits.image_billing import bill_image_call
+from open_webui.extensions.credits.image_billing import ImageTerminalPreparationError, bill_image_call
+from open_webui.extensions.creations.capture import (
+    build_creation_capture_context,
+    capture_reference_snapshots,
+    decode_prepared_references,
+    finalize_created_images,
+)
+from open_webui.extensions.creations.schemas import (
+    CapturedImageBatch,
+    CapturedImageResult,
+)
 from open_webui.internal.db import get_async_session
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
@@ -601,23 +611,13 @@ async def upload_image(request, image_data, content_type, metadata, user, db=Non
 
 @router.post('/generations')
 async def generate_images(request: Request, form_data: CreateImageForm, user=Depends(get_verified_user)):
-    image_config = await get_image_config()
-    if not image_config.ENABLE_IMAGE_GENERATION:
-        raise HTTPException(
-            status_code=403,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
-
-    if user.role != 'admin' and not await has_permission(
-        user.id, 'features.image_generation', image_config.USER_PERMISSIONS
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
-
+    # The direct HTTP endpoint trusts the credits layer's `direct` authorization
+    # scope: verified users may call it regardless of the image feature switches
+    # or per-user image_generation permission. Internal callers (chat middleware,
+    # builtin tools) gate themselves and call image_generations() with their own
+    # server-supplied scope.
     try:
-        result = await image_generations(request, form_data, user=user)
+        result = await image_generations(request, form_data, 'direct', user=user)
     except CreditError as error:
         return public_credit_error_response(error)
     await publish_event(
@@ -636,9 +636,54 @@ async def generate_images(request: Request, form_data: CreateImageForm, user=Dep
     return result
 
 
+def finalize_image_creations_factory(request: Request, form_data, user):
+    """Build the terminal finalizer closures handed to bill_image_call.
+
+    The closure captures only the already-validated raw form, request, and
+    authenticated user; credits invokes it inside the terminal transaction so
+    creation rows commit atomically with the usage success transition.
+    """
+
+    async def finalize_image_creations(session, prepared, internal_result, usage_id) -> None:
+        context = build_creation_capture_context(
+            raw_form=form_data,
+            prepared=prepared,
+            user=user,
+            usage_id=usage_id,
+        )
+        await finalize_created_images(session, context, internal_result)
+
+    return finalize_image_creations
+
+
+def invoke_edit_creations_factory(request: Request, metadata, user):
+    """Wrap the edit provider call so reference snapshots upload after results.
+
+    The provider runs first via _invoke_image_edits, then we decode the prepared
+    references and upload one ordered immutable snapshot set before handing the
+    batch back. A reference-upload failure therefore propagates before the
+    terminal DB transaction, leaving usage `invoking`.
+    """
+
+    async def invoke_edit_creations(prepared, provider_form):
+        internal_result = await _invoke_image_edits(request, provider_form, metadata, user)
+        try:
+            references = await capture_reference_snapshots(
+                request,
+                decode_prepared_references(prepared),
+                user,
+            )
+        except Exception as error:
+            raise ImageTerminalPreparationError() from error
+        return CapturedImageBatch(images=tuple(internal_result.images), references=references)
+
+    return invoke_edit_creations
+
+
 async def image_generations(
     request: Request,
     form_data: CreateImageForm,
+    authorization_scope: str,
     metadata: dict | None = None,
     user=None,
 ):
@@ -648,7 +693,9 @@ async def image_generations(
         metadata=metadata,
         raw_user=user,
         action='text-to-image',
-        invoke=lambda provider_form: _invoke_image_generations(request, provider_form, metadata, user),
+        authorization_scope=authorization_scope,
+        invoke=lambda _prepared, provider_form: _invoke_image_generations(request, provider_form, metadata, user),
+        finalize=finalize_image_creations_factory(request, form_data, user),
     )
 
 
@@ -731,9 +778,17 @@ async def _invoke_image_generations(
                 else:
                     image_data, content_type = await get_image_data(image['b64_json'])
 
-                _, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
-                images.append({'url': url})
-            return images
+                file_item, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
+                images.append(
+                    CapturedImageResult(
+                        url=str(url),
+                        file_id=file_item.id,
+                        file_user_id=file_item.user_id,
+                        file_created_at=file_item.created_at,
+                        mime_type=content_type,
+                    )
+                )
+            return CapturedImageBatch(images=tuple(images))
 
         elif image_config.IMAGE_GENERATION_ENGINE == 'gemini':
             headers = {
@@ -775,51 +830,71 @@ async def _invoke_image_generations(
             if model.endswith(':predict'):
                 for image in res['predictions']:
                     image_data, content_type = await get_image_data(image['bytesBase64Encoded'])
-                    _, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
-                    images.append({'url': url})
+                    file_item, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
+                    images.append(
+                        CapturedImageResult(
+                            url=str(url),
+                            file_id=file_item.id,
+                            file_user_id=file_item.user_id,
+                            file_created_at=file_item.created_at,
+                            mime_type=content_type,
+                        )
+                    )
             elif model.endswith(':generateContent'):
                 for image in res['candidates']:
                     for part in image['content']['parts']:
                         if part.get('inlineData', {}).get('data'):
                             image_data, content_type = await get_image_data(part['inlineData']['data'])
-                            _, url = await upload_image(
+                            file_item, url = await upload_image(
                                 request,
                                 image_data,
                                 content_type,
                                 {**data, **metadata},
                                 user,
                             )
-                            images.append({'url': url})
+                            images.append(
+                                CapturedImageResult(
+                                    url=str(url),
+                                    file_id=file_item.id,
+                                    file_user_id=file_item.user_id,
+                                    file_created_at=file_item.created_at,
+                                    mime_type=content_type,
+                                )
+                            )
 
-            return images
+            return CapturedImageBatch(images=tuple(images))
 
         elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
             fal_model = get_fal_generation_model(form_data.model or model)
             data = build_fal_image_payload(form_data, fal_model)
-            mock_res = get_mock_fal_image_result(fal_model)
+            mock_res = get_mock_fal_image_result(fal_model, form_data)
 
             if mock_res is not None:
                 log.info(f'Using mocked fal.ai image result for {fal_model}')
-                return [
-                    image
-                    for image in mock_res.get('images', [])
-                    if isinstance(image, dict) and isinstance(image.get('url'), str)
-                ]
-
-            res = await run_fal_queue(
-                fal_model,
-                data,
-                image_config.FAL_API_KEY,
-                image_config.FAL_API_BASE_URL,
-            )
+                res = mock_res
+            else:
+                res = await run_fal_queue(
+                    fal_model,
+                    data,
+                    image_config.FAL_API_KEY,
+                    image_config.FAL_API_BASE_URL,
+                )
             image_urls = extract_fal_image_urls(res)
 
             images = []
             for image_url in image_urls:
                 image_data, content_type = await get_image_data(image_url)
-                _, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
-                images.append({'url': url})
-            return images
+                file_item, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
+                images.append(
+                    CapturedImageResult(
+                        url=str(url),
+                        file_id=file_item.id,
+                        file_user_id=file_item.user_id,
+                        file_created_at=file_item.created_at,
+                        mime_type=content_type,
+                    )
+                )
+            return CapturedImageBatch(images=tuple(images))
 
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             data = {
@@ -867,15 +942,23 @@ async def _invoke_image_generations(
                     headers,
                     trusted_base_url=image_config.COMFYUI_BASE_URL,
                 )
-                _, url = await upload_image(
+                file_item, url = await upload_image(
                     request,
                     image_data,
                     content_type,
                     {**form_data.model_dump(exclude_none=True), **metadata},
                     user,
                 )
-                images.append({'url': url})
-            return images
+                images.append(
+                    CapturedImageResult(
+                        url=str(url),
+                        file_id=file_item.id,
+                        file_user_id=file_item.user_id,
+                        file_created_at=file_item.created_at,
+                        mime_type=content_type,
+                    )
+                )
+            return CapturedImageBatch(images=tuple(images))
         elif image_config.IMAGE_GENERATION_ENGINE == 'automatic1111' or image_config.IMAGE_GENERATION_ENGINE == '':
             if form_data.model:
                 await set_image_model(request, form_data.model)
@@ -910,15 +993,23 @@ async def _invoke_image_generations(
 
             for image in res['images']:
                 image_data, content_type = await get_image_data(image)
-                _, url = await upload_image(
+                file_item, url = await upload_image(
                     request,
                     image_data,
                     content_type,
                     {**data, 'info': res['info'], **metadata},
                     user,
                 )
-                images.append({'url': url})
-            return images
+                images.append(
+                    CapturedImageResult(
+                        url=str(url),
+                        file_id=file_item.id,
+                        file_user_id=file_item.user_id,
+                        file_created_at=file_item.created_at,
+                        mime_type=content_type,
+                    )
+                )
+            return CapturedImageBatch(images=tuple(images))
     except Exception as e:
         log.exception(f'Image generation failed: {e}')
         error = e
@@ -953,27 +1044,11 @@ class EditImageForm(BaseModel):
 
 @router.post('/edit')
 async def edit_images(request: Request, form_data: EditImageForm, user=Depends(get_verified_user)):
-    # Authorize the direct route like /generations and the edit_image tool: enforce the
-    # global image-edit switch and the per-user image-generation permission. The internal
-    # callers (edit_image tool, chat middleware) gate themselves and call image_edits()
-    # directly, so they are unaffected by this wrapper.
-    image_config = await get_image_config()
-    if not image_config.ENABLE_IMAGE_EDIT:
-        raise HTTPException(
-            status_code=403,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
-
-    if user.role != 'admin' and not await has_permission(
-        user.id, 'features.image_generation', image_config.USER_PERMISSIONS
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
-
+    # Like /generations, the direct edit endpoint trusts the credits layer's
+    # `direct` authorization scope. Internal callers gate themselves and call
+    # image_edits() directly with their own server-supplied scope.
     try:
-        result = await image_edits(request, form_data, user=user)
+        result = await image_edits(request, form_data, 'direct', user=user)
     except CreditError as error:
         return public_credit_error_response(error)
     await publish_event(
@@ -995,8 +1070,9 @@ async def edit_images(request: Request, form_data: EditImageForm, user=Depends(g
 async def image_edits(
     request: Request,
     form_data: EditImageForm,
+    authorization_scope: str,
     metadata: dict | None = None,
-    user=Depends(get_verified_user),
+    user=None,
 ):
     return await bill_image_call(
         request=request,
@@ -1004,7 +1080,9 @@ async def image_edits(
         metadata=metadata,
         raw_user=user,
         action='image-to-image',
-        invoke=lambda provider_form: _invoke_image_edits(request, provider_form, metadata, user),
+        authorization_scope=authorization_scope,
+        invoke=invoke_edit_creations_factory(request, metadata, user),
+        finalize=finalize_image_creations_factory(request, form_data, user),
     )
 
 
@@ -1160,9 +1238,17 @@ async def _invoke_image_edits(
                 else:
                     image_data, content_type = await get_image_data(image['b64_json'])
 
-                _, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
-                images.append({'url': url})
-            return images
+                file_item, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
+                images.append(
+                    CapturedImageResult(
+                        url=str(url),
+                        file_id=file_item.id,
+                        file_user_id=file_item.user_id,
+                        file_created_at=file_item.created_at,
+                        mime_type=content_type,
+                    )
+                )
+            return CapturedImageBatch(images=tuple(images))
 
         elif image_config.IMAGE_EDIT_ENGINE == 'gemini':
             headers = {
@@ -1210,36 +1296,57 @@ async def _invoke_image_edits(
                 for part in image['content']['parts']:
                     if part.get('inlineData', {}).get('data'):
                         image_data, content_type = await get_image_data(part['inlineData']['data'])
-                        _, url = await upload_image(
+                        file_item, url = await upload_image(
                             request,
                             image_data,
                             content_type,
                             {**data, **metadata},
                             user,
                         )
-                        images.append({'url': url})
+                        images.append(
+                            CapturedImageResult(
+                                url=str(url),
+                                file_id=file_item.id,
+                                file_user_id=file_item.user_id,
+                                file_created_at=file_item.created_at,
+                                mime_type=content_type,
+                            )
+                        )
 
-            return images
+            return CapturedImageBatch(images=tuple(images))
 
         elif image_config.IMAGE_EDIT_ENGINE == 'fal':
             edit_model = get_fal_edit_model(model)
             image_urls = form_data.image if isinstance(form_data.image, list) else [form_data.image]
             data = build_fal_image_payload(form_data, edit_model, image_urls)
+            mock_res = get_mock_fal_image_result(edit_model, form_data)
 
-            res = await run_fal_queue(
-                edit_model,
-                data,
-                image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY,
-                image_config.IMAGES_EDIT_FAL_API_BASE_URL or image_config.FAL_API_BASE_URL,
-            )
+            if mock_res is not None:
+                log.info(f'Using mocked fal.ai image result for {edit_model}')
+                res = mock_res
+            else:
+                res = await run_fal_queue(
+                    edit_model,
+                    data,
+                    image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY,
+                    image_config.IMAGES_EDIT_FAL_API_BASE_URL or image_config.FAL_API_BASE_URL,
+                )
             generated_urls = extract_fal_image_urls(res)
 
             images = []
             for image_url in generated_urls:
                 image_data, content_type = await get_image_data(image_url)
-                _, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
-                images.append({'url': url})
-            return images
+                file_item, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
+                images.append(
+                    CapturedImageResult(
+                        url=str(url),
+                        file_id=file_item.id,
+                        file_user_id=file_item.user_id,
+                        file_created_at=file_item.created_at,
+                        mime_type=content_type,
+                    )
+                )
+            return CapturedImageBatch(images=tuple(images))
 
         elif image_config.IMAGE_EDIT_ENGINE == 'comfyui':
             try:
@@ -1314,16 +1421,24 @@ async def _invoke_image_edits(
                     headers,
                     trusted_base_url=image_config.IMAGES_EDIT_COMFYUI_BASE_URL,
                 )
-                _, url = await upload_image(
+                file_item, url = await upload_image(
                     request,
                     image_data,
                     content_type,
                     {**form_data.model_dump(exclude_none=True), **metadata},
                     user,
                 )
-                images.append({'url': url})
+                images.append(
+                    CapturedImageResult(
+                        url=str(url),
+                        file_id=file_item.id,
+                        file_user_id=file_item.user_id,
+                        file_created_at=file_item.created_at,
+                        mime_type=content_type,
+                    )
+                )
 
-            return images
+            return CapturedImageBatch(images=tuple(images))
     except Exception as e:
         log.exception(f'Image edit failed: {e}')
         error = e

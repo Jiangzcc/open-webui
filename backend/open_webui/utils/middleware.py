@@ -1634,6 +1634,7 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
             images = await image_edits(
                 request=request,
                 form_data=EditImageForm(**{'prompt': prompt, 'image': input_images}),
+                authorization_scope='chat',
                 metadata=build_chat_image_credit_metadata(
                     metadata.get('chat_id'),
                     metadata.get('message_id'),
@@ -1734,6 +1735,7 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
             images = await image_generations(
                 request=request,
                 form_data=CreateImageForm(**{'prompt': prompt}),
+                authorization_scope='chat',
                 metadata=build_chat_image_credit_metadata(
                     metadata.get('chat_id'),
                     metadata.get('message_id'),

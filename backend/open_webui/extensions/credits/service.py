@@ -316,14 +316,35 @@ async def mark_usage_invoking(usage_id: str) -> int:
     return changed
 
 
+async def mark_usage_succeeded_in_session(
+    session: AsyncSession,
+    usage_id: str,
+    urls: Sequence[str],
+) -> int:
+    """Transition an invoking usage to succeeded within the caller's transaction.
+
+    Unlike ``mark_usage_succeeded``, this neither opens nor commits a session; the
+    caller owns the enclosing transaction so creation finalization and the success
+    transition commit atomically.
+    """
+    safe_urls = _safe_result_urls(urls)
+    result = await session.execute(
+        update(CreditUsage)
+        .where(CreditUsage.id == usage_id, CreditUsage.status == 'invoking')
+        .values(
+            status='succeeded',
+            result_snapshot={'urls': safe_urls},
+            completed_at=_now(),
+            updated_at=_now(),
+        )
+    )
+    return result.rowcount
+
+
 async def mark_usage_succeeded(usage_id: str, urls: Sequence[str]) -> int:
     """Persist bounded internal result URLs only while a usage is invoking."""
-    safe_urls = _safe_result_urls(urls)
-    changed = await _update_usage_status(
-        usage_id,
-        ('invoking',),
-        {'status': 'succeeded', 'result_snapshot': {'urls': safe_urls}, 'completed_at': _now()},
-    )
+    async with credit_session() as session, session.begin():
+        changed = await mark_usage_succeeded_in_session(session, usage_id, urls)
     if changed == 1:
         credit_metrics.usage_status(status='succeeded')
     return changed
@@ -451,4 +472,5 @@ __all__ = [
     'mark_usage_failed',
     'mark_usage_invoking',
     'mark_usage_succeeded',
+    'mark_usage_succeeded_in_session',
 ]

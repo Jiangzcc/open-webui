@@ -523,7 +523,7 @@
 				</div>
 			{/if}
 
-			{#if $config?.features?.enable_image_generation && ($user?.role === 'admin' || $user?.permissions?.features?.image_generation)}
+			{#if $user?.role === 'admin' || $user?.role === 'user'}
 				<div class="flex items-center w-full">
 					<a
 						href="/images"
