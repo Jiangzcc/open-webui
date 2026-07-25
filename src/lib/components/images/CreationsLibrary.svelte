@@ -226,9 +226,9 @@
 				</p>
 			</div>
 		{:else}
-			<div class="flex gap-2 px-3 sm:px-4">
+			<div class="flex gap-1.5 px-3 sm:px-4">
 				{#each lanes as lane, laneIndex (laneIndex)}
-					<div class="flex min-w-0 flex-1 flex-col gap-2">
+					<div class="flex min-w-0 flex-1 flex-col gap-1.5">
 						{#each lane as item (item.id)}
 							<article
 								class="group relative w-full overflow-hidden rounded-lg border border-gray-100 bg-white text-left transition hover:border-gray-200 focus-within:border-gray-200 dark:border-gray-800 dark:bg-gray-900/60 dark:hover:border-gray-700"

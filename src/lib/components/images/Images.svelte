@@ -665,7 +665,7 @@
 						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
 					on:click={() => selectSelection('generate')}
 				>
-					{$i18n.t('New')}
+					{$i18n.t('Create art')}
 				</button>
 				<button
 					id="images-library-tab"
@@ -732,7 +732,7 @@
 							</div>
 						</section>
 					{:else}
-						<section class="mt-4">
+						<section class="pt-18 sm:pt-18">
 							<div class={getGeneratedBatchLayoutClass(generatedImages.length)}>
 								{#each generatedImages as image, index (`${image.url}-${index}`)}
 									<div
@@ -804,7 +804,7 @@
 				<div
 					class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
 				>
-					<div class="mx-auto w-full max-w-[42rem]">
+					<div class="mx-auto w-full sm:max-w-[40rem] lg:max-w-[52rem] xl:max-w-[60rem]">
 						<form
 							class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
 							on:submit|preventDefault={submitHandler}
