@@ -2,12 +2,15 @@
 
 > Nano Banana 2 is Google's new state-of-the-art image generation and editing model
 
+
+
 ## Overview
 
 - **Endpoint**: `https://fal.run/fal-ai/nano-banana-2/edit`
 - **Model ID**: `fal-ai/nano-banana-2/edit`
 - **Category**: image-to-image
 - **Kind**: inference
+
 
 ## Pricing
 
@@ -20,9 +23,11 @@ For more details, see [fal.ai pricing](https://fal.ai/pricing).
 This model can be used via our HTTP API or more conveniently via our client libraries.
 See the input and output schema below, as well as the usage examples.
 
+
 ### Input Schema
 
 The API accepts the following input parameters:
+
 
 - **`prompt`** (`string`, _required_):
   The prompt for image editing.
@@ -93,11 +98,13 @@ The API accepts the following input parameters:
   When set, enables model thinking with the given level ('minimal' or 'high') and includes thoughts in the generation. Omit to disable.
   - Options: `"minimal"`, `"high"`
 
+
+
 **Required Parameters Example**:
 
 ```json
 {
-	"prompt": "make a photo of the man driving the car down the california coastline"
+  "prompt": "make a photo of the man driving the car down the california coastline"
 }
 ```
 
@@ -105,22 +112,23 @@ The API accepts the following input parameters:
 
 ```json
 {
-	"prompt": "make a photo of the man driving the car down the california coastline",
-	"num_images": 1,
-	"aspect_ratio": "auto",
-	"output_format": "png",
-	"safety_tolerance": "4",
-	"image_urls": [
-		"https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png",
-		"https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png"
-	],
-	"resolution": "1K",
-	"video_url": "https://storage.googleapis.com/falserverless/web-examples/wan/t2v.mp4",
-	"audio_url": "https://storage.googleapis.com/falserverless/example_inputs/reference_audio.wav",
-	"pdf_url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-	"limit_generations": true
+  "prompt": "make a photo of the man driving the car down the california coastline",
+  "num_images": 1,
+  "aspect_ratio": "auto",
+  "output_format": "png",
+  "safety_tolerance": "4",
+  "image_urls": [
+    "https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png",
+    "https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png"
+  ],
+  "resolution": "1K",
+  "video_url": "https://storage.googleapis.com/falserverless/web-examples/wan/t2v.mp4",
+  "audio_url": "https://storage.googleapis.com/falserverless/example_inputs/reference_audio.wav",
+  "pdf_url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+  "limit_generations": true
 }
 ```
+
 
 ### Output Schema
 
@@ -129,25 +137,28 @@ The API returns the following output format:
 - **`images`** (`list<ImageFile>`, _required_):
   The edited images.
   - Array of ImageFile
-  - Examples: [{"file_name":"nano-banana-2-edit-output.png","url":"https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-edit-output.png","content_type":"image/png"}]
+  - Examples: [{"content_type":"image/png","file_name":"nano-banana-2-edit-output.png","url":"https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-edit-output.png"}]
 
 - **`description`** (`string`, _required_):
   The description of the generated images.
+
+
 
 **Example Response**:
 
 ```json
 {
-	"images": [
-		{
-			"file_name": "nano-banana-2-edit-output.png",
-			"url": "https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-edit-output.png",
-			"content_type": "image/png"
-		}
-	],
-	"description": ""
+  "images": [
+    {
+      "content_type": "image/png",
+      "file_name": "nano-banana-2-edit-output.png",
+      "url": "https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-edit-output.png"
+    }
+  ],
+  "description": ""
 }
 ```
+
 
 ## Usage Examples
 
@@ -203,22 +214,23 @@ npm install --save @fal-ai/client
 Then use the API client to make requests:
 
 ```javascript
-import { fal } from '@fal-ai/client';
+import { fal } from "@fal-ai/client";
 
-const result = await fal.subscribe('fal-ai/nano-banana-2/edit', {
-	input: {
-		prompt: 'make a photo of the man driving the car down the california coastline'
-	},
-	logs: true,
-	onQueueUpdate: (update) => {
-		if (update.status === 'IN_PROGRESS') {
-			update.logs.map((log) => log.message).forEach(console.log);
-		}
-	}
+const result = await fal.subscribe("fal-ai/nano-banana-2/edit", {
+  input: {
+    prompt: "make a photo of the man driving the car down the california coastline"
+  },
+  logs: true,
+  onQueueUpdate: (update) => {
+    if (update.status === "IN_PROGRESS") {
+      update.logs.map((log) => log.message).forEach(console.log);
+    }
+  },
 });
 console.log(result.data);
 console.log(result.requestId);
 ```
+
 
 ## Additional Resources
 

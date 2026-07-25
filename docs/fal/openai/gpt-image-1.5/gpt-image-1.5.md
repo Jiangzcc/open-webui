@@ -2,23 +2,26 @@
 
 > GPT Image 1.5 generates high-fidelity images with strong prompt adherence, preserving composition, lighting, and fine-grained detail.
 
+
 ## Overview
 
 - **Endpoint**: `https://fal.run/fal-ai/gpt-image-1.5`
 - **Model ID**: `fal-ai/gpt-image-1.5`
 - **Category**: text-to-image
 - **Kind**: inference
-  **Tags**: openai, gpt-image,
+**Tags**: openai, gpt-image, 
+
+
 
 ## Pricing
 
 Your request will cost different amounts based on the number of images, quality, and size.
 
 - You will be charged $0.005 per 1,000 input text tokens. One word is roughly 4 tokens.
-- You will be charged $0.010 per 1,000 output text tokens. The model will consume tokens reasoning about your prompt based on it's complexity.
-- For **low** quality, you will be charged $0.009 for 1024x1024 or $0.013 for any other size _per image_.
-- For **medium** quality, you will be charged $0.034 for 1024x1024, $0.051 for 1024x1536 and $0.050 for 1536x1024 _per image_.
-- For **high** quality, you will be charged $0.133 for 1024x1024, $0.200 for 1024x1536 or $0.199 for 1536x1024 _per image_.
+-  You will be charged $0.010 per 1,000 output text tokens. The model will consume tokens reasoning about your prompt based on it's complexity.
+- For **low** quality, you will be charged $0.009 for 1024x1024 or $0.013 for any other size *per image*. 
+- For **medium** quality, you will be charged $0.034 for 1024x1024, $0.051 for 1024x1536 and $0.050 for 1536x1024 *per image*.
+- For **high** quality, you will be charged $0.133 for 1024x1024, $0.200 for 1024x1536 or $0.199 for 1536x1024 *per image*.
 
 For more details, see [fal.ai pricing](https://fal.ai/pricing).
 
@@ -27,9 +30,11 @@ For more details, see [fal.ai pricing](https://fal.ai/pricing).
 This model can be used via our HTTP API or more conveniently via our client libraries.
 See the input and output schema below, as well as the usage examples.
 
+
 ### Input Schema
 
 The API accepts the following input parameters:
+
 
 - **`prompt`** (`string`, _required_):
   The prompt for image generation
@@ -65,11 +70,13 @@ The API accepts the following input parameters:
   If `True`, the media will be returned as a data URI and the output data won't be available in the request history.
   - Default: `false`
 
+
+
 **Required Parameters Example**:
 
 ```json
 {
-	"prompt": "create a realistic image taken with iphone at these coordinates 41°43′32″N 49°56′49″W 15 April 1912"
+  "prompt": "create a realistic image taken with iphone at these coordinates 41°43′32″N 49°56′49″W 15 April 1912"
 }
 ```
 
@@ -77,14 +84,15 @@ The API accepts the following input parameters:
 
 ```json
 {
-	"prompt": "create a realistic image taken with iphone at these coordinates 41°43′32″N 49°56′49″W 15 April 1912",
-	"image_size": "1024x1024",
-	"background": "auto",
-	"quality": "high",
-	"num_images": 1,
-	"output_format": "png"
+  "prompt": "create a realistic image taken with iphone at these coordinates 41°43′32″N 49°56′49″W 15 April 1912",
+  "image_size": "1024x1024",
+  "background": "auto",
+  "quality": "high",
+  "num_images": 1,
+  "output_format": "png"
 }
 ```
+
 
 ### Output Schema
 
@@ -93,23 +101,26 @@ The API returns the following output format:
 - **`images`** (`list<ImageFile>`, _required_):
   The generated images.
   - Array of ImageFile
-  - Examples: [{"url":"https://v3b.fal.media/files/b/0a869129/EnWrO3XWjPE0nxBDpaQrj.png","height":1024,"width":1024,"content_type":"image/png","file_name":"EnWrO3XWjPE0nxBDpaQrj.png"}]
+  - Examples: [{"url":"https://v3b.fal.media/files/b/0a869129/EnWrO3XWjPE0nxBDpaQrj.png","height":1024,"content_type":"image/png","width":1024,"file_name":"EnWrO3XWjPE0nxBDpaQrj.png"}]
+
+
 
 **Example Response**:
 
 ```json
 {
-	"images": [
-		{
-			"url": "https://v3b.fal.media/files/b/0a869129/EnWrO3XWjPE0nxBDpaQrj.png",
-			"height": 1024,
-			"width": 1024,
-			"content_type": "image/png",
-			"file_name": "EnWrO3XWjPE0nxBDpaQrj.png"
-		}
-	]
+  "images": [
+    {
+      "url": "https://v3b.fal.media/files/b/0a869129/EnWrO3XWjPE0nxBDpaQrj.png",
+      "height": 1024,
+      "content_type": "image/png",
+      "width": 1024,
+      "file_name": "EnWrO3XWjPE0nxBDpaQrj.png"
+    }
+  ]
 }
 ```
+
 
 ## Usage Examples
 
@@ -165,23 +176,23 @@ npm install --save @fal-ai/client
 Then use the API client to make requests:
 
 ```javascript
-import { fal } from '@fal-ai/client';
+import { fal } from "@fal-ai/client";
 
-const result = await fal.subscribe('fal-ai/gpt-image-1.5', {
-	input: {
-		prompt:
-			'create a realistic image taken with iphone at these coordinates 41°43′32″N 49°56′49″W 15 April 1912'
-	},
-	logs: true,
-	onQueueUpdate: (update) => {
-		if (update.status === 'IN_PROGRESS') {
-			update.logs.map((log) => log.message).forEach(console.log);
-		}
-	}
+const result = await fal.subscribe("fal-ai/gpt-image-1.5", {
+  input: {
+    prompt: "create a realistic image taken with iphone at these coordinates 41°43′32″N 49°56′49″W 15 April 1912"
+  },
+  logs: true,
+  onQueueUpdate: (update) => {
+    if (update.status === "IN_PROGRESS") {
+      update.logs.map((log) => log.message).forEach(console.log);
+    }
+  },
 });
 console.log(result.data);
 console.log(result.requestId);
 ```
+
 
 ## Additional Resources
 

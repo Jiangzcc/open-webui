@@ -2,12 +2,14 @@
 
 > Nano Banana 2 is Google's new state-of-the-art fast image generation and editing model
 
+
 ## Overview
 
 - **Endpoint**: `https://fal.run/fal-ai/nano-banana-2`
 - **Model ID**: `fal-ai/nano-banana-2`
 - **Category**: text-to-image
 - **Kind**: inference
+
 
 ## Pricing
 
@@ -20,9 +22,11 @@ For more details, see [fal.ai pricing](https://fal.ai/pricing).
 This model can be used via our HTTP API or more conveniently via our client libraries.
 See the input and output schema below, as well as the usage examples.
 
+
 ### Input Schema
 
 The API accepts the following input parameters:
+
 
 - **`prompt`** (`string`, _required_):
   The text prompt to generate an image from.
@@ -76,11 +80,13 @@ The API accepts the following input parameters:
   When set, enables model thinking with the given level ('minimal' or 'high') and includes thoughts in the generation. Omit to disable.
   - Options: `"minimal"`, `"high"`
 
+
+
 **Required Parameters Example**:
 
 ```json
 {
-	"prompt": "An action shot of a black lab swimming in an inground suburban swimming pool. The camera is placed meticulously on the water line, dividing the image in half, revealing both the dogs head above water holding a tennis ball in it's mouth, and it's paws paddling underwater."
+  "prompt": "An action shot of a black lab swimming in an inground suburban swimming pool. The camera is placed meticulously on the water line, dividing the image in half, revealing both the dogs head above water holding a tennis ball in it's mouth, and it's paws paddling underwater."
 }
 ```
 
@@ -88,15 +94,16 @@ The API accepts the following input parameters:
 
 ```json
 {
-	"prompt": "An action shot of a black lab swimming in an inground suburban swimming pool. The camera is placed meticulously on the water line, dividing the image in half, revealing both the dogs head above water holding a tennis ball in it's mouth, and it's paws paddling underwater.",
-	"num_images": 1,
-	"aspect_ratio": "auto",
-	"output_format": "png",
-	"safety_tolerance": "4",
-	"resolution": "1K",
-	"limit_generations": true
+  "prompt": "An action shot of a black lab swimming in an inground suburban swimming pool. The camera is placed meticulously on the water line, dividing the image in half, revealing both the dogs head above water holding a tennis ball in it's mouth, and it's paws paddling underwater.",
+  "num_images": 1,
+  "aspect_ratio": "auto",
+  "output_format": "png",
+  "safety_tolerance": "4",
+  "resolution": "1K",
+  "limit_generations": true
 }
 ```
+
 
 ### Output Schema
 
@@ -105,25 +112,28 @@ The API returns the following output format:
 - **`images`** (`list<ImageFile>`, _required_):
   The generated images.
   - Array of ImageFile
-  - Examples: [{"file_name":"nano-banana-2-t2i-output.png","url":"https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-t2i-output.png","content_type":"image/png"}]
+  - Examples: [{"content_type":"image/png","file_name":"nano-banana-2-t2i-output.png","url":"https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-t2i-output.png"}]
 
 - **`description`** (`string`, _required_):
   The description of the generated images.
+
+
 
 **Example Response**:
 
 ```json
 {
-	"images": [
-		{
-			"file_name": "nano-banana-2-t2i-output.png",
-			"url": "https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-t2i-output.png",
-			"content_type": "image/png"
-		}
-	],
-	"description": ""
+  "images": [
+    {
+      "content_type": "image/png",
+      "file_name": "nano-banana-2-t2i-output.png",
+      "url": "https://storage.googleapis.com/falserverless/example_outputs/nano-banana-2-t2i-output.png"
+    }
+  ],
+  "description": ""
 }
 ```
+
 
 ## Usage Examples
 
@@ -179,23 +189,23 @@ npm install --save @fal-ai/client
 Then use the API client to make requests:
 
 ```javascript
-import { fal } from '@fal-ai/client';
+import { fal } from "@fal-ai/client";
 
-const result = await fal.subscribe('fal-ai/nano-banana-2', {
-	input: {
-		prompt:
-			"An action shot of a black lab swimming in an inground suburban swimming pool. The camera is placed meticulously on the water line, dividing the image in half, revealing both the dogs head above water holding a tennis ball in it's mouth, and it's paws paddling underwater."
-	},
-	logs: true,
-	onQueueUpdate: (update) => {
-		if (update.status === 'IN_PROGRESS') {
-			update.logs.map((log) => log.message).forEach(console.log);
-		}
-	}
+const result = await fal.subscribe("fal-ai/nano-banana-2", {
+  input: {
+    prompt: "An action shot of a black lab swimming in an inground suburban swimming pool. The camera is placed meticulously on the water line, dividing the image in half, revealing both the dogs head above water holding a tennis ball in it's mouth, and it's paws paddling underwater."
+  },
+  logs: true,
+  onQueueUpdate: (update) => {
+    if (update.status === "IN_PROGRESS") {
+      update.logs.map((log) => log.message).forEach(console.log);
+    }
+  },
 });
 console.log(result.data);
 console.log(result.requestId);
 ```
+
 
 ## Additional Resources
 

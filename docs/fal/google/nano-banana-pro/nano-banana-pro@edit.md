@@ -2,13 +2,16 @@
 
 > Nano Banana Pro is Google's new state-of-the-art image generation and editing model
 
+
 ## Overview
 
 - **Endpoint**: `https://fal.run/fal-ai/nano-banana-pro/edit`
 - **Model ID**: `fal-ai/nano-banana-pro/edit`
 - **Category**: image-to-image
 - **Kind**: inference
-  **Tags**: realism, typography
+**Tags**: realism, typography
+
+
 
 ## Pricing
 
@@ -21,9 +24,11 @@ For more details, see [fal.ai pricing](https://fal.ai/pricing).
 This model can be used via our HTTP API or more conveniently via our client libraries.
 See the input and output schema below, as well as the usage examples.
 
+
 ### Input Schema
 
 The API accepts the following input parameters:
+
 
 - **`prompt`** (`string`, _required_):
   The prompt for image editing.
@@ -71,22 +76,24 @@ The API accepts the following input parameters:
   - Options: `"1K"`, `"2K"`, `"4K"`
 
 - **`limit_generations`** (`boolean`, _optional_):
-  Experimental parameter to limit the number of generations from each round of prompting to 1. Set to `True` to to disregard any instructions in the prompt regarding the number of images to generate.
-  - Default: `false`
+  Experimental parameter to limit the number of generations from each round of prompting to 1. Set to `True` to to disregard any instructions in the prompt regarding the number of images to generate. Default value: `true`
+  - Default: `true`
 
 - **`enable_web_search`** (`boolean`, _optional_):
   Enable web search for the image generation task. This will allow the model to use the latest information from the web to generate the image.
   - Default: `false`
 
+
+
 **Required Parameters Example**:
 
 ```json
 {
-	"prompt": "make a photo of the man driving the car down the california coastline",
-	"image_urls": [
-		"https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png",
-		"https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png"
-	]
+  "prompt": "make a photo of the man driving the car down the california coastline",
+  "image_urls": [
+    "https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png",
+    "https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png"
+  ]
 }
 ```
 
@@ -94,18 +101,20 @@ The API accepts the following input parameters:
 
 ```json
 {
-	"prompt": "make a photo of the man driving the car down the california coastline",
-	"num_images": 1,
-	"aspect_ratio": "auto",
-	"output_format": "png",
-	"safety_tolerance": "4",
-	"image_urls": [
-		"https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png",
-		"https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png"
-	],
-	"resolution": "1K"
+  "prompt": "make a photo of the man driving the car down the california coastline",
+  "num_images": 1,
+  "aspect_ratio": "auto",
+  "output_format": "png",
+  "safety_tolerance": "4",
+  "image_urls": [
+    "https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png",
+    "https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png"
+  ],
+  "resolution": "1K",
+  "limit_generations": true
 }
 ```
+
 
 ### Output Schema
 
@@ -114,25 +123,28 @@ The API returns the following output format:
 - **`images`** (`list<ImageFile>`, _required_):
   The edited images.
   - Array of ImageFile
-  - Examples: [{"file_name":"nano-banana-pro-edit-output.png","url":"https://storage.googleapis.com/falserverless/example_outputs/nano-banana-pro-edit-output.png","content_type":"image/png"}]
+  - Examples: [{"content_type":"image/png","file_name":"nano-banana-pro-edit-output.png","url":"https://storage.googleapis.com/falserverless/example_outputs/nano-banana-pro-edit-output.png"}]
 
 - **`description`** (`string`, _required_):
   The description of the generated images.
+
+
 
 **Example Response**:
 
 ```json
 {
-	"images": [
-		{
-			"file_name": "nano-banana-pro-edit-output.png",
-			"url": "https://storage.googleapis.com/falserverless/example_outputs/nano-banana-pro-edit-output.png",
-			"content_type": "image/png"
-		}
-	],
-	"description": ""
+  "images": [
+    {
+      "content_type": "image/png",
+      "file_name": "nano-banana-pro-edit-output.png",
+      "url": "https://storage.googleapis.com/falserverless/example_outputs/nano-banana-pro-edit-output.png"
+    }
+  ],
+  "description": ""
 }
 ```
+
 
 ## Usage Examples
 
@@ -193,26 +205,24 @@ npm install --save @fal-ai/client
 Then use the API client to make requests:
 
 ```javascript
-import { fal } from '@fal-ai/client';
+import { fal } from "@fal-ai/client";
 
-const result = await fal.subscribe('fal-ai/nano-banana-pro/edit', {
-	input: {
-		prompt: 'make a photo of the man driving the car down the california coastline',
-		image_urls: [
-			'https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png',
-			'https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png'
-		]
-	},
-	logs: true,
-	onQueueUpdate: (update) => {
-		if (update.status === 'IN_PROGRESS') {
-			update.logs.map((log) => log.message).forEach(console.log);
-		}
-	}
+const result = await fal.subscribe("fal-ai/nano-banana-pro/edit", {
+  input: {
+    prompt: "make a photo of the man driving the car down the california coastline",
+    image_urls: ["https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input.png", "https://storage.googleapis.com/falserverless/example_inputs/nano-banana-edit-input-2.png"]
+  },
+  logs: true,
+  onQueueUpdate: (update) => {
+    if (update.status === "IN_PROGRESS") {
+      update.logs.map((log) => log.message).forEach(console.log);
+    }
+  },
 });
 console.log(result.data);
 console.log(result.requestId);
 ```
+
 
 ## Additional Resources
 
