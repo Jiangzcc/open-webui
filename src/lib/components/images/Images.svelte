@@ -25,13 +25,24 @@
 		DEFAULT_IMAGE_ASPECT_RATIO,
 		filterImageFiles,
 		getImageModelCapability,
+		getPrimaryImageModels,
 		normalizeImageGenerationModels,
 		normalizeImageResults,
+		resolveActiveImageModel,
+		resolveImageEditModel,
+		supportsImageEditing,
 		validateImagePrompt,
 		type GeneratedImage,
 		type ImageAspectRatio,
 		type ImageGenerationModel
 	} from '$lib/utils/image-generation';
+
+	import {
+		groupByVendor,
+		vendorLogoUrl,
+		isProxyModel,
+		stripVendorFromName
+	} from '$lib/utils/images-dropdown';
 
 	import Image from '$lib/components/common/Image.svelte';
 	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
@@ -62,6 +73,7 @@
 	let draggedOver = false;
 	let showAspectRatioPicker = false;
 	let showModelSelector = false;
+	let selectedVendor = '';
 
 	let selection: 'generate' | 'mine' | 'all' = 'generate';
 	let libraryRevision = 0;
@@ -95,10 +107,34 @@
 
 	$: modeLabel = referenceImages.length > 0 ? $i18n.t('Image to Image') : $i18n.t('Text to Image');
 	$: selectedModelConfig =
-		models.find((model) => model.id === selectedModel) ??
-		(selectedModel === '' ? (models.find((model) => model.isDefault) ?? models[0] ?? null) : null);
+		primaryModels.find((model) => model.id === selectedModel) ??
+		(selectedModel === ''
+			? (primaryModels.find((model) => model.isDefault) ?? primaryModels[0] ?? null)
+			: null);
+	$: activeModelConfig = resolveActiveImageModel(
+		selectedModelConfig,
+		models,
+		referenceImages.length > 0
+	);
+	$: selectedModelSupportsEditing = supportsImageEditing(selectedModelConfig, models);
+	// #17:单图派 i2i 模型声明 imageInputMaxCount=1,届时参考图槽位收缩到 1;
+	// 其余模型沿用全局上限 4。activeModelConfig 变化时自动跟随。
+	$: effectiveMaxReferenceImages =
+		resolveImageEditModel(selectedModelConfig, models)?.imageInputMaxCount ??
+		selectedModelConfig?.imageInputMaxCount ??
+		MAX_REFERENCE_IMAGES;
+	// 切到更低容量模型时,若已持有的参考图超过新上限,裁剪多余并提示;
+	// slice 后长度不再超标,reaction 自然收敛,toast 只发一次。
+	$: if (loaded && referenceImages.length > effectiveMaxReferenceImages) {
+		referenceImages = referenceImages.slice(0, effectiveMaxReferenceImages);
+		toast.info(
+			$i18n.t('Trimmed to {{count}} reference image(s) for this model.', {
+				count: effectiveMaxReferenceImages
+			})
+		);
+	}
 	$: selectedModelCapability = getImageModelCapability(
-		selectedModelConfig ?? (selectedModel || null)
+		activeModelConfig ?? selectedModelConfig ?? (selectedModel || null)
 	);
 	$: aspectRatioOptions = selectedModelCapability.aspectRatios;
 	$: resolutionOptions = selectedModelCapability.resolutions;
@@ -121,7 +157,7 @@
 		selectedAspectRatio,
 		selectedResolution,
 		selectedQuality,
-		selectedModelConfig ?? selectedModel,
+		activeModelConfig ?? selectedModelConfig ?? selectedModel,
 		imageCount,
 		steps,
 		negativePrompt,
@@ -130,17 +166,18 @@
 	$: if (loaded && quoteInput) {
 		imageQuoteStateMachine.schedule(quoteInput);
 	}
-	$: availableModels =
-		referenceImages.length > 0
-			? models.filter((model) => model.task !== 'text-to-image')
-			: models.filter((model) => model.task !== 'image-to-image');
-	$: if (loaded && selectedModelConfig?.task === 'text-to-image' && referenceImages.length > 0) {
-		const editModel = selectedModelConfig.editModel ?? `${selectedModelConfig.id}/edit`;
-		selectModel(models.some((model) => model.id === editModel) ? editModel : '');
+	$: primaryModels = getPrimaryImageModels(models);
+	$: availableModels = primaryModels;
+
+	$: vendorGroups = groupByVendor(availableModels);
+	$: vendorList = Object.keys(vendorGroups).sort((a, b) =>
+		a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)
+	);
+	$: if (selectedVendor === '' && vendorList.length > 0) {
+		selectedVendor = vendorList[0];
 	}
-	$: if (loaded && selectedModelConfig?.task === 'image-to-image' && referenceImages.length === 0) {
-		selectModel(selectedModelConfig.generationModel ?? '');
-	}
+	$: vendorModels = vendorGroups[selectedVendor] ?? [];
+
 	$: if (loaded && !modelsLoaded && !modelsLoading) {
 		void loadModels();
 	}
@@ -243,6 +280,9 @@
 				return $i18n.t('credits.unavailable');
 		}
 	};
+
+	const modelBasePrice = (model: ImageGenerationModel) =>
+		referenceImages.length > 0 ? resolveImageEditModel(model, models)?.basePrice : model.basePrice;
 
 	const getAspectRatioLabel = (ratio: ImageAspectRatio) => {
 		return ratio === DEFAULT_IMAGE_ASPECT_RATIO ? $i18n.t('Auto') : ratio;
@@ -379,7 +419,11 @@
 	};
 
 	const addFiles = async (files: File[]) => {
-		const remainingSlots = Math.max(MAX_REFERENCE_IMAGES - referenceImages.length, 0);
+		if (!selectedModelSupportsEditing) {
+			return;
+		}
+
+		const remainingSlots = Math.max(effectiveMaxReferenceImages - referenceImages.length, 0);
 		const { accepted, rejected } = filterImageFiles(files, {
 			maxCount: remainingSlots,
 			maxBytes: MAX_REFERENCE_IMAGE_BYTES
@@ -393,7 +437,9 @@
 		}
 		if (rejected.some((item) => item.reason === 'too_many')) {
 			toast.error(
-				$i18n.t('You can attach up to {{count}} reference images.', { count: MAX_REFERENCE_IMAGES })
+				$i18n.t('You can attach up to {{count}} reference images.', {
+					count: effectiveMaxReferenceImages
+				})
 			);
 		}
 
@@ -428,6 +474,10 @@
 		event.preventDefault();
 		draggedOver = false;
 
+		if (!selectedModelSupportsEditing) {
+			return;
+		}
+
 		if (event.dataTransfer?.files) {
 			await addFiles(Array.from(event.dataTransfer.files));
 		}
@@ -442,15 +492,25 @@
 	};
 
 	const selectModel = (model: string) => {
+		const selectedConfig =
+			primaryModels.find((item) => item.id === model) ??
+			(model === '' ? primaryModels.find((item) => item.isDefault) : undefined);
+		if (referenceImages.length > 0 && !supportsImageEditing(selectedConfig, models)) {
+			referenceImages = [];
+			toast.info(
+				$i18n.t('This model does not support reference images. Uploaded images were removed.')
+			);
+		}
 		selectedModel = model;
 		showModelSelector = false;
-		const selectedConfig =
-			models.find((item) => item.id === model) ??
-			(model === '' ? models.find((item) => item.isDefault) : undefined);
 		const capability = getImageModelCapability(selectedConfig ?? model);
 		selectedAspectRatio = capability.defaultAspectRatio;
 		selectedResolution = capability.defaultResolution ?? '';
 		imageCount = capability.imageCounts[0] ?? 1;
+	};
+
+	const selectModelIfEnabled = (model: ImageGenerationModel) => {
+		selectModel(model.id);
 	};
 
 	const selectResolution = (resolution: string) => {
@@ -548,7 +608,7 @@
 				aspectRatio: selectedAspectRatio,
 				resolution: selectedResolution,
 				quality: selectedQuality || null,
-				model: selectedModelConfig ?? selectedModel,
+				model: activeModelConfig ?? selectedModelConfig ?? selectedModel,
 				n: imageCount,
 				steps,
 				negative_prompt: negativePrompt
@@ -810,7 +870,9 @@
 							on:submit|preventDefault={submitHandler}
 							on:dragover={(event) => {
 								event.preventDefault();
-								draggedOver = event.dataTransfer?.types?.includes('Files') ?? false;
+								draggedOver =
+									selectedModelSupportsEditing &&
+									(event.dataTransfer?.types?.includes('Files') ?? false);
 							}}
 							on:dragleave={() => {
 								draggedOver = false;
@@ -835,6 +897,128 @@
 							/>
 
 							<div class="p-4">
+								<div
+									class="relative mb-3 inline-flex min-w-0 max-w-[12rem] shrink"
+									bind:this={modelSelectorElement}
+								>
+									<button
+										type="button"
+										class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
+										on:click={toggleModelSelector}
+										aria-expanded={showModelSelector}
+										aria-haspopup="listbox"
+									>
+										{#if selectedModelConfig?.provider}
+											<img
+												src={vendorLogoUrl(selectedModelConfig.provider)}
+												alt=""
+												class="size-4 shrink-0 rounded-sm"
+												loading="lazy"
+												decoding="async"
+											/>
+										{:else}
+											<Photo className="size-4 shrink-0" strokeWidth="2" />
+										{/if}
+										<span class="truncate">{selectedModelLabel}</span>
+										<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
+									</button>
+
+									{#if showModelSelector}
+										<div
+											class="fixed inset-x-3 bottom-14 z-50 max-h-[60dvh] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:h-80 sm:w-[30rem] sm:p-2 dark:border-gray-800 dark:bg-gray-900"
+											role="listbox"
+											aria-label={$i18n.t('Select image model')}
+										>
+											<div class="flex h-full gap-2 sm:min-w-[22rem] sm:flex-row flex-col">
+												<!-- Brand level (left/top) -->
+												<ul
+													class="flex shrink-0 snap-x snap-mandatory gap-1 overflow-x-auto pb-1 sm:w-40 sm:flex-col sm:overflow-visible sm:border-r sm:border-gray-100 sm:pr-1 sm:pb-0 dark:sm:border-gray-800"
+													role="group"
+													aria-label={$i18n.t('Brands')}
+												>
+													{#each vendorList as vendor}
+														<li class="snap-start">
+															<button
+																type="button"
+																class="flex w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor ===
+																vendor
+																	? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+																	: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																on:click={() => (selectedVendor = vendor)}
+																aria-pressed={selectedVendor === vendor}
+															>
+																<img
+																	src={vendorLogoUrl(vendor)}
+																	alt={vendor}
+																	class="size-4 shrink-0 rounded-sm"
+																	loading="lazy"
+																	decoding="async"
+																/>
+																<span class="whitespace-nowrap capitalize">{vendor}</span>
+															</button>
+														</li>
+													{/each}
+												</ul>
+												<!-- Model level (right/bottom) -->
+												<ul
+													class="h-72 overflow-y-auto sm:h-full sm:flex-1"
+													role="group"
+													aria-label={$i18n.t('Models')}
+												>
+													{#each vendorModels as model}
+														<li>
+															<button
+																type="button"
+																class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedModel ===
+																model.id
+																	? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+																	: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																on:click={() => selectModelIfEnabled(model)}
+																role="option"
+																aria-selected={selectedModel === model.id}
+															>
+																{#if model.provider}
+																	<img
+																		src={vendorLogoUrl(model.provider)}
+																		alt=""
+																		class="size-4 shrink-0 rounded-sm"
+																		loading="lazy"
+																		decoding="async"
+																	/>
+																{/if}
+																<span class="min-w-0 flex-1 truncate text-left"
+																	>{stripVendorFromName(model)}</span
+																>
+																{#if supportsImageEditing(model, models)}
+																	<Tooltip content={$i18n.t('Supports reference images')}>
+																		<span
+																			class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300"
+																			aria-label={$i18n.t('Supports reference images')}
+																		>
+																			<Photo className="size-3.5" strokeWidth="2" />
+																		</span>
+																	</Tooltip>
+																{/if}
+																{#if modelBasePrice(model)}
+																			<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+																				{modelBasePrice(model)}
+																				{$i18n.t('credits.common.unit')}
+																			</span>
+																{/if}
+																{#if isProxyModel(model)}
+																	<span class="shrink-0 text-xs text-amber-600 dark:text-amber-400">
+																		{$i18n.t('First image may be slower')}
+																	</span>
+																{/if}
+															</button>
+														</li>
+													{/each}
+												</ul>
+											</div>
+										</div>
+									{/if}
+								</div>
+
 								{#if referenceImages.length > 0}
 									<div class="mb-3 flex gap-2 overflow-x-auto scrollbar-hidden pb-1">
 										{#each referenceImages as image, index (`${image.url}-${index}`)}
@@ -858,15 +1042,17 @@
 									</div>
 								{/if}
 
-								<div class="flex gap-4">
-									<button
-										type="button"
-										class="mt-2 flex h-[3.8rem] w-[3.125rem] shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
-										on:click={() => fileInputElement?.click()}
-										aria-label={$i18n.t('Upload reference image')}
-									>
-										<Plus className="size-6" strokeWidth="1.8" />
-									</button>
+								<div class="flex min-w-0 gap-4">
+									{#if selectedModelSupportsEditing}
+										<button
+											type="button"
+											class="mt-2 flex h-[3.8rem] w-[3.125rem] shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
+											on:click={() => fileInputElement?.click()}
+											aria-label={$i18n.t('Upload reference image')}
+										>
+											<Plus className="size-6" strokeWidth="1.8" />
+										</button>
+									{/if}
 
 									<textarea
 										bind:this={promptTextareaElement}
@@ -880,63 +1066,8 @@
 									></textarea>
 								</div>
 
-								<div class="mt-2 flex h-8 items-center justify-between gap-2">
+								<div class="mt-2 flex min-w-0 items-center justify-between gap-2">
 									<div class="flex min-w-0 items-center gap-2">
-										<div
-											class="relative inline-flex min-w-0 max-w-[12rem] shrink"
-											bind:this={modelSelectorElement}
-										>
-											<button
-												type="button"
-												class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
-												on:click={toggleModelSelector}
-												aria-expanded={showModelSelector}
-												aria-haspopup="listbox"
-											>
-												<Photo className="size-4 shrink-0" strokeWidth="2" />
-												<span class="truncate">{selectedModelLabel}</span>
-												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
-											</button>
-
-											{#if showModelSelector}
-												<div
-													class="fixed inset-x-3 bottom-14 z-50 max-h-[calc(100dvh-5rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:max-h-96 sm:w-80 dark:border-gray-800 dark:bg-gray-900"
-													role="listbox"
-													aria-label={$i18n.t('Select image model')}
-												>
-													<button
-														type="button"
-														class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-850 {selectedModel ===
-														''
-															? 'bg-gray-50 text-gray-900 dark:bg-gray-850 dark:text-gray-100'
-															: 'text-gray-700 dark:text-gray-200'}"
-														on:click={() => selectModel('')}
-														role="option"
-														aria-selected={selectedModel === ''}
-													>
-														<span>{$i18n.t('Default Model')}</span>
-														{#if selectedModel === ''}<span>✓</span>{/if}
-													</button>
-
-													{#each availableModels as model}
-														<button
-															type="button"
-															class="flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-850 {selectedModel ===
-															model.id
-																? 'bg-gray-50 text-gray-900 dark:bg-gray-850 dark:text-gray-100'
-																: 'text-gray-700 dark:text-gray-200'}"
-															on:click={() => selectModel(model.id)}
-															role="option"
-															aria-selected={selectedModel === model.id}
-														>
-															<span class="truncate">{model.name ?? model.id}</span>
-															{#if selectedModel === model.id}<span>✓</span>{/if}
-														</button>
-													{/each}
-												</div>
-											{/if}
-										</div>
-
 										<div class="relative" bind:this={imageOptionsElement}>
 											<button
 												type="button"
@@ -955,10 +1086,12 @@
 														{getQualityLabel(selectedQuality)}
 													</span>
 												{/if}
-												<span class="inline-flex items-center gap-1">
-													<Photo className="size-4" strokeWidth="2" />
-													{imageCount}
-												</span>
+												{#if imageCountOptions.length > 1}
+													<span class="inline-flex items-center gap-1">
+														<Photo className="size-4" strokeWidth="2" />
+														{imageCount}
+													</span>
+												{/if}
 											</button>
 
 											{#if showAspectRatioPicker}
@@ -1052,37 +1185,39 @@
 														</section>
 													{/if}
 
-													<section class={hasImageSizingOptions ? 'mt-5' : ''}>
-														<h3
-															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-														>
-															{$i18n.t('Quantity')}
-														</h3>
-														<div class="grid grid-cols-4 gap-1.5">
-															{#each imageCountOptions as count}
-																<button
-																	type="button"
-																	class="h-9 rounded-xl border text-sm transition {Number(
-																		imageCount
-																	) === count
-																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																	on:click={() => {
-																		imageCount = count;
-																	}}
-																	aria-pressed={Number(imageCount) === count}
-																>
-																	{count}
-																</button>
-															{/each}
-														</div>
-													</section>
+													{#if imageCountOptions.length > 1}
+														<section class={hasImageSizingOptions ? 'mt-5' : ''}>
+															<h3
+																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+															>
+																{$i18n.t('Quantity')}
+															</h3>
+															<div class="grid grid-cols-4 gap-1.5">
+																{#each imageCountOptions as count}
+																	<button
+																		type="button"
+																		class="h-9 rounded-xl border text-sm transition {Number(
+																			imageCount
+																		) === count
+																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																		on:click={() => {
+																			imageCount = count;
+																		}}
+																		aria-pressed={Number(imageCount) === count}
+																	>
+																		{count}
+																	</button>
+																{/each}
+															</div>
+														</section>
+													{/if}
 												</div>
 											{/if}
 										</div>
 									</div>
 
-									<div class="flex min-w-0 items-center gap-2">
+									<div class="flex min-w-0 items-center justify-between gap-2 sm:justify-end">
 										<ImageCreditQuoteBadge quoteState={imageQuoteState} />
 										<button
 											type="submit"

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+import types
 from types import SimpleNamespace
 
 import pytest
-from open_webui.utils.images.fal import get_mock_fal_image_result
+from open_webui.utils.images.fal import build_fal_image_payload, get_mock_fal_image_result
 
 
 @pytest.mark.parametrize(
@@ -36,3 +37,79 @@ def test_fal_mock_uses_requested_image_count_and_unique_seeds() -> None:
     urls = [image['url'] for image in result['images']]
     assert len(urls) == 4
     assert len(set(urls)) == 4
+
+
+def _form(**kw):
+    base = dict(
+        prompt='a cat',
+        model='',
+        size=None,
+        n=1,
+        steps=None,
+        negative_prompt=None,
+        aspect_ratio=None,
+        resolution=None,
+        output_format=None,
+        system_prompt=None,
+        seed=None,
+        sync_mode=None,
+        safety_tolerance=None,
+        limit_generations=None,
+        enable_web_search=None,
+        thinking_level=None,
+        enable_safety_checker=None,
+        enable_prompt_expansion=None,
+        acceleration=None,
+        quality=None,
+        background=None,
+    )
+    base.update(kw)
+    return types.SimpleNamespace(**base)
+
+
+def test_payload_qwen_image_sends_num_images_and_image_size_object():
+    data = build_fal_image_payload(_form(n=2, size='1024x768'), 'fal-ai/qwen-image')
+    assert data['prompt'] == 'a cat'
+    assert data['num_images'] == 2
+    assert data['image_size'] == {'width': 1024, 'height': 768}
+
+
+def test_payload_wan_v26_uses_max_images_field():
+    data = build_fal_image_payload(_form(n=3), 'wan/v2.6/text-to-image')
+    assert data['max_images'] == 3
+    assert 'num_images' not in data
+
+
+def test_payload_wan_v22_does_not_send_count():
+    data = build_fal_image_payload(_form(n=1), 'fal-ai/wan/v2.2-5b/text-to-image')
+    assert 'num_images' not in data
+    assert 'max_images' not in data
+
+
+def test_payload_wan_v27_supports_five_images():
+    data = build_fal_image_payload(_form(n=5), 'fal-ai/wan/v2.7/text-to-image')
+    assert data['num_images'] == 5
+
+
+def test_payload_qwen2_has_no_guidance_or_steps():
+    data = build_fal_image_payload(_form(), 'fal-ai/qwen-image-2/text-to-image')
+    assert 'guidance_scale' not in data
+    assert 'num_inference_steps' not in data
+    assert data['enable_safety_checker'] is True
+    assert data['enable_prompt_expansion'] is True
+
+
+def test_payload_z_image_turbo_edit_uses_single_image_contract():
+    data = build_fal_image_payload(
+        _form(n=2, size='1024x768', steps=8, output_format='webp'),
+        'fal-ai/z-image/turbo/image-to-image',
+        ['https://example.test/first.png', 'https://example.test/ignored.png'],
+    )
+
+    assert data['image_url'] == 'https://example.test/first.png'
+    assert 'image_urls' not in data
+    assert data['num_images'] == 2
+    assert data['num_inference_steps'] == 8
+    assert data['image_size'] == {'width': 1024, 'height': 768}
+    assert data['output_format'] == 'webp'
+    assert data['enable_safety_checker'] is True

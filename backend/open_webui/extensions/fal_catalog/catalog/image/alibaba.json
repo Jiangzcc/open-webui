@@ -1,0 +1,1426 @@
+[
+  {
+    "id": "fal-ai/z-image/turbo",
+    "public_id": "z-image-turbo",
+    "name": "Alibaba / Z Image Turbo",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/z-image/turbo/image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1024x1024",
+      "512x512",
+      "1024x576",
+      "576x1024",
+      "1024x768",
+      "768x1024"
+    ],
+    "default_resolution": "1024x768",
+    "image_size_whitelist": {
+      "1024x1024": "1024x1024",
+      "512x512": "512x512",
+      "1024x576": "1024x576",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "768x1024": "768x1024"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 8
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/z-image/turbo/image-to-image",
+    "public_id": "z-image-turbo/edit",
+    "name": "Alibaba / Z Image Turbo Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/z-image/turbo",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1024x1024",
+      "512x512",
+      "1024x576",
+      "576x1024",
+      "1024x768",
+      "768x1024"
+    ],
+    "default_resolution": "1024x768",
+    "image_size_whitelist": {
+      "1024x1024": "1024x1024",
+      "512x512": "512x512",
+      "1024x576": "1024x576",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "768x1024": "768x1024"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 8
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1
+  },
+  {
+    "id": "fal-ai/z-image/base",
+    "public_id": "z-image-base",
+    "name": "Alibaba / Z Image Base",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x768",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/qwen-image-max/text-to-image",
+    "public_id": "qwen-image-max",
+    "name": "Alibaba / Qwen Image Max",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/qwen-image-max/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/qwen-image-max/edit",
+    "public_id": "qwen-image-max/edit",
+    "name": "Alibaba / Qwen Image Max Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/qwen-image-max/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_urls"
+  },
+  {
+    "id": "fal-ai/qwen-image-2/pro/text-to-image",
+    "public_id": "qwen-image-2-pro",
+    "name": "Alibaba / Qwen Image 2 Pro",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/qwen-image-2/pro/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/qwen-image-2/pro/edit",
+    "public_id": "qwen-image-2-pro/edit",
+    "name": "Alibaba / Qwen Image 2 Pro Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/qwen-image-2/pro/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_urls"
+  },
+  {
+    "id": "fal-ai/qwen-image-2/text-to-image",
+    "public_id": "qwen-image-2",
+    "name": "Alibaba / Qwen Image 2",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/qwen-image-2/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/qwen-image-2/edit",
+    "public_id": "qwen-image-2/edit",
+    "name": "Alibaba / Qwen Image 2 Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/qwen-image-2/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_urls"
+  },
+  {
+    "id": "fal-ai/qwen-image-2512",
+    "public_id": "qwen-image-2512",
+    "name": "Alibaba / Qwen Image 2512",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x768",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/qwen-image",
+    "public_id": "qwen-image",
+    "name": "Alibaba / Qwen Image",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/qwen-image/image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x768",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 250
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/qwen-image/image-to-image",
+    "public_id": "qwen-image/edit",
+    "name": "Alibaba / Qwen Image Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/qwen-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x768",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 250
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1
+  },
+  {
+    "id": "fal-ai/wan/v2.7/pro/text-to-image",
+    "public_id": "wan-2.7-pro",
+    "name": "Alibaba / Wan 2.7 Pro",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/wan/v2.7/pro/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "512x512",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/wan/v2.7/pro/edit",
+    "public_id": "wan-2.7-pro/edit",
+    "name": "Alibaba / Wan 2.7 Pro Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/wan/v2.7/pro/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "512x512",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_urls"
+  },
+  {
+    "id": "fal-ai/wan/v2.7/text-to-image",
+    "public_id": "wan-2.7",
+    "name": "Alibaba / Wan 2.7",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/wan/v2.7/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "512x512",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/wan/v2.7/edit",
+    "public_id": "wan-2.7/edit",
+    "name": "Alibaba / Wan 2.7 Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/wan/v2.7/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "512x512",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_urls"
+  },
+  {
+    "id": "wan/v2.6/text-to-image",
+    "public_id": "wan-2.6",
+    "name": "Alibaba / Wan 2.6",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "wan/v2.6/image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "count_field": "max_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "wan/v2.6/image-to-image",
+    "public_id": "wan-2.6/edit",
+    "name": "Alibaba / Wan 2.6 Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "wan/v2.6/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "count_field": "max_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_urls"
+  },
+  {
+    "id": "fal-ai/wan-v2.5/text-to-image",
+    "public_id": "wan-2.5-preview",
+    "name": "Alibaba / Wan 2.5 Preview",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/wan-25-preview/image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/wan-25-preview/image-to-image",
+    "public_id": "wan-2.5-preview/edit",
+    "name": "Alibaba / Wan 2.5 Preview Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/wan-v2.5/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "1024x1024",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [],
+    "default_output_format": "png",
+    "custom_size_field": "image_size",
+    "hosting": "proxy",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_urls"
+  },
+  {
+    "id": "fal-ai/wan/v2.2-a14b/text-to-image",
+    "public_id": "wan-2.2-a14b",
+    "name": "Alibaba / Wan 2.2 (A14B)",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/wan/v2.2-a14b/image-to-image",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "512x512",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/wan/v2.2-a14b/image-to-image",
+    "public_id": "wan-2.2-a14b/edit",
+    "name": "Alibaba / Wan 2.2 (A14B) Edit",
+    "provider": "alibaba",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/wan/v2.2-a14b/text-to-image",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "512x512",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1
+  },
+  {
+    "id": "fal-ai/wan/v2.2-5b/text-to-image",
+    "public_id": "wan-2.2-5b",
+    "name": "Alibaba / Wan 2.2 (5B)",
+    "provider": "alibaba",
+    "task": "text-to-image",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": true
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      }
+    ],
+    "resolutions": [
+      "1280x720",
+      "1024x768",
+      "720x1280",
+      "768x1024",
+      "1024x1024",
+      "512x512"
+    ],
+    "default_resolution": "512x512",
+    "image_size_whitelist": {
+      "1280x720": "1280x720",
+      "1024x768": "1024x768",
+      "720x1280": "720x1280",
+      "768x1024": "768x1024",
+      "1024x1024": "1024x1024",
+      "512x512": "512x512"
+    },
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "custom_size_field": "image_size",
+    "hosting": "serverless",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  }
+]

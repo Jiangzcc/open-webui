@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "modality": "image",
+  "defaults": {
+    "text-to-image": "fal-ai/z-image/turbo",
+    "image-to-image": "fal-ai/nano-banana/edit"
+  },
+  "files": [
+    "alibaba.json",
+    "google.json",
+    "openai.json",
+    "xai.json"
+  ]
+}

@@ -143,6 +143,17 @@ async def get_balance_if_exists(session: AsyncSession, user_id: str) -> int:
     return 0 if balance is None else balance
 
 
+async def get_enabled_prices(session: AsyncSession, service_type: str) -> list[CreditPrice]:
+    """Return all enabled prices for one billable service."""
+    result = await session.scalars(
+        select(CreditPrice).where(
+            CreditPrice.service_type == service_type,
+            CreditPrice.enabled.is_(True),
+        )
+    )
+    return list(result.all())
+
+
 async def get_enabled_price(
     session: AsyncSession, service_type: str, resource_id: str, action: str
 ) -> CreditPrice | None:

@@ -6,7 +6,12 @@ from decimal import Decimal, Overflow, localcontext
 import pytest
 from open_webui.extensions.credits.constants import MAX_CREDIT_VALUE
 from open_webui.extensions.credits.errors import CreditError
-from open_webui.extensions.credits.pricing import PriceFactor, PriceQuote, compute_price
+from open_webui.extensions.credits.pricing import (
+    PriceFactor,
+    PriceQuote,
+    attach_model_base_prices,
+    compute_price,
+)
 
 
 @dataclass(frozen=True)
@@ -374,3 +379,110 @@ def test_quote_and_factors_are_json_serializable_and_have_stable_plain_decimal_s
     numeric_strings = [quote.base_price, quote.raw_price, *(factor.multiplier for factor in quote.factors)]
     assert all('e-' not in value.lower() and 'e+' not in value.lower() for value in numeric_strings)
     assert json.loads(json.dumps(asdict(quote)))['charged_credits'] == 1
+
+
+# --- attach_model_base_prices: inject base_price/edit_base_price into model list --
+#
+# 需求1:images 页 /models 端点要给每个模型附带基础积分价。前端模型 id 是公共
+# id,prices 的 resource_id 是内部 id,函数借一个 id_resolver 把公共转内部再 join。
+# 只采纳 enabled 的价格;无对应价则该字段不出现(前端据此隐藏价格牌)。
+
+
+def test_attach_base_prices_joins_via_resolver_for_both_actions():
+    models = [
+        {'id': 'qwen-image', 'task': 'text-to-image', 'edit_model': 'qwen-image/edit'},
+        {
+            'id': 'qwen-image/edit',
+            'task': 'image-to-image',
+            'generation_model': 'qwen-image',
+        },
+    ]
+    prices = [
+        FakePrice(resource_id='fal-ai/qwen-image', action='text-to-image', base_price='4'),
+        FakePrice(resource_id='fal-ai/qwen-image/image-to-image', action='image-to-image', base_price='4'),
+    ]
+
+    def resolver(public_id):
+        return {
+            'qwen-image': 'fal-ai/qwen-image',
+            'qwen-image/edit': 'fal-ai/qwen-image/image-to-image',
+        }.get(public_id)
+
+    enriched = attach_model_base_prices(models, prices, id_resolver=resolver)
+
+    by_id = {m['id']: m for m in enriched}
+    assert by_id['qwen-image']['base_price'] == '4'
+    assert by_id['qwen-image']['edit_base_price'] == '4'
+    assert by_id['qwen-image/edit']['base_price'] == '4'
+    assert by_id['qwen-image/edit']['edit_base_price'] == '4'
+
+
+def test_attach_base_prices_skips_disabled_and_missing_prices():
+    models = [{'id': 'lonely'}, {'id': 'priced'}]
+    prices = [
+        FakePrice(resource_id='int/priced', action='text-to-image', base_price='7', enabled=True),
+        FakePrice(resource_id='int/disabled', action='text-to-image', base_price='99', enabled=False),
+    ]
+
+    def resolver(public_id):
+        return {'priced': 'int/priced', 'lonely': 'int/lonely'}.get(public_id)
+
+    enriched = attach_model_base_prices(models, prices, id_resolver=resolver)
+    priced = next(m for m in enriched if m['id'] == 'priced')
+    lonely = next(m for m in enriched if m['id'] == 'lonely')
+
+    assert priced['base_price'] == '7'
+    assert 'base_price' not in lonely
+    assert 'edit_base_price' not in lonely
+
+
+def test_attach_base_prices_only_adds_action_that_exists():
+    # 某 t2i 模型只有 text-to-image 价,没有 image-to-image 价(不支持 i2i)
+    models = [{'id': 'z-image-base', 'task': 'text-to-image'}]
+    prices = [FakePrice(resource_id='fal-ai/z-image/base', action='text-to-image', base_price='2')]
+
+    def resolver(public_id):
+        return {'z-image-base': 'fal-ai/z-image/base'}.get(public_id)
+
+    enriched = attach_model_base_prices(models, prices, id_resolver=resolver)
+    model = enriched[0]
+    assert model['base_price'] == '2'
+    assert 'edit_base_price' not in model
+
+
+def test_attach_base_prices_preserves_other_model_fields_and_does_not_mutate_input():
+    models = [{'id': 'keep-me', 'task': 'text-to-image', 'resolutions': ['1024x1024']}]
+    prices = [FakePrice(resource_id='int/keep', action='text-to-image', base_price='3')]
+
+    def resolver(public_id):
+        return {'keep-me': 'int/keep'}.get(public_id)
+
+    enriched = attach_model_base_prices(deepcopy(models), prices, id_resolver=resolver)
+    assert enriched[0]['resolutions'] == ['1024x1024']
+    assert enriched[0]['base_price'] == '3'
+    # 原输入不被改写
+    assert 'base_price' not in models[0]
+
+
+def test_attach_base_prices_accepts_orm_decimal_compatible_strings_only():
+    models = [{'id': 'priced'}]
+    prices = [FakePrice(resource_id='int/priced', action='text-to-image', base_price=Decimal('7'))]
+
+    enriched = attach_model_base_prices(models, prices, id_resolver=lambda _: 'int/priced')
+
+    assert 'base_price' not in enriched[0]
+
+
+def test_attach_base_prices_handles_unknown_public_ids_gracefully():
+    # resolver 返回 None(公共 id 没有对应内部 id)时,该模型安静跳过,不报错
+    models = [{'id': 'ghost'}, {'id': 'real'}]
+    prices = [FakePrice(resource_id='int/real', action='text-to-image', base_price='5')]
+
+    def resolver(public_id):
+        return {'real': 'int/real'}.get(public_id)  # ghost -> None
+
+    enriched = attach_model_base_prices(models, prices, id_resolver=resolver)
+    ghost = next(m for m in enriched if m['id'] == 'ghost')
+    real = next(m for m in enriched if m['id'] == 'real')
+    assert 'base_price' not in ghost
+    assert real['base_price'] == '5'

@@ -28,6 +28,8 @@ from open_webui.events import EVENTS, publish_event
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.http import public_credit_error_response
 from open_webui.extensions.credits.image_billing import ImageTerminalPreparationError, bill_image_call
+from open_webui.extensions.credits.pricing import attach_model_base_prices
+from open_webui.extensions.credits.repository import get_enabled_prices
 from open_webui.extensions.creations.capture import (
     build_creation_capture_context,
     capture_reference_snapshots,
@@ -398,7 +400,11 @@ async def verify_url(request: Request, user=Depends(get_admin_user)):
 
 
 @router.get('/models')
-async def get_models(request: Request, user=Depends(get_verified_user)):
+async def get_models(
+    request: Request,
+    user=Depends(get_verified_user),
+    db: AsyncSession = Depends(get_async_session),
+):
     image_config = await get_image_config()
     try:
         if image_config.IMAGE_GENERATION_ENGINE == 'openai':
@@ -414,9 +420,13 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
             ]
         elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
             default_model = image_config.IMAGE_GENERATION_MODEL or FAL_DEFAULT_IMAGE_MODEL
-            if user.role != 'admin':
-                return public_fal_image_models(default_model)
-            return [{**model, 'is_default': model['id'] == default_model} for model in get_fal_image_models()]
+            models = (
+                public_fal_image_models(default_model)
+                if user.role != 'admin'
+                else [{**model, 'is_default': model['id'] == default_model} for model in get_fal_image_models()]
+            )
+            prices = await get_enabled_prices(db, 'image')
+            return attach_model_base_prices(models, prices)
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             # TODO - get models from comfyui
             headers = {'Authorization': f'Bearer {image_config.COMFYUI_API_KEY}'}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import ROUND_CEILING, Decimal, DecimalException, InvalidOperation, localcontext
-from typing import Protocol, cast
+from typing import Callable, Protocol, cast
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -225,4 +225,67 @@ def compute_price(price: PriceLike | None, context: Mapping[str, object]) -> Pri
     )
 
 
-__all__ = ['PriceFactor', 'PriceQuote', 'compute_price']
+def attach_model_base_prices(
+	models: list[dict[str, object]],
+	prices: list[PriceLike],
+	*,
+	id_resolver: 'Callable[[str], str | None]' | None = None,
+) -> list[dict[str, object]]:
+	"""Decorate a list of public image-model dicts with their credit base prices.
+
+	Each model in ``models`` carries a public ``id`` (e.g. ``qwen-image``); each
+	price in ``prices`` carries an internal ``resource_id`` (e.g.
+	``fal-ai/qwen-image``). ``id_resolver`` bridges the two namespaces by turning
+	a public id into the internal resource id that the prices table stores. When
+	omitted, it lazily falls back to ``internal_fal_image_model_id``.
+
+	For every model we attach ``base_price`` (its text-to-image price) and/or
+	``edit_base_price`` (its image-to-image price) as strings whenever an enabled
+	price exists for that (internal id, action) pair; missing pairs are silently
+	left out so the frontend can hide the price badge. Input dicts are not
+	mutated — each returned dict is a shallow copy with the extra keys layered on.
+	"""
+	if id_resolver is None:
+		from open_webui.utils.images.fal_models import internal_fal_image_model_id
+
+		id_resolver = internal_fal_image_model_id
+
+	index: dict[tuple[str, str], str] = {}
+	for price in prices:
+		if not getattr(price, 'enabled', True):
+			continue
+		resource_id = getattr(price, 'resource_id', None)
+		action = getattr(price, 'action', None)
+		base_price = getattr(price, 'base_price', None)
+		if not isinstance(resource_id, str) or not isinstance(action, str):
+			continue
+		if not isinstance(base_price, str):
+			continue
+		index[(resource_id, action)] = base_price
+
+	enriched: list[dict[str, object]] = []
+	for model in models:
+		public_id = model.get('id')
+		edit_public = model.get('edit_model')
+		gen_public = model.get('generation_model')
+		internal_id = id_resolver(public_id) if isinstance(public_id, str) else None
+		edit_internal = id_resolver(edit_public) if isinstance(edit_public, str) else None
+		gen_internal = id_resolver(gen_public) if isinstance(gen_public, str) else None
+		copy = dict(model)
+		# base_price = 该模型(或其 t2i twin)的 text-to-image 价
+		t2i_source = internal_id if model.get('task') != 'image-to-image' else gen_internal
+		# edit_base_price = 该模型(或其 i2i twin)的 image-to-image 价
+		i2i_source = internal_id if model.get('task') != 'text-to-image' else edit_internal
+		if isinstance(t2i_source, str):
+			t2i = index.get((t2i_source, 'text-to-image'))
+			if t2i is not None:
+				copy['base_price'] = t2i
+		if isinstance(i2i_source, str):
+			i2i = index.get((i2i_source, 'image-to-image'))
+			if i2i is not None:
+				copy['edit_base_price'] = i2i
+		enriched.append(copy)
+	return enriched
+
+
+__all__ = ['PriceFactor', 'PriceQuote', 'attach_model_base_prices', 'compute_price']

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 
 import {
 	buildImageEditPayload,
@@ -7,10 +7,14 @@ import {
 	filterImageFiles,
 	getImageModelCapability,
 	getImageSizeForAspectRatio,
+	getPrimaryImageModels,
 	normalizeAspectRatio,
 	normalizeImageGenerationModels,
 	normalizeImageResults,
 	normalizeReferenceImages,
+	resolveActiveImageModel,
+	resolveImageEditModel,
+	supportsImageEditing,
 	prependGeneratedImages,
 	removeReferenceImage,
 	validateImagePrompt
@@ -140,6 +144,18 @@ describe('image generation utils', () => {
 				defaultOutputFormat: 'webp'
 			}
 		]);
+	});
+
+	test('normalizes model base prices for text and edit modes', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'qwen-image',
+				base_price: '4',
+				edit_base_price: '7'
+			}
+		]);
+
+		expect(model).toMatchObject({ basePrice: '4', editBasePrice: '7' });
 	});
 
 	test('keeps explicit auto model metadata', () => {
@@ -544,5 +560,97 @@ describe('image generation utils', () => {
 		expect(buildImageGenerationPayload({ prompt: 'plain', quality: 'high' })).not.toHaveProperty(
 			'quality'
 		);
+	});
+});
+
+describe('alibaba t2i hosting field', () => {
+	it('exposes hosting on capability for proxy model', () => {
+		const cap = getImageModelCapability({
+			id: 'qwen-image-2-pro',
+			hosting: 'proxy',
+			aspectRatios: ['1:1'],
+			resolutions: ['1024x1024'],
+			imageCounts: [1, 2, 3, 4]
+		});
+		expect(cap.aspectRatios).toEqual(['1:1']);
+	});
+
+	it('treats single-image-count model as fixed one', () => {
+		const cap = getImageModelCapability({
+			id: 'wan-2.2-5b',
+			hosting: 'serverless',
+			imageCounts: [1]
+		});
+		expect(cap.imageCounts).toEqual([1]);
+		expect(cap.imageCounts.length).toBe(1);
+	});
+});
+
+describe('primary image model mapping', () => {
+	const primary = {
+		id: 'nano-banana',
+		task: 'text-to-image' as const,
+		editModel: 'nano-banana/edit'
+	};
+	const edit = {
+		id: 'nano-banana/edit',
+		task: 'image-to-image' as const,
+		generationModel: 'nano-banana'
+	};
+	const textOnly = { id: 'z-image-turbo', task: 'text-to-image' as const };
+	const models = [primary, edit, textOnly];
+
+	test('exposes only primary models in the selector', () => {
+		expect(getPrimaryImageModels(models).map((model) => model.id)).toEqual([
+			'nano-banana',
+			'z-image-turbo'
+		]);
+	});
+
+	test('resolves only edit mappings that exist in the catalog', () => {
+		expect(resolveImageEditModel(primary, models)?.id).toBe('nano-banana/edit');
+		expect(resolveImageEditModel({ ...primary, editModel: 'missing/edit' }, models)).toBeNull();
+		expect(resolveImageEditModel(textOnly, models)).toBeNull();
+	});
+
+	test('reports reference-image support from a valid edit mapping', () => {
+		expect(supportsImageEditing(primary, models)).toBe(true);
+		expect(supportsImageEditing(textOnly, models)).toBe(false);
+	});
+
+	test('derives the active model without changing the selected primary model', () => {
+		expect(resolveActiveImageModel(primary, models, false)?.id).toBe('nano-banana');
+		expect(resolveActiveImageModel(primary, models, true)?.id).toBe('nano-banana/edit');
+		expect(resolveActiveImageModel(textOnly, models, true)?.id).toBe('z-image-turbo');
+	});
+});
+
+describe('imageInputMaxCount normalization', () => {
+	// #17:单图派 i2i 端点在后端声明 image_input_max_count=1;前端需透过 normalize
+	// 把 snake_case 采集成 camelCase,供上传组件据此收紧参考图数量上限。
+	test('collects image_input_max_count into imageInputMaxCount', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'qwen-image/edit',
+				task: 'image-to-image',
+				image_input_max_count: 1
+			}
+		]);
+		expect(model.imageInputMaxCount).toBe(1);
+	});
+
+	test('omits imageInputMaxCount when the source does not declare it', () => {
+		// 多图派不下发该字段,前端不应臆造一个值,以免误限
+		const [model] = normalizeImageGenerationModels([
+			{ id: 'qwen-image-2/edit', task: 'image-to-image' }
+		]);
+		expect(model.imageInputMaxCount).toBeUndefined();
+	});
+
+	test('ignores non-positive or non-integer values defensively', () => {
+		const [zero] = normalizeImageGenerationModels([{ id: 'a', image_input_max_count: 0 }]);
+		expect(zero.imageInputMaxCount).toBeUndefined();
+		const [frac] = normalizeImageGenerationModels([{ id: 'b', image_input_max_count: 2.5 }]);
+		expect(frac.imageInputMaxCount).toBeUndefined();
 	});
 });

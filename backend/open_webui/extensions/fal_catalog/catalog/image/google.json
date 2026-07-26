@@ -1,0 +1,682 @@
+[
+  {
+    "id": "fal-ai/nano-banana-2",
+    "public_id": "nano-banana-2",
+    "name": "Google / Nano Banana 2",
+    "provider": "google",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/nano-banana-2/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      },
+      {
+        "field": "enable_web_search"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16",
+      "4:1",
+      "1:4",
+      "8:1",
+      "1:8"
+    ],
+    "resolutions": [
+      "0.5K",
+      "1K",
+      "2K",
+      "4K"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "1K",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution",
+    "supports_system_prompt": true,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      },
+      {
+        "field": "thinking_level",
+        "options": [
+          "minimal",
+          "high"
+        ]
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/nano-banana-2/edit",
+    "public_id": "nano-banana-2/edit",
+    "name": "Google / Nano Banana 2 Edit",
+    "provider": "google",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/nano-banana-2",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      },
+      {
+        "field": "enable_web_search"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16",
+      "4:1",
+      "1:4",
+      "8:1",
+      "1:8"
+    ],
+    "resolutions": [
+      "0.5K",
+      "1K",
+      "2K",
+      "4K"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "1K",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution",
+    "image_input_field": "image_urls",
+    "supports_system_prompt": true,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      },
+      {
+        "field": "thinking_level",
+        "options": [
+          "minimal",
+          "high"
+        ]
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "google/nano-banana-2-lite",
+    "public_id": "nano-banana-2-lite",
+    "name": "Google / Nano Banana 2 Lite",
+    "provider": "google",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16",
+      "4:1",
+      "1:4",
+      "8:1",
+      "1:8"
+    ],
+    "default_aspect_ratio": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": null,
+    "supports_system_prompt": true,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      },
+      {
+        "field": "thinking_level",
+        "options": [
+          "minimal",
+          "high"
+        ]
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/nano-banana-pro",
+    "public_id": "nano-banana-pro",
+    "name": "Google / Nano Banana Pro",
+    "provider": "google",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/nano-banana-pro/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      },
+      {
+        "field": "enable_web_search"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16"
+    ],
+    "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+    ],
+    "default_aspect_ratio": "1:1",
+    "default_resolution": "1K",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution",
+    "supports_system_prompt": true,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/nano-banana-pro/edit",
+    "public_id": "nano-banana-pro/edit",
+    "name": "Google / Nano Banana Pro Edit",
+    "provider": "google",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/nano-banana-pro",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      },
+      {
+        "field": "enable_web_search"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16"
+    ],
+    "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "1K",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution",
+    "image_input_field": "image_urls",
+    "supports_system_prompt": true,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/nano-banana",
+    "public_id": "nano-banana",
+    "name": "Google / Nano Banana",
+    "provider": "google",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/nano-banana/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      }
+    ],
+    "aspect_ratios": [
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16"
+    ],
+    "default_aspect_ratio": "1:1",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": null,
+    "supports_system_prompt": false,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/nano-banana/edit",
+    "public_id": "nano-banana/edit",
+    "name": "Google / Nano Banana Edit",
+    "provider": "google",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/nano-banana",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16"
+    ],
+    "default_aspect_ratio": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": null,
+    "image_input_field": "image_urls",
+    "supports_system_prompt": false,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "google/nano-banana-lite",
+    "public_id": "nano-banana-lite",
+    "name": "Google / Nano Banana Lite",
+    "provider": "google",
+    "task": "text-to-image",
+    "edit_model": "google/nano-banana-lite/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16",
+      "4:1",
+      "1:4",
+      "8:1",
+      "1:8"
+    ],
+    "default_aspect_ratio": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": null,
+    "supports_system_prompt": true,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      },
+      {
+        "field": "thinking_level",
+        "options": [
+          "minimal",
+          "high"
+        ]
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  },
+  {
+    "id": "google/nano-banana-lite/edit",
+    "public_id": "nano-banana-lite/edit",
+    "name": "Google / Nano Banana Lite Edit",
+    "provider": "google",
+    "task": "image-to-image",
+    "generation_model": "google/nano-banana-lite",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "limit_generations"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "21:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16",
+      "4:1",
+      "1:4",
+      "8:1",
+      "1:8"
+    ],
+    "default_aspect_ratio": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": null,
+    "image_input_field": "image_urls",
+    "supports_system_prompt": true,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      },
+      {
+        "field": "thinking_level",
+        "options": [
+          "minimal",
+          "high"
+        ]
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ]
+  }
+]

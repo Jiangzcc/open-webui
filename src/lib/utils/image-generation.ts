@@ -75,6 +75,15 @@ export type ImageGenerationModel = {
 	defaultOutputFormat?: string;
 	qualityOptions?: string[];
 	defaultQuality?: string;
+	hosting?: string;
+	basePrice?: string;
+	editBasePrice?: string;
+	/**
+	 * Cap on how many reference images a single image-to-image request accepts.
+	 * Backend declares `image_input_max_count` (1 for single-image families);
+	 * the frontend mirrors it to tighten the uploader’s slot budget.
+	 */
+	imageInputMaxCount?: number;
 };
 
 export type ImageModelCapability = {
@@ -475,6 +484,56 @@ export const getImageSizeForAspectRatio = (
 	return getImageModelCapability(model).aspectRatioSizes[normalizedAspectRatio];
 };
 
+/**
+ * Mode a generation request targets: plain text-to-image, or image-to-image
+ * editing driven by one or more reference images.
+ */
+export type ImageGenerationMode = 'text-to-image' | 'image-to-image';
+
+/**
+ * Whether a model is eligible for selection under the given generation mode.
+ *
+ * Strict-by-task policy: text-to-image mode lights up everything that is not
+ * an image-to-image sibling, and vice-versa. A model carrying the opposite
+ * relation (e.g. a t2i model advertising `editModel`) is intentionally dimmed
+ * in the foreign mode to steer users toward the dedicated sibling entry, even
+ * though the backend could technically fulfill the request via flipping.
+ * Models without an explicit `task` are treated as compatible with both modes
+ * so legacy/third-party entries are not penalised.
+ */
+export const getPrimaryImageModels = (models: ImageGenerationModel[]): ImageGenerationModel[] =>
+	models.filter((model) => model.task !== 'image-to-image');
+
+export const resolveImageEditModel = (
+	primaryModel: ImageGenerationModel | null | undefined,
+	models: ImageGenerationModel[]
+): ImageGenerationModel | null => {
+	if (!primaryModel?.editModel) {
+		return null;
+	}
+
+	return models.find((model) => model.id === primaryModel.editModel) ?? null;
+};
+
+export const supportsImageEditing = (
+	primaryModel: ImageGenerationModel | null | undefined,
+	models: ImageGenerationModel[]
+): boolean => resolveImageEditModel(primaryModel, models) !== null;
+
+export const resolveActiveImageModel = (
+	primaryModel: ImageGenerationModel | null | undefined,
+	models: ImageGenerationModel[],
+	hasReferenceImages: boolean
+): ImageGenerationModel | null => {
+	if (!primaryModel) {
+		return null;
+	}
+
+	return hasReferenceImages
+		? (resolveImageEditModel(primaryModel, models) ?? primaryModel)
+		: primaryModel;
+};
+
 export const normalizeImageGenerationModels = (items: unknown): ImageGenerationModel[] => {
 	if (!Array.isArray(items)) {
 		return [];
@@ -515,6 +574,10 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 			model.imageCounts ?? model.image_counts ?? model.counts
 		);
 		const maxImages = Number(model.maxImages ?? model.max_images ?? model.max_n);
+		const imageInputMaxCountRaw = Number(model.imageInputMaxCount ?? model.image_input_max_count);
+		const imageInputMaxCount = isPositiveInteger(imageInputMaxCountRaw)
+			? imageInputMaxCountRaw
+			: undefined;
 		const defaultAspectRatio = normalizeAspectRatio(
 			model.defaultAspectRatio ?? model.default_aspect_ratio
 		);
@@ -527,6 +590,20 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 		);
 		const task = trimOptional(typeof model.task === 'string' ? model.task : undefined);
 		const provider = trimOptional(typeof model.provider === 'string' ? model.provider : undefined);
+		const basePrice = trimOptional(
+			typeof model.basePrice === 'string'
+				? model.basePrice
+				: typeof model.base_price === 'string'
+					? model.base_price
+					: undefined
+		);
+		const editBasePrice = trimOptional(
+			typeof model.editBasePrice === 'string'
+				? model.editBasePrice
+				: typeof model.edit_base_price === 'string'
+					? model.edit_base_price
+					: undefined
+		);
 		const outputFormats = normalizeStringList(model.outputFormats ?? model.output_formats);
 		const defaultOutputFormat = trimOptional(
 			typeof model.defaultOutputFormat === 'string'
@@ -581,6 +658,8 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 				name: typeof model.name === 'string' ? model.name : undefined,
 				...(provider && { provider }),
 				...(task && { task }),
+				...(basePrice && { basePrice }),
+				...(editBasePrice && { editBasePrice }),
 				...(generationModel && { generationModel }),
 				...(editModel && { editModel }),
 				...(isDefault && { isDefault: true }),
@@ -588,6 +667,7 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 				...(resolutionKey !== undefined && { resolutions }),
 				...(imageCounts.length && { imageCounts }),
 				...(Number.isInteger(maxImages) && maxImages > 0 && { maxImages }),
+				...(imageInputMaxCount && { imageInputMaxCount }),
 				...(defaultAspectRatio !== DEFAULT_IMAGE_ASPECT_RATIO && { defaultAspectRatio }),
 				...(defaultResolution && { defaultResolution }),
 				...(Object.keys(aspectRatioSizes).length && { aspectRatioSizes }),

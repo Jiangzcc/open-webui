@@ -1,0 +1,204 @@
+[
+  {
+    "id": "xai/grok-imagine-image/quality/text-to-image",
+    "public_id": "grok-imagine-image-pro",
+    "name": "xAI / Grok Imagine Pro",
+    "provider": "xai",
+    "task": "text-to-image",
+    "edit_model": "xai/grok-imagine-image/quality/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [
+      "2:1",
+      "20:9",
+      "19.5:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:19.5",
+      "9:20",
+      "1:2"
+    ],
+    "resolutions": [
+      "1k",
+      "2k"
+    ],
+    "default_aspect_ratio": "1:1",
+    "default_resolution": "1k",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution"
+  },
+  {
+    "id": "xai/grok-imagine-image/quality/edit",
+    "public_id": "grok-imagine-image-pro/edit",
+    "name": "xAI / Grok Imagine Pro Edit",
+    "provider": "xai",
+    "task": "image-to-image",
+    "generation_model": "xai/grok-imagine-image/quality/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "2:1",
+      "20:9",
+      "19.5:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:19.5",
+      "9:20",
+      "1:2"
+    ],
+    "resolutions": [
+      "1k",
+      "2k"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "1k",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution",
+    "image_input_field": "image_urls",
+    "image_input_max_count": 3
+  },
+  {
+    "id": "xai/grok-imagine-image",
+    "public_id": "grok-imagine-image",
+    "name": "xAI / Grok Imagine",
+    "provider": "xai",
+    "task": "text-to-image",
+    "edit_model": "xai/grok-imagine-image/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [
+      "2:1",
+      "20:9",
+      "19.5:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:19.5",
+      "9:20",
+      "1:2"
+    ],
+    "resolutions": [
+      "1k",
+      "2k"
+    ],
+    "default_aspect_ratio": "1:1",
+    "default_resolution": "1k",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution"
+  },
+  {
+    "id": "xai/grok-imagine-image/edit",
+    "public_id": "grok-imagine-image/edit",
+    "name": "xAI / Grok Imagine Edit",
+    "provider": "xai",
+    "task": "image-to-image",
+    "generation_model": "xai/grok-imagine-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "2:1",
+      "20:9",
+      "19.5:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:19.5",
+      "9:20",
+      "1:2"
+    ],
+    "resolutions": [
+      "1k",
+      "2k"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "1k",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "jpeg",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolution_field": "resolution",
+    "image_input_field": "image_urls",
+    "image_input_max_count": 3
+  }
+]

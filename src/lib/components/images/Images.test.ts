@@ -5,19 +5,6 @@ import { describe, expect, test } from 'vitest';
 const source = readFileSync(fileURLToPath(new URL('./Images.svelte', import.meta.url)), 'utf-8');
 
 describe('images page controls', () => {
-	test('shows the model selector beside the image options in the composer', () => {
-		const composerStart = source.indexOf(
-			'<div class="mt-2 flex h-8 items-center justify-between gap-2">'
-		);
-		const composerEnd = source.indexOf('</form>', composerStart);
-		const composer = source.slice(composerStart, composerEnd);
-
-		expect(composer).toContain('bind:this={modelSelectorElement}');
-		expect(composer.indexOf('bind:this={modelSelectorElement}')).toBeLessThan(
-			composer.indexOf('bind:this={imageOptionsElement}')
-		);
-	});
-
 	test('uses concise option headings and omits generation mode helper text', () => {
 		expect(source).toContain("$i18n.t('Ratio')");
 		expect(source).toContain("$i18n.t('Resolution')");
@@ -28,7 +15,7 @@ describe('images page controls', () => {
 
 	test('uses auto without ratio or resolution icons in the selected options', () => {
 		const composerStart = source.indexOf(
-			'<div class="mt-2 flex h-8 items-center justify-between gap-2">'
+			'class="mt-2 flex min-w-0 items-center justify-between gap-2"'
 		);
 		const composerEnd = source.indexOf('</form>', composerStart);
 		const composer = source.slice(composerStart, composerEnd);
@@ -49,7 +36,10 @@ describe('images page controls', () => {
 	test('shows only the model name in the trigger but keeps the provider in popup options', () => {
 		expect(source).toContain('getImageModelDisplayName');
 		expect(source).toContain('getImageModelDisplayName(selectedModelConfig)');
-		expect(source).toContain('<span class="truncate">{model.name ?? model.id}</span>');
+		// popup 选项剥掉厂商前缀只留模型短名(trigger 仍走 getImageModelDisplayName)
+		expect(source).toMatch(
+			/<span class="min-w-0 flex-1 truncate text-left"[^>]*>\s*\{stripVendorFromName\(model\)\}<\/span/
+		);
 		expect(source).not.toContain('getImageModelDisplayName(model)');
 	});
 
@@ -68,7 +58,9 @@ describe('images page controls', () => {
 		expect(source).toContain('prompt: CREDIT_QUOTE_PLACEHOLDER_PROMPT');
 		expect(source).not.toContain('quotePrompt: string');
 		expect(source).toContain('$: selectedModelConfig =');
-		expect(source).toContain('models.find((model) => model.isDefault) ?? models[0] ?? null');
+		expect(source).toContain(
+			'primaryModels.find((model) => model.isDefault) ?? primaryModels[0] ?? null'
+		);
 		expect(source).toContain('buildImageQuoteInput(\n\t\tselectedAspectRatio,');
 		expect(source).toContain('\n\t\treferenceImages\n\t)');
 		expect(source).toContain('$: if (loaded && quoteInput) {');
@@ -85,7 +77,7 @@ describe('images page controls', () => {
 
 	test('places the credit quote directly before the submit button on the right', () => {
 		const toolbarStart = source.indexOf(
-			'<div class="mt-2 flex h-8 items-center justify-between gap-2">'
+			'class="mt-2 flex min-w-0 items-center justify-between gap-2"'
 		);
 		const toolbarEnd = source.indexOf('</form>', toolbarStart);
 		const toolbar = source.slice(toolbarStart, toolbarEnd);
@@ -166,6 +158,111 @@ describe('images page controls', () => {
 	test('drops the canUseImagesPage import and reactive gate', () => {
 		expect(source).not.toContain('canUseImagesPage');
 		expect(source).not.toContain('$: canUseImages =');
-		expect(source).not.toContain("$i18n.t('Image generation is not available')");
+		expect(source).not.toContain("$i18n.t('Image generation is not available)");
+	});
+
+	// --- Task #14: drop binary model filtering so every model stays selectable --
+	//
+	// 产品方针改为「始终显示全部模型」,上传参考图不再把 text-to-image 整族
+	// 过滤出去。与之耦合的被动偷换 reaction(选中 t2i 且有参考图就强行 flip 到
+	// editModel,反之亦然)也随之拆除,腾出位置给 #15/#16 的灰显与温和降级。
+	test('#14 removes the passive task-flip reactions around referenceImages', () => {
+		// 旧的两组 reaction:选中 t2i 且有参考图 → 强切 editModel;选中 i2i 且无参考图 → 强切 generationModel
+		expect(source).not.toContain(
+			"$: if (loaded && selectedModelConfig?.task === 'text-to-image' && referenceImages.length > 0)"
+		);
+		expect(source).not.toContain(
+			"$: if (loaded && selectedModelConfig?.task === 'image-to-image' && referenceImages.length === 0)"
+		);
+		expect(source).not.toContain('selectModel(selectedModelConfig.generationModel ?? ');
+		expect(source).not.toContain('? `${selectedModelConfig.id}/edit`');
+	});
+
+	// --- Task #16: auto-switch to a same-brand enabled model with a toast --------
+	test('shows model base price and proxy latency inline in the model list', () => {
+		expect(source).toContain('modelBasePrice(model)');
+		expect(source).toContain("$i18n.t('credits.common.unit')");
+		expect(source).not.toContain("$i18n.t('credits.unit')");
+		expect(source).toContain("$i18n.t('First image may be slower')");
+		expect(source).not.toContain("<Tooltip content={$i18n.t('First image may be slower')}");
+	});
+
+	test('left-aligns model names in the dropdown options', () => {
+		// 名称占据剩余空间并左对齐,右侧留给价格/慢启动/不支持等徽标;
+		// 按钮不再用 justify-between,否则名称会被挤到中间而不是贴着 Logo。
+		expect(source).toContain('class="min-w-0 flex-1 truncate text-left"');
+		expect(source).not.toContain('flex w-full items-center justify-between gap-2 rounded-xl');
+	});
+
+	test('gives desktop model names more room without widening the mobile overlay', () => {
+		expect(source).toContain('fixed inset-x-3 bottom-14');
+		expect(source).toContain('sm:w-[30rem]');
+		expect(source).not.toContain('sm:w-[26rem]');
+	});
+
+	test('uses the selected primary model and derives its active edit model', () => {
+		expect(source).toContain('$: primaryModels = getPrimaryImageModels(models);');
+		expect(source).toContain('$: activeModelConfig = resolveActiveImageModel(');
+		expect(source).toContain('$: selectedModelSupportsEditing = supportsImageEditing(');
+		expect(source).toContain('selectedModelConfig,\n\t\tmodels,\n\t\treferenceImages.length > 0');
+		expect(source).toContain('activeModelConfig ?? selectedModelConfig ?? selectedModel');
+	});
+
+	test('shows only primary models without foreign-mode dimming or fallback switching', () => {
+		expect(source).toContain('$: availableModels = primaryModels;');
+		expect(source).not.toContain('isModelEnabledForMode');
+		expect(source).not.toContain('pickFallbackModel');
+		expect(source).not.toContain('ensureSelectableModelForMode');
+		expect(source).not.toContain('disabled={!modelEnabled}');
+		expect(source).not.toContain("$i18n.t('Unsupported')");
+	});
+
+	test('marks primary models that support reference images', () => {
+		expect(source).toContain('supportsImageEditing(model, models)');
+		expect(source).toContain("$i18n.t('Supports reference images')");
+	});
+
+	test('hides and blocks reference uploads for unsupported primary models', () => {
+		expect(source).toContain('{#if selectedModelSupportsEditing}');
+		expect(source).toContain('if (!selectedModelSupportsEditing) {\n\t\t\treturn;\n\t\t}');
+		expect(source).toContain('referenceImages = [];');
+		expect(source).toContain(
+			"$i18n.t('This model does not support reference images. Uploaded images were removed.')"
+		);
+	});
+
+	test('places the model selector above the unchanged reference image strip and textarea', () => {
+		const formStart = source.indexOf('<form');
+		const formEnd = source.indexOf('</form>', formStart);
+		const form = source.slice(formStart, formEnd);
+		expect(form.indexOf('bind:this={modelSelectorElement}')).toBeLessThan(
+			form.indexOf('{#if referenceImages.length > 0}')
+		);
+		expect(form.indexOf('{#if referenceImages.length > 0}')).toBeLessThan(
+			form.indexOf('bind:this={promptTextareaElement}')
+		);
+	});
+
+	test('keeps image options, quote, and submit control on one mobile row', () => {
+		expect(source).toContain('mt-2 flex min-w-0 items-center justify-between gap-2');
+		expect(source).not.toContain(
+			'mt-2 flex flex-col gap-2 sm:h-8 sm:flex-row sm:items-center sm:justify-between'
+		);
+	});
+
+	// --- Task #17: cap reference-image uploads to the selected model’s capacity -----
+	test('#17 tightens the reference-image quota for single-image-family models', () => {
+		// 有效上限派生自 selectedModelConfig.imageInputMaxCount,缺省回退到全局 4
+		expect(source).toContain('$: effectiveMaxReferenceImages =');
+		expect(source).toContain(
+			'resolveImageEditModel(selectedModelConfig, models)?.imageInputMaxCount ??\n\t\tselectedModelConfig?.imageInputMaxCount ??\n\t\tMAX_REFERENCE_IMAGES'
+		);
+		// addFiles 使用动态上限而非硬编码常量
+		expect(source).toContain('Math.max(effectiveMaxReferenceImages - referenceImages.length, 0)');
+		expect(source).toContain('count: effectiveMaxReferenceImages');
+		// 切到更低容量模型时,持有的多余参考图被裁剪并 toast 提示
+		expect(source).toContain('referenceImages.length > effectiveMaxReferenceImages');
+		expect(source).toContain('referenceImages.slice(0, effectiveMaxReferenceImages)');
+		expect(source).toContain("'Trimmed to {{count}} reference image(s) for this model.'");
 	});
 });

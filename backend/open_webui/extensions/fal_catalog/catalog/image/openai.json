@@ -1,0 +1,485 @@
+[
+  {
+    "id": "openai/gpt-image-2",
+    "public_id": "gpt-image-2",
+    "name": "OpenAI / GPT Image 2",
+    "provider": "openai",
+    "task": "text-to-image",
+    "edit_model": "openai/gpt-image-2/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "16:9": "1536x864",
+      "9:16": "864x1536",
+      "4:3": "1024x768",
+      "3:4": "768x1024",
+      "3:2": "1536x1024",
+      "2:3": "1024x1536"
+    },
+    "resolutions": [],
+    "default_aspect_ratio": "4:3",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      }
+    ]
+  },
+  {
+    "id": "openai/gpt-image-2/edit",
+    "public_id": "gpt-image-2/edit",
+    "name": "OpenAI / GPT Image 2 Edit",
+    "provider": "openai",
+    "task": "image-to-image",
+    "generation_model": "openai/gpt-image-2",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [
+      "auto",
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3"
+    ],
+    "aspect_ratio_sizes": {
+      "auto": "auto",
+      "1:1": "1024x1024",
+      "16:9": "1536x864",
+      "9:16": "864x1536",
+      "4:3": "1024x768",
+      "3:4": "768x1024",
+      "3:2": "1536x1024",
+      "2:3": "1024x1536"
+    },
+    "resolutions": [],
+    "default_aspect_ratio": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_input_field": "image_urls",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "mask_url"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/gpt-image-1.5",
+    "public_id": "gpt-image-1.5",
+    "name": "OpenAI / GPT Image 1.5",
+    "provider": "openai",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/gpt-image-1.5/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [],
+    "resolutions": [
+      "1024x1024",
+      "1536x1024",
+      "1024x1536"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "1024x1024",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      },
+      {
+        "field": "background",
+        "options": [
+          "auto",
+          "transparent",
+          "opaque"
+        ],
+        "default": "auto"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/gpt-image-1.5/edit",
+    "public_id": "gpt-image-1.5/edit",
+    "name": "OpenAI / GPT Image 1.5 Edit",
+    "provider": "openai",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/gpt-image-1.5",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [],
+    "resolutions": [
+      "auto",
+      "1024x1024",
+      "1536x1024",
+      "1024x1536"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "image_input_field": "image_urls",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      },
+      {
+        "field": "background",
+        "options": [
+          "auto",
+          "transparent",
+          "opaque"
+        ],
+        "default": "auto"
+      },
+      {
+        "field": "input_fidelity",
+        "options": [
+          "low",
+          "high"
+        ]
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "mask_image_url"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/gpt-image-1/text-to-image",
+    "public_id": "gpt-image-1",
+    "name": "OpenAI / GPT Image 1",
+    "provider": "openai",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/gpt-image-1/edit-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [],
+    "resolutions": [
+      "auto",
+      "1024x1024",
+      "1536x1024",
+      "1024x1536"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      },
+      {
+        "field": "background",
+        "options": [
+          "auto",
+          "transparent",
+          "opaque"
+        ],
+        "default": "auto"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/gpt-image-1/edit-image",
+    "public_id": "gpt-image-1/edit-image",
+    "name": "OpenAI / GPT Image 1 Edit",
+    "provider": "openai",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/gpt-image-1/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [],
+    "resolutions": [
+      "auto",
+      "1024x1024",
+      "1536x1024",
+      "1024x1536"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "image_input_field": "image_urls",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      },
+      {
+        "field": "background",
+        "options": [
+          "auto",
+          "transparent",
+          "opaque"
+        ],
+        "default": "auto"
+      },
+      {
+        "field": "input_fidelity",
+        "options": [
+          "low",
+          "high"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/gpt-image-1-mini",
+    "public_id": "gpt-image-1-mini",
+    "name": "OpenAI / GPT Image 1 Mini",
+    "provider": "openai",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/gpt-image-1-mini/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [],
+    "resolutions": [
+      "auto",
+      "1024x1024",
+      "1536x1024",
+      "1024x1536"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      },
+      {
+        "field": "background",
+        "options": [
+          "auto",
+          "transparent",
+          "opaque"
+        ],
+        "default": "auto"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/gpt-image-1-mini/edit",
+    "public_id": "gpt-image-1-mini/edit",
+    "name": "OpenAI / GPT Image 1 Mini Edit",
+    "provider": "openai",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/gpt-image-1-mini",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "aspect_ratios": [],
+    "resolutions": [
+      "auto",
+      "1024x1024",
+      "1536x1024",
+      "1024x1536"
+    ],
+    "default_aspect_ratio": "auto",
+    "default_resolution": "auto",
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolution_field": "image_size",
+    "image_input_field": "image_urls",
+    "option_fields": [
+      {
+        "field": "quality",
+        "options": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "default": "low"
+      },
+      {
+        "field": "background",
+        "options": [
+          "auto",
+          "transparent",
+          "opaque"
+        ],
+        "default": "auto"
+      }
+    ]
+  }
+]

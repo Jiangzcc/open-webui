@@ -34,13 +34,17 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
     assert z_image['resolutions'] == ['1024x1024', '512x512', '1024x576', '576x1024', '1024x768', '768x1024']
     assert z_image.get('aspect_ratios') in ([], None)
     assert 'aspect_ratio_sizes' not in z_image
+    assert z_image['edit_model'] == 'z-image-turbo/edit'
+    assert by_id['z-image-turbo/edit']['generation_model'] == 'z-image-turbo'
 
     assert by_id['nano-banana-pro']['aspect_ratios']
     assert by_id['nano-banana-pro']['resolutions'] == ['1K', '2K', '4K']
     assert by_id['nano-banana']['edit_model'] == 'nano-banana/edit'
     assert by_id['nano-banana/edit']['generation_model'] == 'nano-banana'
     assert 'internal_model' not in serialized
-    assert 'provider' not in serialized
+    # provider is a display-only vendor slug used to group the public catalog.
+    # It must survive sanitization without exposing the internal fal route.
+    assert {item['provider'] for item in public} == {'alibaba', 'google', 'openai', 'xai'}
 
 
 def test_public_fal_catalog_exposes_openai_quality_without_leaking_option_fields() -> None:
@@ -82,6 +86,7 @@ def test_fal_model_resolution_maps_public_ids_to_provider_ids() -> None:
     from open_webui.utils.images import fal
 
     assert fal.get_fal_generation_model('z-image-turbo') == 'fal-ai/z-image/turbo'
+    assert fal.get_fal_edit_model('z-image-turbo') == 'fal-ai/z-image/turbo/image-to-image'
     assert fal.get_fal_generation_model('nano-banana/edit') == 'fal-ai/nano-banana'
     assert fal.get_fal_edit_model('nano-banana/edit') == 'fal-ai/nano-banana/edit'
     assert fal.get_fal_edit_model('nano-banana') == 'fal-ai/nano-banana/edit'
@@ -290,3 +295,63 @@ def test_user_credit_errors_do_not_echo_internal_resource_context(monkeypatch) -
     assert response.status_code == 409
     assert response.json()['context'] == {}
     assert 'fal-ai/' not in json.dumps(response.json())
+
+
+def test_public_fal_image_models_include_hosting_for_alibaba():
+    from open_webui.utils.images.fal_models import public_fal_image_models
+
+    models = public_fal_image_models(default_model='fal-ai/z-image/turbo')
+    by_id = {m['id']: m for m in models}
+    qwen = by_id.get('qwen-image')
+    assert qwen is not None
+    assert qwen['hosting'] == 'serverless'
+    qwen2_pro = by_id.get('qwen-image-2-pro')
+    assert qwen2_pro is not None
+    assert qwen2_pro['hosting'] == 'proxy'
+
+
+def test_legacy_models_keep_hosting_absent_or_filled():
+    from open_webui.utils.images.fal_models import public_fal_image_models
+
+    models = public_fal_image_models(default_model='fal-ai/z-image/turbo')
+    by_id = {m['id']: m for m in models}
+    # z-image-turbo 是 Task1 改造后也带 hosting 的(existing 旧模型在 _alibaba_model 改造后会带 hosting)
+    turbo = by_id.get('z-image-turbo')
+    assert turbo is not None
+    assert turbo.get('hosting') == 'serverless'
+
+
+@pytest.mark.asyncio
+async def test_images_models_enriches_public_fal_catalog_with_enabled_base_prices(monkeypatch) -> None:
+    import open_webui.routers.images as images
+    from open_webui.extensions.credits.models import CreditPrice
+
+    async def fal_config():
+        return SimpleNamespace(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='fal-ai/qwen-image')
+
+    class Scalars:
+        def all(self):
+            return [
+                CreditPrice(
+                    service_type='image',
+                    resource_id='fal-ai/qwen-image',
+                    action='text-to-image',
+                    base_price='4',
+                    enabled=True,
+                )
+            ]
+
+    class Session:
+        async def scalars(self, _statement):
+            return Scalars()
+
+    monkeypatch.setattr(images, 'get_image_config', fal_config)
+
+    result = await images.get_models(
+        SimpleNamespace(),
+        user=SimpleNamespace(role='user'),
+        db=Session(),
+    )
+
+    qwen = next(model for model in result if model['id'] == 'qwen-image')
+    assert qwen['base_price'] == '4'
