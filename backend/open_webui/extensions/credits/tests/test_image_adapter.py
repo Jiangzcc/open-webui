@@ -274,6 +274,7 @@ async def test_hash_is_canonical_sensitive_and_contains_no_raw_secrets(monkeypat
         'aspect_ratio': 'default',
         'quality': 'default',
         'image_count': 1,
+        'pixel_count': 1024 * 1024,
     }
     with pytest.raises(TypeError):
         first.billing.dimensions['quality'] = 'mutated'
@@ -323,7 +324,39 @@ async def test_provider_input_does_not_let_configured_size_override_requested_re
         'aspect_ratio': 'default',
         'quality': 'default',
         'image_count': 1,
+        'pixel_count': 1024 * 768,
     }
+
+
+@pytest.mark.asyncio
+async def test_pixel_count_is_server_derived_and_unknown_auto_is_omitted(monkeypatch) -> None:
+    compat, adapter = modules()
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='')),
+    )
+
+    explicit = await adapter.prepare_generation_call(
+        request(),
+        image_input(
+            model='z-image-turbo',
+            size='512x512',
+            resolution='1024x768',
+            extra={'pixel_count': 1},
+        ),
+        None,
+        user(),
+    )
+    automatic = await adapter.prepare_generation_call(
+        request(),
+        image_input(model='z-image-turbo', resolution='auto', extra={'pixel_count': 1}),
+        None,
+        user(),
+    )
+
+    assert explicit.billing.dimensions['pixel_count'] == 1024 * 768
+    assert 'pixel_count' not in automatic.billing.dimensions
 
 
 @pytest.mark.asyncio

@@ -194,6 +194,11 @@ class UnitBlocksRule(DimensionRuleBase):
     multiplier_per_block: PositivePrice
 
 
+class ProportionalRule(DimensionRuleBase):
+    kind: Literal['proportional']
+    unit_size: PositiveExactDecimal
+
+
 class QuantityRule(DimensionRuleBase):
     kind: Literal['quantity']
 
@@ -204,7 +209,7 @@ class QuantityRule(DimensionRuleBase):
 
 
 DimensionRule = Annotated[
-    ExactMapRule | NumericTierRule | UnitBlocksRule | QuantityRule,
+    ExactMapRule | NumericTierRule | UnitBlocksRule | ProportionalRule | QuantityRule,
     Field(discriminator='kind'),
 ]
 

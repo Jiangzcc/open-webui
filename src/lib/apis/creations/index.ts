@@ -4,7 +4,8 @@ import type {
 	AdminCreationDetail,
 	AdminCreationListResponse,
 	CreationDetail,
-	CreationListResponse
+	CreationListResponse,
+	CreationPublication
 } from '$lib/utils/creations-library';
 
 const authHeaders = (token: string): HeadersInit => ({
@@ -97,12 +98,35 @@ export const updateCreation = (token: string, id: string, caption: string | null
 export const deleteCreation = (token: string, id: string) =>
 	requestNoContent(`/creations/media/${encodeURIComponent(id)}`, token, { method: 'DELETE' });
 
+export const publishCreation = async (
+	token: string,
+	id: string,
+	payload: { title: string | null; description: string | null; show_prompt: boolean }
+): Promise<CreationPublication> => {
+	const response = await fetch(
+		`${WEBUI_API_BASE_URL}/creations/media/${encodeURIComponent(id)}/publish`,
+		{
+			method: 'POST',
+			headers: authHeaders(token),
+			body: JSON.stringify(payload)
+		}
+	);
+	await throwIfNotOk(response);
+	return (await response.json()) as CreationPublication;
+};
+
+export const withdrawCreationPublication = (token: string, id: string) =>
+	requestNoContent(`/creations/media/${encodeURIComponent(id)}/publish`, token, {
+		method: 'DELETE'
+	});
+
 export type {
 	AdminCreationDetail,
 	AdminCreationListResponse,
 	AdminOwner,
 	CreationDetail,
 	CreationListResponse,
+	CreationPublication,
 	CreationReference,
 	CreationScope,
 	CreationSummary

@@ -40,6 +40,7 @@
 		if (kind === 'numeric_tier') return { key: '', kind, tiers: [{ max: '1', multiplier: '1' }] };
 		if (kind === 'unit_blocks')
 			return { key: '', kind, block_size: '1', multiplier_per_block: '1' };
+		if (kind === 'proportional') return { key: 'pixel_count', kind, unit_size: '1000000' };
 		return { key: '', kind };
 	};
 
@@ -326,6 +327,8 @@
 					}}
 					><option value="">{$i18n.t('credits.admin.pricing.addDimension')}</option><option
 						value="exact_map">{$i18n.t('credits.admin.pricing.ruleKinds.exact_map')}</option
+					><option value="proportional"
+						>{$i18n.t('credits.admin.pricing.ruleKinds.proportional')}</option
 					><option value="quantity">{$i18n.t('credits.admin.pricing.ruleKinds.quantity')}</option
 					></select
 				>
@@ -437,6 +440,22 @@
 										)}
 									type="button">{$i18n.t('credits.admin.pricing.addMapping')}</button
 								>
+							</div>
+						{:else if rule.kind === 'proportional'}
+							<div class="space-y-2">
+								<label class="block text-xs font-medium text-gray-500"
+									>{$i18n.t('credits.admin.pricing.unitSize')}<input
+										aria-label={$i18n.t('credits.admin.pricing.unitSize')}
+										class="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-1.5 text-xs outline-hidden dark:border-gray-700"
+										inputmode="decimal"
+										value={String(rule.unit_size ?? '')}
+										on:input={(event) =>
+											updateRule(index, { unit_size: event.currentTarget.value })}
+									/></label
+								>
+								<p class="text-xs leading-5 text-gray-500">
+									{$i18n.t('credits.admin.pricing.proportionalDescription')}
+								</p>
 							</div>
 						{:else}
 							<div class="text-xs text-gray-500">

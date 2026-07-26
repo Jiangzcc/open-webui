@@ -134,6 +134,7 @@ describe('admin credit form state', () => {
 				basePrice: '1.5',
 				dimensions: [
 					{ key: 'size', kind: 'exact_map', values: { default: '1' } },
+					{ key: 'pixel_count', kind: 'proportional', unit_size: '1000000' },
 					{ key: 'image_count', kind: 'quantity' }
 				]
 			})
@@ -152,6 +153,18 @@ describe('admin credit form state', () => {
 			validatePriceForm({
 				...base,
 				dimensions: [{ key: 'size', kind: 'exact_map', values: { '1024x1024': '1' } }]
+			}).dimensions
+		).toBe('credits.validation.validMultipliers');
+		expect(
+			validatePriceForm({
+				...base,
+				dimensions: [{ key: 'pixel_count', kind: 'proportional', unit_size: '1000000' }]
+			})
+		).toEqual({});
+		expect(
+			validatePriceForm({
+				...base,
+				dimensions: [{ key: 'pixel_count', kind: 'proportional', unit_size: '0' }]
 			}).dimensions
 		).toBe('credits.validation.validMultipliers');
 		expect(

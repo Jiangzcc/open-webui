@@ -39,6 +39,8 @@ describe('credit translations', () => {
 		expect(i18n.t('credits.admin.accountsTitle')).toBe('积分账户');
 		expect(i18n.t('credits.admin.adjustment.saved')).toBe('积分调整已保存');
 		expect(i18n.t('credits.admin.pricing.ruleKinds.exact_map')).toBe('精确映射');
+		expect(i18n.t('credits.admin.pricing.ruleKinds.proportional')).toBe('按单位线性计费');
+		expect(i18n.t('credits.dimensionKeys.pixel_count')).toBe('像素数');
 		expect(i18n.t('credits.actions.text-to-image')).toBe('文生图');
 		expect(i18n.t('credits.dimensionKeys.image_count')).toBe('图片数量');
 		expect(i18n.t('credits.common.applyFilters')).toBe('应用筛选');

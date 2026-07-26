@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -68,4 +69,81 @@ class CreationMediaItem(CreationBase):
     updated_at = Column(BigInteger, nullable=False)
 
 
-__all__ = ['CreationMediaItem']
+class CreationPost(CreationBase):
+    __tablename__ = 'ext_creation_post'
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('published', 'withdrawn', 'hidden')",
+            name='ck_ext_creation_post_status',
+        ),
+        CheckConstraint('like_count >= 0', name='ck_ext_creation_post_like_count'),
+        CheckConstraint('favorite_count >= 0', name='ck_ext_creation_post_favorite_count'),
+        Index(
+            'ix_ext_creation_post_status_published',
+            'status',
+            'published_at',
+            'id',
+        ),
+        Index(
+            'ix_ext_creation_post_status_popular',
+            'status',
+            'favorite_count',
+            'like_count',
+            'published_at',
+            'id',
+        ),
+        Index('ix_ext_creation_post_user_status', 'user_id', 'status', 'updated_at', 'id'),
+    )
+
+    id = Column(String(128), primary_key=True)
+    user_id = Column(String(128), nullable=False)
+    status = Column(String(16), nullable=False)
+    title = Column(String(200), nullable=True)
+    description = Column(String(1000), nullable=True)
+    show_prompt = Column(Boolean, nullable=False, server_default='true')
+    like_count = Column(Integer, nullable=False, server_default='0')
+    favorite_count = Column(Integer, nullable=False, server_default='0')
+    published_at = Column(BigInteger, nullable=False)
+    created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=False)
+
+
+class CreationPostMedia(CreationBase):
+    __tablename__ = 'ext_creation_post_media'
+    __table_args__ = (
+        UniqueConstraint('creation_id', name='uq_ext_creation_post_media_creation'),
+        UniqueConstraint('post_id', 'position', name='uq_ext_creation_post_media_position'),
+        Index('ix_ext_creation_post_media_creation', 'creation_id'),
+    )
+
+    post_id = Column(String(128), primary_key=True)
+    position = Column(Integer, primary_key=True)
+    creation_id = Column(String(128), nullable=False)
+    created_at = Column(BigInteger, nullable=False)
+
+
+class CreationPostReaction(CreationBase):
+    __tablename__ = 'ext_creation_post_reaction'
+    __table_args__ = (
+        CheckConstraint("kind IN ('like', 'favorite')", name='ck_ext_creation_post_reaction_kind'),
+        UniqueConstraint(
+            'post_id',
+            'user_id',
+            'kind',
+            name='uq_ext_creation_post_reaction_actor_kind',
+        ),
+        Index('ix_ext_creation_post_reaction_user_kind', 'user_id', 'kind', 'created_at', 'post_id'),
+    )
+
+    post_id = Column(String(128), primary_key=True)
+    user_id = Column(String(128), primary_key=True)
+    kind = Column(String(16), primary_key=True)
+    created_at = Column(BigInteger, nullable=False)
+
+
+__all__ = [
+    'CreationMediaItem',
+    'CreationPost',
+    'CreationPostMedia',
+    'CreationPostReaction',
+]

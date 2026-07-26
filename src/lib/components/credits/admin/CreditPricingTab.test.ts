@@ -24,4 +24,12 @@ describe('CreditPricingTab', () => {
 		expect(source).toContain("entryKey === 'default'");
 		expect(source).toContain("'credits.admin.pricing.addMapping'");
 	});
+
+	test('configures proportional per-megapixel pricing from the maintenance form', () => {
+		expect(source).toContain('value="proportional"');
+		expect(source).toContain("key: 'pixel_count', kind, unit_size: '1000000'");
+		expect(source).toContain("rule.kind === 'proportional'");
+		expect(source).toContain("'credits.admin.pricing.unitSize'");
+		expect(source).toContain("'credits.admin.pricing.proportionalDescription'");
+	});
 });

@@ -132,7 +132,8 @@ describe('CreationDetailsModal source contract', () => {
 		// rather than a multi-row textarea, freeing vertical room for the art.
 		expect(source).toContain('type="text"');
 		expect(source).toContain('bind:value={captionDraft}');
-		expect(source).not.toContain('<textarea');
+		expect(source).toContain('bind:value={publicationDescription}');
+		expect(source).not.toContain('<textarea bind:value={captionDraft}');
 		expect(source).not.toContain('"Save caption"');
 	});
 

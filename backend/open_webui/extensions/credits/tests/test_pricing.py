@@ -45,6 +45,10 @@ def unit_rule(key: str, block_size: object, multiplier: object) -> dict[str, obj
     }
 
 
+def proportional_rule(key: str, unit_size: object) -> dict[str, object]:
+    return {'key': key, 'kind': 'proportional', 'unit_size': unit_size}
+
+
 def quantity_rule(key: str) -> dict[str, object]:
     return {'key': key, 'kind': 'quantity'}
 
@@ -379,6 +383,31 @@ def test_quote_and_factors_are_json_serializable_and_have_stable_plain_decimal_s
     numeric_strings = [quote.base_price, quote.raw_price, *(factor.multiplier for factor in quote.factors)]
     assert all('e-' not in value.lower() and 'e+' not in value.lower() for value in numeric_strings)
     assert json.loads(json.dumps(asdict(quote)))['charged_credits'] == 1
+
+
+def test_proportional_price_uses_fractional_megapixels_before_final_rounding() -> None:
+    rules = rule_set(proportional_rule('pixel_count', 1_000_000), quantity_rule('image_count'))
+
+    quote = compute_price(
+        make_price(rules, base_price='5'),
+        {'pixel_count': 1024 * 768, 'image_count': 2},
+    )
+
+    assert quote.factors == (
+        PriceFactor(key='pixel_count', value='786432', multiplier='0.786432'),
+        PriceFactor(key='image_count', value=2, multiplier='2'),
+    )
+    assert quote.raw_price == '7.864320'
+    assert quote.charged_credits == 8
+
+
+@pytest.mark.parametrize('value', [True, 0, -1, 1.5, Decimal('1'), 'NaN', 'Infinity'])
+def test_proportional_price_rejects_untrusted_or_invalid_dimension_values(value: object) -> None:
+    price = make_price(rule_set(proportional_rule('pixel_count', 1_000_000)), base_price='5')
+
+    error = assert_error(price, {'pixel_count': value}, 'price_rule_incomplete')
+
+    assert error.context['reason'] == 'invalid_dimension_value'
 
 
 # --- attach_model_base_prices: inject base_price/edit_base_price into model list --

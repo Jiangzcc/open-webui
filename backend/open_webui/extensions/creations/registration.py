@@ -16,7 +16,13 @@ from .models import CreationBase
 log = logging.getLogger(__name__)
 
 _REQUIRED_TABLES = frozenset(table.name for table in CreationBase.metadata.sorted_tables)
-_REQUIRED_UNIQUE = {'ext_creation_media_item': frozenset({'uq_ext_creation_media_file'})}
+_REQUIRED_UNIQUE = {
+    'ext_creation_media_item': frozenset({'uq_ext_creation_media_file'}),
+    'ext_creation_post_media': frozenset(
+        {'uq_ext_creation_post_media_creation', 'uq_ext_creation_post_media_position'}
+    ),
+    'ext_creation_post_reaction': frozenset({'uq_ext_creation_post_reaction_actor_kind'}),
+}
 _REQUIRED_CHECKS = {
     'ext_creation_media_item': frozenset(
         {
@@ -25,6 +31,14 @@ _REQUIRED_CHECKS = {
             'ck_ext_creation_media_source',
         }
     ),
+    'ext_creation_post': frozenset(
+        {
+            'ck_ext_creation_post_status',
+            'ck_ext_creation_post_like_count',
+            'ck_ext_creation_post_favorite_count',
+        }
+    ),
+    'ext_creation_post_reaction': frozenset({'ck_ext_creation_post_reaction_kind'}),
 }
 _REQUIRED_INDEXES = {
     'ext_creation_media_item': frozenset(
@@ -34,11 +48,29 @@ _REQUIRED_INDEXES = {
             'ix_ext_creation_media_batch',
         }
     ),
+    'ext_creation_post': frozenset(
+        {
+            'ix_ext_creation_post_status_published',
+            'ix_ext_creation_post_status_popular',
+            'ix_ext_creation_post_user_status',
+        }
+    ),
+    'ext_creation_post_media': frozenset({'ix_ext_creation_post_media_creation'}),
+    'ext_creation_post_reaction': frozenset({'ix_ext_creation_post_reaction_user_kind'}),
 }
 
 
 def _schema_tables(inspector) -> set[str]:
     return set(inspector.get_table_names(schema=DATABASE_SCHEMA))
+
+
+def _validate_named_objects(inspector, required_by_table, inspector_method: str, label: str) -> None:
+    getter = getattr(inspector, inspector_method)
+    for table_name, required in required_by_table.items():
+        existing = {item['name'] for item in getter(table_name, schema=DATABASE_SCHEMA)}
+        missing = required - existing
+        if missing:
+            raise RuntimeError(f'creation migration validation failed: {table_name} missing {label} {sorted(missing)}')
 
 
 def _validate_creation_schema() -> None:
@@ -65,34 +97,19 @@ def _validate_creation_schema() -> None:
                 f'expected version {sorted(expected_heads)}, got {sorted(current_heads)}'
             )
 
-        for table_name, required in _REQUIRED_UNIQUE.items():
-            existing = {
-                constraint['name']
-                for constraint in inspector.get_unique_constraints(table_name, schema=DATABASE_SCHEMA)
-            }
-            missing = required - existing
-            if missing:
-                raise RuntimeError(
-                    f'creation migration validation failed: {table_name} missing unique constraints {sorted(missing)}'
-                )
-
-        for table_name, required in _REQUIRED_CHECKS.items():
-            existing = {
-                constraint['name'] for constraint in inspector.get_check_constraints(table_name, schema=DATABASE_SCHEMA)
-            }
-            missing = required - existing
-            if missing:
-                raise RuntimeError(
-                    f'creation migration validation failed: {table_name} missing check constraints {sorted(missing)}'
-                )
-
-        for table_name, required in _REQUIRED_INDEXES.items():
-            existing = {index['name'] for index in inspector.get_indexes(table_name, schema=DATABASE_SCHEMA)}
-            missing = required - existing
-            if missing:
-                raise RuntimeError(
-                    f'creation migration validation failed: {table_name} missing indexes {sorted(missing)}'
-                )
+        _validate_named_objects(
+            inspector,
+            _REQUIRED_UNIQUE,
+            'get_unique_constraints',
+            'unique constraints',
+        )
+        _validate_named_objects(
+            inspector,
+            _REQUIRED_CHECKS,
+            'get_check_constraints',
+            'check constraints',
+        )
+        _validate_named_objects(inspector, _REQUIRED_INDEXES, 'get_indexes', 'indexes')
 
         for table_name in _REQUIRED_TABLES:
             foreign_keys = inspector.get_foreign_keys(table_name, schema=DATABASE_SCHEMA)

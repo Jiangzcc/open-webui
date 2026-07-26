@@ -133,7 +133,7 @@ export type CreditAdjustment = {
 
 export type PriceRule = {
 	key: string;
-	kind: 'exact_map' | 'numeric_tier' | 'unit_blocks' | 'quantity';
+	kind: 'exact_map' | 'numeric_tier' | 'unit_blocks' | 'proportional' | 'quantity';
 	[key: string]: unknown;
 };
 

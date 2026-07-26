@@ -22,6 +22,7 @@ from open_webui.extensions.credits.schemas import (
     PaginationParams,
     PositivePrice,
     PriceRuleSet,
+    ProportionalRule,
     QuantityRule,
     RequestAuditContext,
     UnitBlocksRule,
@@ -264,6 +265,21 @@ def test_unit_blocks_multiplier_only_accepts_decimal_string_input(value: object)
         UnitBlocksRule(key='tokens', kind='unit_blocks', block_size=1000, multiplier_per_block=value)
 
 
+@pytest.mark.parametrize('unit_size', [0, -1, True, 1.5, '0', '-1', 'NaN', 'Infinity', Decimal('1')])
+def test_proportional_rejects_invalid_unit_size(unit_size: object) -> None:
+    with pytest.raises(ValidationError):
+        ProportionalRule(key='pixel_count', kind='proportional', unit_size=unit_size)
+
+
+@pytest.mark.parametrize(('unit_size', 'expected'), [(1_000_000, Decimal('1000000')), ('0.5', Decimal('0.5'))])
+def test_proportional_accepts_positive_integer_or_exact_decimal_string(
+    unit_size: object, expected: Decimal
+) -> None:
+    rule = ProportionalRule(key='pixel_count', kind='proportional', unit_size=unit_size)
+
+    assert rule.unit_size == expected
+
+
 def test_quantity_rule_requires_positive_integer_request_value() -> None:
     rule = QuantityRule(key='images', kind='quantity')
 
@@ -302,11 +318,12 @@ def test_price_rule_set_accepts_all_dimension_kinds() -> None:
             {'key': 'quality', 'kind': 'exact_map', 'values': {'hd': '1.5'}},
             {'key': 'pixels', 'kind': 'numeric_tier', 'tiers': [{'max': 1024, 'multiplier': '2'}]},
             {'key': 'tokens', 'kind': 'unit_blocks', 'block_size': 1000, 'multiplier_per_block': '0.25'},
+            {'key': 'pixel_count', 'kind': 'proportional', 'unit_size': 1_000_000},
             {'key': 'images', 'kind': 'quantity'},
         ],
     )
 
-    assert len(rules.dimensions) == 4
+    assert len(rules.dimensions) == 5
 
 
 def test_all_pydantic_domain_models_are_frozen() -> None:
@@ -315,6 +332,7 @@ def test_all_pydantic_domain_models_are_frozen() -> None:
         ExactMapRule(key='quality', kind='exact_map', values={'hd': '1'}),
         NumericTierRule(key='pixels', kind='numeric_tier', tiers=[{'max': 1, 'multiplier': '1'}]),
         UnitBlocksRule(key='tokens', kind='unit_blocks', block_size=1, multiplier_per_block='1'),
+        ProportionalRule(key='pixel_count', kind='proportional', unit_size=1_000_000),
         QuantityRule(key='images', kind='quantity'),
         PriceRuleSet(schema_version=1, dimensions=[]),
         PaginationParams(),

@@ -41,6 +41,7 @@ CancelledError = asyncio.CancelledError
 _DATA_URL_PATTERN = re.compile(r'^data:([^;,]+);base64,(.*)$', re.DOTALL)
 _FILE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,128}$')
 _FILE_ROUTE_PATTERN = re.compile(r'^/api/v1/files/([A-Za-z0-9_-]{1,128})/content$')
+_PIXEL_SIZE_PATTERN = re.compile(r'^([1-9][0-9]{0,5})x([1-9][0-9]{0,5})$')
 _READ_CHUNK_SIZE = 64 * 1024
 
 # Image magic byte signatures for content validation
@@ -202,6 +203,16 @@ def _channel(request: object, metadata: object) -> Literal['web', 'api', 'chat',
     return 'web'
 
 
+def _pixel_count(value: str | None) -> int | None:
+    if value is None:
+        return None
+    match = _PIXEL_SIZE_PATTERN.fullmatch(value)
+    if match is None:
+        return None
+    pixels = int(match.group(1)) * int(match.group(2))
+    return pixels if pixels <= MAX_CREDIT_VALUE else None
+
+
 def _dimensions(config: object, image_input: CompatImageInput, action: str) -> Mapping[str, str | int]:
     requested_non_size_dimension = bool(image_input.resolution or image_input.aspect_ratio)
     if action == 'text-to-image':
@@ -226,15 +237,20 @@ def _dimensions(config: object, image_input: CompatImageInput, action: str) -> M
             )
             or 'default'
         )
-    return MappingProxyType(
-        {
-            'size': size,
-            'resolution': image_input.resolution or 'default',
-            'aspect_ratio': image_input.aspect_ratio or 'default',
-            'quality': image_input.quality or 'default',
-            'image_count': image_input.image_count,
-        }
-    )
+    dimensions: dict[str, str | int] = {
+        'size': size,
+        'resolution': image_input.resolution or 'default',
+        'aspect_ratio': image_input.aspect_ratio or 'default',
+        'quality': image_input.quality or 'default',
+        'image_count': image_input.image_count,
+    }
+    # fal payload construction gives an explicit resolution precedence over
+    # size. Preserve that same source of truth for billing, and never trust a
+    # client-supplied pixel_count from `extra`.
+    pixels = _pixel_count(image_input.resolution or size)
+    if pixels is not None:
+        dimensions['pixel_count'] = pixels
+    return MappingProxyType(dimensions)
 
 
 def _validate_magic_bytes(payload: bytes, mime: str) -> None:

@@ -1,0 +1,469 @@
+from __future__ import annotations
+
+import base64
+import json
+import time
+from collections.abc import Iterable
+from uuid import uuid4
+
+from open_webui.extensions.creations.models import (
+    CreationMediaItem,
+    CreationPost,
+    CreationPostMedia,
+    CreationPostReaction,
+)
+from open_webui.extensions.creations.schemas import (
+    CreationPublication,
+    DiscoveryPostDetail,
+    DiscoveryPostListResponse,
+    DiscoveryPostSummary,
+    DiscoverySort,
+    PublicOwner,
+    PublishCreationForm,
+    ReactionKind,
+    ReactionState,
+)
+from sqlalchemy import and_, delete, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+Files = None
+Users = None
+
+_PROMPT_PREVIEW_CHARS = 200
+_DISCOVERY_CONTENT_URL = '/api/v1/creations/discover/posts/{}/content'
+
+
+def _bind_files() -> object:
+    global Files
+    if Files is None:
+        from open_webui.models.files import Files as upstream_files
+
+        Files = upstream_files
+    return Files
+
+
+def _bind_users() -> object:
+    global Users
+    if Users is None:
+        from open_webui.models.users import Users as upstream_users
+
+        Users = upstream_users
+    return Users
+
+
+def _now() -> int:
+    return int(time.time())
+
+
+def _publication(post: CreationPost) -> CreationPublication:
+    return CreationPublication(
+        post_id=post.id,
+        status=post.status,
+        title=post.title,
+        description=post.description,
+        show_prompt=post.show_prompt,
+        published_at=post.published_at,
+    )
+
+
+async def get_creation_publication(session: AsyncSession, user_id: str, creation_id: str) -> CreationPublication | None:
+    stmt = (
+        select(CreationPost)
+        .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
+        .join(CreationMediaItem, CreationMediaItem.id == CreationPostMedia.creation_id)
+        .where(
+            CreationPostMedia.creation_id == creation_id,
+            CreationMediaItem.user_id == user_id,
+            CreationMediaItem.soft_deleted.is_(False),
+        )
+        .limit(1)
+    )
+    post = (await session.execute(stmt)).scalar_one_or_none()
+    return _publication(post) if post else None
+
+
+async def _load_files(file_ids: Iterable[str]) -> dict[str, object]:
+    ids = list(dict.fromkeys(file_ids))
+    if not ids:
+        return {}
+    files = await _bind_files().get_files_by_ids(ids)
+    return {file.id: file for file in files}
+
+
+async def _public_owners(user_ids: Iterable[str]) -> dict[str, PublicOwner]:
+    ids = list(dict.fromkeys(user_ids))
+    if not ids:
+        return {}
+    users = await _bind_users().get_users_by_ids(ids)
+    found = {user.id: user for user in users}
+    return {
+        user_id: PublicOwner(
+            user_id=user_id,
+            name=getattr(found.get(user_id), 'name', None),
+            profile_image_url=getattr(found.get(user_id), 'profile_image_url', None),
+            deleted=found.get(user_id) is None,
+        )
+        for user_id in ids
+    }
+
+
+async def publish_creation(
+    session: AsyncSession,
+    user_id: str,
+    creation_id: str,
+    form: PublishCreationForm,
+) -> CreationPublication | None:
+    item = (
+        await session.execute(
+            select(CreationMediaItem)
+            .where(
+                CreationMediaItem.id == creation_id,
+                CreationMediaItem.user_id == user_id,
+                CreationMediaItem.soft_deleted.is_(False),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        return None
+    file = (await _load_files([item.file_id])).get(item.file_id)
+    if file is None or getattr(file, 'user_id', None) != user_id:
+        return None
+
+    post = (
+        await session.execute(
+            select(CreationPost)
+            .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
+            .where(CreationPostMedia.creation_id == creation_id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    now = _now()
+    if post is None:
+        post = CreationPost(
+            id=str(uuid4()),
+            user_id=user_id,
+            status='published',
+            title=form.title,
+            description=form.description,
+            show_prompt=form.show_prompt,
+            like_count=0,
+            favorite_count=0,
+            published_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(post)
+        session.add(
+            CreationPostMedia(
+                post_id=post.id,
+                creation_id=creation_id,
+                position=0,
+                created_at=now,
+            )
+        )
+    else:
+        if post.user_id != user_id or post.status == 'hidden':
+            return None
+        post.status = 'published'
+        post.title = form.title
+        post.description = form.description
+        post.show_prompt = form.show_prompt
+        post.published_at = now
+        post.updated_at = now
+    await session.commit()
+    return _publication(post)
+
+
+async def withdraw_creation(session: AsyncSession, user_id: str, creation_id: str) -> bool:
+    post = (
+        await session.execute(
+            select(CreationPost)
+            .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
+            .where(
+                CreationPostMedia.creation_id == creation_id,
+                CreationPost.user_id == user_id,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if post is None:
+        return False
+    if post.status != 'hidden':
+        post.status = 'withdrawn'
+        post.updated_at = _now()
+        await session.commit()
+    return True
+
+
+def _prompt_preview(item: CreationMediaItem, show_prompt: bool) -> str | None:
+    if not show_prompt:
+        return None
+    flattened = ' '.join(item.prompt.split())
+    if len(flattened) <= _PROMPT_PREVIEW_CHARS:
+        return flattened or None
+    return flattened[: _PROMPT_PREVIEW_CHARS - 1].rstrip() + '…'
+
+
+def _encode_cursor(primary: int, published_at: int, post_id: str) -> str:
+    payload = json.dumps({'p': primary, 't': published_at, 'id': post_id}, separators=(',', ':'))
+    return base64.urlsafe_b64encode(payload.encode()).rstrip(b'=').decode()
+
+
+def _decode_cursor(cursor: str) -> tuple[int, int, str]:
+    try:
+        padding = '=' * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(cursor + padding))
+        primary, published_at, post_id = payload['p'], payload['t'], payload['id']
+        if not isinstance(primary, int) or not isinstance(published_at, int) or not isinstance(post_id, str):
+            raise ValueError
+        return primary, published_at, post_id
+    except Exception:
+        raise ValueError('invalid discovery cursor') from None
+
+
+async def _reaction_sets(session: AsyncSession, user_id: str, post_ids: list[str]) -> tuple[set[str], set[str]]:
+    if not post_ids:
+        return set(), set()
+    rows = (
+        await session.execute(
+            select(CreationPostReaction.post_id, CreationPostReaction.kind).where(
+                CreationPostReaction.user_id == user_id,
+                CreationPostReaction.post_id.in_(post_ids),
+            )
+        )
+    ).all()
+    return (
+        {post_id for post_id, kind in rows if kind == 'like'},
+        {post_id for post_id, kind in rows if kind == 'favorite'},
+    )
+
+
+async def _summaries(
+    session: AsyncSession,
+    user_id: str,
+    rows: list[tuple[CreationPost, CreationMediaItem]],
+) -> tuple[DiscoveryPostSummary, ...]:
+    files = await _load_files(item.file_id for _, item in rows)
+    owners = await _public_owners(item.user_id for _, item in rows)
+    post_ids = [post.id for post, _ in rows]
+    liked, favorited = await _reaction_sets(session, user_id, post_ids)
+    summaries: list[DiscoveryPostSummary] = []
+    for post, item in rows:
+        file = files.get(item.file_id)
+        available = file is not None and getattr(file, 'user_id', None) == item.user_id
+        meta = getattr(file, 'meta', None) or {}
+        summaries.append(
+            DiscoveryPostSummary(
+                id=post.id,
+                title=post.title,
+                description=post.description,
+                content_url=_DISCOVERY_CONTENT_URL.format(post.id) if available else None,
+                availability='available' if available else 'missing',
+                mime_type=meta.get('content_type') if available and isinstance(meta, dict) else None,
+                prompt_preview=_prompt_preview(item, post.show_prompt),
+                model_name=item.model_name_snapshot or item.model_id,
+                owner=owners[item.user_id],
+                like_count=post.like_count,
+                favorite_count=post.favorite_count,
+                liked=post.id in liked,
+                favorited=post.id in favorited,
+                published_at=post.published_at,
+            )
+        )
+    return tuple(summaries)
+
+
+def _visible_posts_stmt():
+    return (
+        select(CreationPost, CreationMediaItem)
+        .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
+        .join(CreationMediaItem, CreationMediaItem.id == CreationPostMedia.creation_id)
+        .where(
+            CreationPost.status == 'published',
+            CreationMediaItem.soft_deleted.is_(False),
+        )
+    )
+
+
+async def list_discovery_posts(
+    session: AsyncSession,
+    user_id: str,
+    limit: int,
+    cursor: str | None,
+    sort: DiscoverySort,
+) -> DiscoveryPostListResponse:
+    stmt = _visible_posts_stmt()
+    popularity = CreationPost.favorite_count * 2 + CreationPost.like_count
+    if cursor:
+        primary, published_at, post_id = _decode_cursor(cursor)
+        if sort == 'popular':
+            stmt = stmt.where(
+                or_(
+                    popularity < primary,
+                    and_(popularity == primary, CreationPost.published_at < published_at),
+                    and_(
+                        popularity == primary,
+                        CreationPost.published_at == published_at,
+                        CreationPost.id < post_id,
+                    ),
+                )
+            )
+        else:
+            stmt = stmt.where(
+                or_(
+                    CreationPost.published_at < published_at,
+                    and_(CreationPost.published_at == published_at, CreationPost.id < post_id),
+                )
+            )
+    if sort == 'popular':
+        stmt = stmt.order_by(desc(popularity), desc(CreationPost.published_at), desc(CreationPost.id))
+    else:
+        stmt = stmt.order_by(desc(CreationPost.published_at), desc(CreationPost.id))
+    rows = list((await session.execute(stmt.limit(limit + 1))).all())
+    page = rows[:limit]
+    next_cursor = None
+    if len(rows) > limit:
+        post = page[-1][0]
+        primary = post.favorite_count * 2 + post.like_count if sort == 'popular' else post.published_at
+        next_cursor = _encode_cursor(primary, post.published_at, post.id)
+    return DiscoveryPostListResponse(items=await _summaries(session, user_id, page), next_cursor=next_cursor)
+
+
+async def list_favorite_posts(
+    session: AsyncSession,
+    user_id: str,
+    limit: int,
+    cursor: str | None,
+) -> DiscoveryPostListResponse:
+    stmt = _visible_posts_stmt().join(
+        CreationPostReaction,
+        and_(
+            CreationPostReaction.post_id == CreationPost.id,
+            CreationPostReaction.user_id == user_id,
+            CreationPostReaction.kind == 'favorite',
+        ),
+    )
+    if cursor:
+        _, published_at, post_id = _decode_cursor(cursor)
+        stmt = stmt.where(
+            or_(
+                CreationPost.published_at < published_at,
+                and_(CreationPost.published_at == published_at, CreationPost.id < post_id),
+            )
+        )
+    rows = list(
+        (
+            await session.execute(
+                stmt.order_by(desc(CreationPost.published_at), desc(CreationPost.id)).limit(limit + 1)
+            )
+        ).all()
+    )
+    page = rows[:limit]
+    next_cursor = None
+    if len(rows) > limit:
+        post = page[-1][0]
+        next_cursor = _encode_cursor(post.published_at, post.published_at, post.id)
+    return DiscoveryPostListResponse(items=await _summaries(session, user_id, page), next_cursor=next_cursor)
+
+
+async def get_discovery_post(session: AsyncSession, user_id: str, post_id: str) -> DiscoveryPostDetail | None:
+    row = (await session.execute(_visible_posts_stmt().where(CreationPost.id == post_id).limit(1))).first()
+    if row is None:
+        return None
+    post, item = row
+    summary = (await _summaries(session, user_id, [(post, item)]))[0]
+    return DiscoveryPostDetail(
+        **summary.model_dump(),
+        prompt=item.prompt if post.show_prompt else None,
+        negative_prompt=item.negative_prompt if post.show_prompt else None,
+        params=item.params_json if post.show_prompt else None,
+        task=item.task,
+    )
+
+
+async def set_reaction(
+    session: AsyncSession,
+    user_id: str,
+    post_id: str,
+    kind: ReactionKind,
+    active: bool,
+) -> ReactionState | None:
+    post = (
+        await session.execute(
+            select(CreationPost)
+            .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
+            .join(CreationMediaItem, CreationMediaItem.id == CreationPostMedia.creation_id)
+            .where(
+                CreationPost.id == post_id,
+                CreationPost.status == 'published',
+                CreationMediaItem.soft_deleted.is_(False),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if post is None:
+        return None
+    existing = (
+        await session.execute(
+            select(CreationPostReaction).where(
+                CreationPostReaction.post_id == post_id,
+                CreationPostReaction.user_id == user_id,
+                CreationPostReaction.kind == kind,
+            )
+        )
+    ).scalar_one_or_none()
+    if active and existing is None:
+        session.add(CreationPostReaction(post_id=post_id, user_id=user_id, kind=kind, created_at=_now()))
+    elif not active and existing is not None:
+        await session.execute(
+            delete(CreationPostReaction).where(
+                CreationPostReaction.post_id == post_id,
+                CreationPostReaction.user_id == user_id,
+                CreationPostReaction.kind == kind,
+            )
+        )
+    await session.flush()
+    counts = dict(
+        (
+            await session.execute(
+                select(CreationPostReaction.kind, func.count())
+                .where(CreationPostReaction.post_id == post_id)
+                .group_by(CreationPostReaction.kind)
+            )
+        ).all()
+    )
+    post.like_count = int(counts.get('like', 0))
+    post.favorite_count = int(counts.get('favorite', 0))
+    post.updated_at = _now()
+    await session.commit()
+    return ReactionState(
+        post_id=post_id,
+        kind=kind,
+        active=active,
+        like_count=post.like_count,
+        favorite_count=post.favorite_count,
+    )
+
+
+async def get_published_content_file(session: AsyncSession, post_id: str) -> object | None:
+    row = (await session.execute(_visible_posts_stmt().where(CreationPost.id == post_id).limit(1))).first()
+    if row is None:
+        return None
+    _, item = row
+    file = (await _load_files([item.file_id])).get(item.file_id)
+    if file is None or getattr(file, 'user_id', None) != item.user_id:
+        return None
+    return file
+
+
+__all__ = [
+    'get_creation_publication',
+    'get_discovery_post',
+    'get_published_content_file',
+    'list_discovery_posts',
+    'list_favorite_posts',
+    'publish_creation',
+    'set_reaction',
+    'withdraw_creation',
+]

@@ -447,6 +447,7 @@ def test_credit_dimensions_return_only_the_registered_image_dimensions() -> None
                 {'key': 'aspect_ratio', 'rule_types': ['exact_map']},
                 {'key': 'quality', 'rule_types': ['exact_map']},
                 {'key': 'image_count', 'rule_types': ['quantity']},
+                {'key': 'pixel_count', 'rule_types': ['proportional']},
             ],
             'image-to-image': [
                 {'key': 'size', 'rule_types': ['exact_map']},
@@ -454,6 +455,7 @@ def test_credit_dimensions_return_only_the_registered_image_dimensions() -> None
                 {'key': 'aspect_ratio', 'rule_types': ['exact_map']},
                 {'key': 'quality', 'rule_types': ['exact_map']},
                 {'key': 'image_count', 'rule_types': ['quantity']},
+                {'key': 'pixel_count', 'rule_types': ['proportional']},
             ],
         },
     }

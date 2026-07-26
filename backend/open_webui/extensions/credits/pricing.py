@@ -14,6 +14,7 @@ from .schemas import (
     NumericTierRule,
     PositivePrice,
     PriceRuleSet,
+    ProportionalRule,
     QuantityRule,
     UnitBlocksRule,
 )
@@ -126,6 +127,13 @@ def _resolve_unit_blocks(rule: UnitBlocksRule, value: object) -> tuple[str, Deci
     return _plain(decimal), blocks * rule.multiplier_per_block
 
 
+def _resolve_proportional(rule: ProportionalRule, value: object) -> tuple[str, Decimal] | None:
+    decimal = _positive_decimal(value)
+    if decimal is None:
+        return None
+    return _plain(decimal), decimal / rule.unit_size
+
+
 def _resolve_quantity(rule: QuantityRule, value: object) -> tuple[int, Decimal] | None:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0 or value > MAX_CREDIT_VALUE:
         return None
@@ -141,6 +149,8 @@ def _resolve_rule(rule: object, value: object) -> tuple[tuple[str | int, Decimal
         return _resolve_numeric(rule, value), reason
     if isinstance(rule, UnitBlocksRule):
         return _resolve_unit_blocks(rule, value), 'invalid_dimension_value'
+    if isinstance(rule, ProportionalRule):
+        return _resolve_proportional(rule, value), 'invalid_dimension_value'
     return _resolve_quantity(cast(QuantityRule, rule), value), 'invalid_dimension_value'
 
 

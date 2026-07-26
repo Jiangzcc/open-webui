@@ -58,7 +58,7 @@
 	import { updateUserSettings } from '$lib/apis/users';
 	import { checkActiveChats } from '$lib/apis/tasks';
 	import { createNoteHandler } from '$lib/components/notes/utils';
-	import { DEFAULT_PINNED_MENU_ITEMS, getPinnedImagesMenuMigration } from '$lib/utils/sidebar-menu';
+	import { DEFAULT_PINNED_MENU_ITEMS, getPinnedMediaMenuMigration } from '$lib/utils/sidebar-menu';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 
 	import ArchivedChatsModal from './ArchivedChatsModal.svelte';
@@ -83,6 +83,7 @@
 	import Note from '../icons/Note.svelte';
 	import Code from '../icons/Code.svelte';
 	import Photo from '../icons/Photo.svelte';
+	import Sparkles from '../icons/Sparkles.svelte';
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
@@ -150,6 +151,8 @@
 				// regardless of the image feature switches; the backend direct endpoints
 				// remain the authorization boundary, and the library is always reachable.
 				return $user?.role === 'admin' || $user?.role === 'user';
+			case 'discover':
+				return $user?.role === 'admin' || $user?.role === 'user';
 			case 'playground':
 				return $user?.role === 'admin';
 			default:
@@ -164,6 +167,7 @@
 			automations: { label: 'Automations', href: '/automations', iconType: 'automations' },
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },
 			images: { label: 'Images', href: '/images', iconType: 'images' },
+			discover: { label: 'Discover', href: '/discover', iconType: 'discover' },
 			playground: { label: 'Playground', href: '/playground', iconType: 'playground' }
 		};
 		return items[id];
@@ -555,7 +559,7 @@
 	};
 
 	onMount(async () => {
-		const pinnedMenuMigration = getPinnedImagesMenuMigration($settings ?? {});
+		const pinnedMenuMigration = getPinnedMediaMenuMigration($settings ?? {});
 		if (pinnedMenuMigration) {
 			await settings.set({ ...$settings, ...pinnedMenuMigration });
 			await updateUserSettings(localStorage.token, { ui: $settings });
@@ -980,6 +984,8 @@
 											</svg>
 										{:else if itemId === 'images'}
 											<Photo className="size-4.5" strokeWidth="1.5" />
+										{:else if itemId === 'discover'}
+											<Sparkles className="size-4.5" strokeWidth="1.5" />
 										{:else if itemId === 'playground'}
 											<Code className="size-4.5" />
 										{/if}
@@ -1231,6 +1237,8 @@
 												</svg>
 											{:else if itemId === 'images'}
 												<Photo className="size-4.5" strokeWidth="2" />
+											{:else if itemId === 'discover'}
+												<Sparkles className="size-4.5" strokeWidth="2" />
 											{:else if itemId === 'playground'}
 												<Code className="size-4.5" strokeWidth="2" />
 											{/if}

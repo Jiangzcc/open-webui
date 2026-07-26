@@ -29,20 +29,41 @@ from open_webui.internal import db as upstream_db
 from sqlalchemy import BigInteger, MetaData, Table, Text, create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
-TABLE_NAMES = {'ext_creation_media_item'}
+TABLE_NAMES = {
+    'ext_creation_media_item',
+    'ext_creation_post',
+    'ext_creation_post_media',
+    'ext_creation_post_reaction',
+}
 EXPECTED_INDEXES = {
     'ext_creation_media_item': {
         'ix_ext_creation_media_user_visible_created',
         'ix_ext_creation_media_visible_created',
         'ix_ext_creation_media_batch',
     },
+    'ext_creation_post': {
+        'ix_ext_creation_post_status_published',
+        'ix_ext_creation_post_status_popular',
+        'ix_ext_creation_post_user_status',
+    },
+    'ext_creation_post_media': {'ix_ext_creation_post_media_creation'},
+    'ext_creation_post_reaction': {'ix_ext_creation_post_reaction_user_kind'},
 }
 EXPECTED_CHECKS = {
     'ck_ext_creation_media_kind',
     'ck_ext_creation_media_task',
     'ck_ext_creation_media_source',
+    'ck_ext_creation_post_status',
+    'ck_ext_creation_post_like_count',
+    'ck_ext_creation_post_favorite_count',
+    'ck_ext_creation_post_reaction_kind',
 }
-BIGINT_COLUMNS = {'ext_creation_media_item': {'created_at', 'updated_at'}}
+BIGINT_COLUMNS = {
+    'ext_creation_media_item': {'created_at', 'updated_at'},
+    'ext_creation_post': {'published_at', 'created_at', 'updated_at'},
+    'ext_creation_post_media': {'created_at'},
+    'ext_creation_post_reaction': {'created_at'},
+}
 TEXT_COLUMNS = {'ext_creation_media_item': {'prompt', 'negative_prompt'}}
 
 
@@ -81,10 +102,10 @@ def test_upgrade_creates_only_creation_objects_and_preserves_upstream_sentinel(s
     with engine.connect() as connection:
         assert _sqlite_fingerprint(connection) == before
         names = set(inspect(connection).get_table_names())
-        assert names == {'user', 'ext_creation_media_item', 'ext_creation_schema_version'}
+        assert names == {'user', *TABLE_NAMES, 'ext_creation_schema_version'}
         assert 'alembic_version' not in names
         assert connection.execute(text('SELECT version_num FROM ext_creation_schema_version')).scalar_one() == (
-            '0001_create_creation_media_item'
+            '0002_create_discovery_tables'
         )
     assert not Path(f'{database_path}.creation-migrations.lock').exists()
 
@@ -113,18 +134,29 @@ def test_revision_has_required_constraints_and_indexes(sqlite_database):
     inspector = inspect(engine)
 
     assert set(inspector.get_table_names()) >= TABLE_NAMES
-    assert inspector.get_foreign_keys('ext_creation_media_item') == []
+    for table_name in TABLE_NAMES:
+        assert inspector.get_foreign_keys(table_name) == []
 
     unique_names = {constraint['name'] for constraint in inspector.get_unique_constraints('ext_creation_media_item')}
     assert unique_names >= {'uq_ext_creation_media_file'}
 
-    assert {
-        constraint['name'] for constraint in inspector.get_check_constraints('ext_creation_media_item')
-    } >= EXPECTED_CHECKS
+    media_unique = {constraint['name'] for constraint in inspector.get_unique_constraints('ext_creation_post_media')}
+    assert media_unique >= {
+        'uq_ext_creation_post_media_creation',
+        'uq_ext_creation_post_media_position',
+    }
+    reaction_unique = {
+        constraint['name'] for constraint in inspector.get_unique_constraints('ext_creation_post_reaction')
+    }
+    assert reaction_unique >= {'uq_ext_creation_post_reaction_actor_kind'}
 
-    assert {index['name'] for index in inspector.get_indexes('ext_creation_media_item')} >= EXPECTED_INDEXES[
-        'ext_creation_media_item'
-    ]
+    existing_checks = set()
+    for table_name in TABLE_NAMES:
+        existing_checks.update(constraint['name'] for constraint in inspector.get_check_constraints(table_name))
+    assert existing_checks >= EXPECTED_CHECKS
+
+    for table_name, expected in EXPECTED_INDEXES.items():
+        assert {index['name'] for index in inspector.get_indexes(table_name)} >= expected
 
 
 def test_orm_metadata_matches_the_revision_table(sqlite_database):
@@ -133,13 +165,13 @@ def test_orm_metadata_matches_the_revision_table(sqlite_database):
     inspector = inspect(engine)
 
     assert set(CreationBase.metadata.tables) == TABLE_NAMES
+    for table_name in TABLE_NAMES:
+        model_table = CreationBase.metadata.tables[table_name]
+        assert set(model_table.columns.keys()) == {column['name'] for column in inspector.get_columns(table_name)}
+        assert {index.name for index in model_table.indexes} == EXPECTED_INDEXES[table_name]
+        for name in BIGINT_COLUMNS[table_name]:
+            assert isinstance(model_table.c[name].type, BigInteger)
     model_table = CreationBase.metadata.tables['ext_creation_media_item']
-    assert set(model_table.columns.keys()) == {
-        column['name'] for column in inspector.get_columns('ext_creation_media_item')
-    }
-    assert {index.name for index in model_table.indexes} == EXPECTED_INDEXES['ext_creation_media_item']
-    for name in BIGINT_COLUMNS['ext_creation_media_item']:
-        assert isinstance(model_table.c[name].type, BigInteger)
     for name in TEXT_COLUMNS['ext_creation_media_item']:
         assert isinstance(model_table.c[name].type, Text)
 

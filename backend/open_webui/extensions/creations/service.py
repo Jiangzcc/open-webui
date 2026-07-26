@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import time
-from typing import Iterable
+from collections.abc import Iterable
 
-from sqlalchemy import and_, desc, or_, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from open_webui.extensions.creations.models import CreationMediaItem
+from open_webui.extensions.creations.models import CreationMediaItem, CreationPost, CreationPostMedia
 from open_webui.extensions.creations.schemas import (
     AdminCreationDetail,
     AdminCreationListResponse,
@@ -20,6 +17,8 @@ from open_webui.extensions.creations.schemas import (
     decode_creation_cursor,
     encode_creation_cursor,
 )
+from sqlalchemy import and_, desc, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 _CONTENT_URL_TEMPLATE = '/api/v1/files/{}/content'
 
@@ -307,7 +306,10 @@ async def get_personal_detail(session: AsyncSession, user_id: str, creation_id: 
     if item is None:
         return None
     files_by_id = await _bulk_load_files([item.file_id, *_flatten_reference_ids(item)])
-    return _detail_from_item(item, files_by_id)
+    detail = _detail_from_item(item, files_by_id)
+    from open_webui.extensions.creations.discovery_service import get_creation_publication
+
+    return detail.model_copy(update={'publication': await get_creation_publication(session, user_id, creation_id)})
 
 
 async def get_admin_detail(session: AsyncSession, creation_id: str) -> AdminCreationDetail | None:
@@ -317,6 +319,11 @@ async def get_admin_detail(session: AsyncSession, creation_id: str) -> AdminCrea
     files_by_id = await _bulk_load_files([item.file_id, *_flatten_reference_ids(item)])
     owners = await _owners_for_items([item])
     detail = _detail_from_item(item, files_by_id)
+    from open_webui.extensions.creations.discovery_service import get_creation_publication
+
+    detail = detail.model_copy(
+        update={'publication': await get_creation_publication(session, item.user_id, creation_id)}
+    )
     return AdminCreationDetail(**detail.model_dump(), owner=owners[item.user_id])
 
 
@@ -344,7 +351,10 @@ async def update_caption(
     refreshed = await _load_owned_item(session, user_id, creation_id)
     assert refreshed is not None
     files_by_id = await _bulk_load_files([refreshed.file_id, *_flatten_reference_ids(refreshed)])
-    return _detail_from_item(refreshed, files_by_id)
+    detail = _detail_from_item(refreshed, files_by_id)
+    from open_webui.extensions.creations.discovery_service import get_creation_publication
+
+    return detail.model_copy(update={'publication': await get_creation_publication(session, user_id, creation_id)})
 
 
 async def soft_delete(
@@ -366,6 +376,12 @@ async def soft_delete(
             CreationMediaItem.user_id == user_id,
         )
         .values(soft_deleted=True, updated_at=_now())
+    )
+    post_ids = select(CreationPostMedia.post_id).where(CreationPostMedia.creation_id == creation_id)
+    await session.execute(
+        update(CreationPost)
+        .where(CreationPost.id.in_(post_ids), CreationPost.status != 'hidden')
+        .values(status='withdrawn', updated_at=_now())
     )
     await session.commit()
     return True

@@ -7,6 +7,8 @@
 		deleteCreation,
 		getAdminCreation,
 		getCreation,
+		publishCreation,
+		withdrawCreationPublication,
 		updateCreation
 	} from '$lib/apis/creations';
 	import type {
@@ -53,6 +55,12 @@
 	let showPreview = false;
 	let previewSrc = '';
 	let previewAlt = '';
+	let publicationEditing = false;
+	let publicationTitle = '';
+	let publicationDescription = '';
+	let publicationShowPrompt = true;
+	let publishing = false;
+	let withdrawingPublication = false;
 
 	const isAdminScope = () => scope === 'all';
 
@@ -70,6 +78,7 @@
 		if (cached) {
 			detail = cached.detail;
 			captionDraft = cached.detail.caption ?? '';
+			publicationEditing = false;
 			loading = false;
 			error = null;
 			return;
@@ -93,6 +102,7 @@
 			}
 			detail = fetched;
 			captionDraft = fetched.caption ?? '';
+			publicationEditing = false;
 		} catch (err) {
 			if (generation !== detailRequestGeneration) return;
 			error = err instanceof Error ? err.message : String(err);
@@ -170,6 +180,56 @@
 				removing = false;
 				confirmRemove = false;
 			}
+		}
+	};
+
+	const beginPublicationEdit = () => {
+		if (!detail) return;
+		publicationTitle = detail.publication?.title ?? detail.caption ?? '';
+		publicationDescription = detail.publication?.description ?? '';
+		publicationShowPrompt = detail.publication?.show_prompt ?? true;
+		publicationEditing = true;
+	};
+
+	const savePublication = async () => {
+		if (!detail || !creationId || publishing) return;
+		publishing = true;
+		try {
+			const publication = await publishCreation(localStorage.token, creationId, {
+				title: publicationTitle.trim() || null,
+				description: publicationDescription.trim() || null,
+				show_prompt: publicationShowPrompt
+			});
+			const updated = { ...detail, publication };
+			detail = updated;
+			detailCache.set(cacheKey(creationId), { detail: updated, scope });
+			publicationEditing = false;
+			onUpdated(updated);
+			toast.success($i18n.t('Published to Discover'));
+		} catch {
+			toast.error($i18n.t('Failed to publish creation'));
+		} finally {
+			publishing = false;
+		}
+	};
+
+	const withdrawPublication = async () => {
+		if (!detail || !creationId || withdrawingPublication) return;
+		withdrawingPublication = true;
+		try {
+			await withdrawCreationPublication(localStorage.token, creationId);
+			const publication = detail.publication
+				? { ...detail.publication, status: 'withdrawn' as const }
+				: null;
+			const updated = { ...detail, publication };
+			detail = updated;
+			detailCache.set(cacheKey(creationId), { detail: updated, scope });
+			onUpdated(updated);
+			toast.success($i18n.t('Removed from Discover'));
+		} catch {
+			toast.error($i18n.t('Failed to remove publication'));
+		} finally {
+			withdrawingPublication = false;
 		}
 	};
 
@@ -401,6 +461,88 @@
 
 					<!-- ── 区② 素材与管理 ── -->
 					<section class="space-y-3">
+						{#if canManage}
+							<div class="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+								{#if publicationEditing}
+									<div class="space-y-2.5">
+										<label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+											{$i18n.t('Title')}
+											<input
+												type="text"
+												bind:value={publicationTitle}
+												maxlength="200"
+												class="mt-1 min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+											/>
+										</label>
+										<label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+											{$i18n.t('Description')}
+											<textarea
+												bind:value={publicationDescription}
+												maxlength="1000"
+												rows="3"
+												class="mt-1 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+											></textarea>
+										</label>
+										<label
+											class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
+										>
+											<input type="checkbox" bind:checked={publicationShowPrompt} class="size-4" />
+											{$i18n.t('Show prompt in Discover')}
+										</label>
+										<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+											<button
+												type="button"
+												class="min-h-11 rounded-lg px-3 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+												on:click={() => (publicationEditing = false)}>{$i18n.t('Cancel')}</button
+											>
+											<button
+												type="button"
+												class="min-h-11 rounded-lg bg-gray-950 px-4 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
+												disabled={publishing}
+												on:click={savePublication}
+												>{publishing ? $i18n.t('Publishing...') : $i18n.t('Publish')}</button
+											>
+										</div>
+									</div>
+								{:else if detail.publication?.status === 'published'}
+									<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+										<div>
+											<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+												{$i18n.t('Published in Discover')}
+											</p>
+											<p class="text-xs text-gray-500 dark:text-gray-400">
+												{$i18n.t('Everyone can now see this creation.')}
+											</p>
+										</div>
+										<div class="flex gap-2">
+											<button
+												type="button"
+												class="min-h-11 rounded-lg px-3 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+												on:click={beginPublicationEdit}>{$i18n.t('Edit')}</button
+											>
+											<button
+												type="button"
+												class="min-h-11 rounded-lg px-3 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
+												disabled={withdrawingPublication}
+												on:click={withdrawPublication}>{$i18n.t('Remove')}</button
+											>
+										</div>
+									</div>
+								{:else if detail.publication?.status === 'hidden'}
+									<p class="text-sm text-gray-500 dark:text-gray-400">
+										{$i18n.t('This publication was hidden by an administrator.')}
+									</p>
+								{:else}
+									<button
+										type="button"
+										class="min-h-11 w-full rounded-lg bg-gray-950 px-4 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
+										on:click={beginPublicationEdit}
+									>
+										{$i18n.t('Publish to Discover')}
+									</button>
+								{/if}
+							</div>
+						{/if}
 						{#if detail.references.length > 0}
 							<div>
 								<h3

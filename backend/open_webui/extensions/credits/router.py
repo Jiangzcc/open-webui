@@ -106,6 +106,7 @@ _IMAGE_DIMENSIONS = {
             'aspect_ratio': ('exact_map',),
             'quality': ('exact_map',),
             'image_count': ('quantity',),
+            'pixel_count': ('proportional',),
         },
         'image-to-image': {
             'size': ('exact_map',),
@@ -113,6 +114,7 @@ _IMAGE_DIMENSIONS = {
             'aspect_ratio': ('exact_map',),
             'quality': ('exact_map',),
             'image_count': ('quantity',),
+            'pixel_count': ('proportional',),
         },
     }
 }

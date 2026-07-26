@@ -16,6 +16,8 @@ CreationTask = Literal['text-to-image', 'image-to-image']
 CreationSource = Literal['web', 'api', 'chat', 'tool']
 CreationKind = Literal['image']
 CreationAvailability = Literal['available', 'missing']
+DiscoverySort = Literal['latest', 'popular']
+ReactionKind = Literal['like', 'favorite']
 
 _CURSOR_VERSION = 1
 _MAX_ENCODED_CURSOR_LENGTH = 512
@@ -109,6 +111,74 @@ class CaptionUpdateForm(_StrictModel):
         return stripped
 
 
+class PublishCreationForm(_StrictModel):
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    show_prompt: bool = True
+
+    @field_validator('title', 'description', mode='before')
+    @classmethod
+    def _normalize_optional_text(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError('value must be a string or null')
+        return value.strip() or None
+
+
+class CreationPublication(_StrictModel):
+    post_id: str
+    status: Literal['published', 'withdrawn', 'hidden']
+    title: str | None
+    description: str | None
+    show_prompt: bool
+    published_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+
+
+class PublicOwner(_StrictModel):
+    user_id: str
+    name: str | None = None
+    profile_image_url: str | None = None
+    deleted: bool = False
+
+
+class DiscoveryPostSummary(_StrictModel):
+    id: str
+    title: str | None
+    description: str | None
+    content_url: str | None
+    availability: CreationAvailability
+    mime_type: str | None
+    prompt_preview: str | None
+    model_name: str | None
+    owner: PublicOwner
+    like_count: int = Field(ge=0)
+    favorite_count: int = Field(ge=0)
+    liked: bool
+    favorited: bool
+    published_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+
+
+class DiscoveryPostDetail(DiscoveryPostSummary):
+    prompt: str | None
+    negative_prompt: str | None
+    params: dict[str, object] | None
+    task: CreationTask
+
+
+class DiscoveryPostListResponse(_StrictModel):
+    items: tuple[DiscoveryPostSummary, ...]
+    next_cursor: str | None
+
+
+class ReactionState(_StrictModel):
+    post_id: str
+    kind: ReactionKind
+    active: bool
+    like_count: int = Field(ge=0)
+    favorite_count: int = Field(ge=0)
+
+
 class CreationReference(_StrictModel):
     position: int = Field(ge=0)
     content_url: str | None
@@ -148,6 +218,7 @@ class CreationDetail(_StrictModel):
     references: tuple[CreationReference, ...]
     created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
     updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    publication: CreationPublication | None = None
 
 
 class CreationListResponse(_StrictModel):
@@ -196,6 +267,7 @@ class AdminCreationDetail(_StrictModel):
     references: tuple[CreationReference, ...]
     created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
     updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    publication: CreationPublication | None = None
     owner: AdminOwner
 
 
@@ -273,7 +345,16 @@ __all__ = [
     'CreationSource',
     'CreationSummary',
     'CreationTask',
+    'CreationPublication',
+    'DiscoveryPostDetail',
+    'DiscoveryPostListResponse',
+    'DiscoveryPostSummary',
+    'DiscoverySort',
     'PreparedReference',
+    'PublicOwner',
+    'PublishCreationForm',
+    'ReactionKind',
+    'ReactionState',
     'ReusedImageResult',
     'decode_creation_cursor',
     'encode_creation_cursor',

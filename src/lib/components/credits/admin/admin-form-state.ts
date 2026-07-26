@@ -164,6 +164,9 @@ const isValidRule = (rule: PriceRule) => {
 			isPositiveDecimal(String(rule.multiplier_per_block))
 		);
 	}
+	if (rule.kind === 'proportional') {
+		return isPositiveDecimal(String(rule.unit_size));
+	}
 
 	return rule.kind === 'quantity';
 };

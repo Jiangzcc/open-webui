@@ -1,0 +1,109 @@
+export type DiscoverySort = 'latest' | 'popular';
+export type DiscoveryFeed = DiscoverySort | 'favorites';
+
+export type PublicOwner = {
+	user_id: string;
+	name: string | null;
+	profile_image_url: string | null;
+	deleted: boolean;
+};
+
+export type DiscoveryPostSummary = {
+	id: string;
+	title: string | null;
+	description: string | null;
+	content_url: string | null;
+	availability: 'available' | 'missing';
+	mime_type: string | null;
+	prompt_preview: string | null;
+	model_name: string | null;
+	owner: PublicOwner;
+	like_count: number;
+	favorite_count: number;
+	liked: boolean;
+	favorited: boolean;
+	published_at: number;
+};
+
+export type DiscoveryPostDetail = DiscoveryPostSummary & {
+	prompt: string | null;
+	negative_prompt: string | null;
+	params: Record<string, unknown> | null;
+	task: 'text-to-image' | 'image-to-image';
+};
+
+export type DiscoveryPostListResponse = {
+	items: DiscoveryPostSummary[];
+	next_cursor: string | null;
+};
+
+export type ReactionKind = 'like' | 'favorite';
+
+export type ReactionState = {
+	post_id: string;
+	kind: ReactionKind;
+	active: boolean;
+	like_count: number;
+	favorite_count: number;
+};
+
+export type DiscoveryFeedState = {
+	items: DiscoveryPostSummary[];
+	nextCursor: string | null;
+	loaded: boolean;
+	loading: boolean;
+	error: Error | null;
+	requestGeneration: number;
+};
+
+export const createDiscoveryFeedState = (
+	initial: DiscoveryPostSummary[] = []
+): DiscoveryFeedState => ({
+	items: [...initial],
+	nextCursor: null,
+	loaded: initial.length > 0,
+	loading: false,
+	error: null,
+	requestGeneration: 0
+});
+
+export const beginDiscoveryRequest = (state: DiscoveryFeedState): number => {
+	state.requestGeneration += 1;
+	state.loading = true;
+	state.error = null;
+	return state.requestGeneration;
+};
+
+export const applyDiscoveryPage = (
+	state: DiscoveryFeedState,
+	generation: number,
+	page: DiscoveryPostListResponse | null,
+	isFirst: boolean
+): boolean => {
+	if (generation !== state.requestGeneration) return false;
+	if (page === null) {
+		state.loading = false;
+		state.error = new Error('discovery load failed');
+		return true;
+	}
+	if (isFirst) state.items = [];
+	const seen = new Set(state.items.map((item) => item.id));
+	for (const item of page.items) {
+		if (!seen.has(item.id)) {
+			state.items.push(item);
+			seen.add(item.id);
+		}
+	}
+	state.nextCursor = page.next_cursor;
+	state.loaded = true;
+	state.loading = false;
+	state.error = null;
+	return true;
+};
+
+export const applyReactionState = (item: DiscoveryPostSummary, reaction: ReactionState): void => {
+	item.like_count = reaction.like_count;
+	item.favorite_count = reaction.favorite_count;
+	if (reaction.kind === 'like') item.liked = reaction.active;
+	else item.favorited = reaction.active;
+};

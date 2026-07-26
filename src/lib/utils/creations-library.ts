@@ -23,6 +23,15 @@ export type CreationSummary = {
 	updated_at: number;
 };
 
+export type CreationPublication = {
+	post_id: string;
+	status: 'published' | 'withdrawn' | 'hidden';
+	title: string | null;
+	description: string | null;
+	show_prompt: boolean;
+	published_at: number;
+};
+
 export type CreationDetail = CreationSummary & {
 	model_id: string | null;
 	prompt: string;
@@ -31,6 +40,7 @@ export type CreationDetail = CreationSummary & {
 	source: 'web' | 'api' | 'chat' | 'tool';
 	batch_id: string;
 	references: CreationReference[];
+	publication: CreationPublication | null;
 };
 
 export type AdminOwner = {

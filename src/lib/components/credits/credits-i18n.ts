@@ -49,7 +49,8 @@ const zh = {
 			resolution: '分辨率',
 			aspect_ratio: '宽高比',
 			quality: '质量',
-			image_count: '图片数量'
+			image_count: '图片数量',
+			pixel_count: '像素数'
 		},
 		common: {
 			unit: '积分',
@@ -135,10 +136,14 @@ const zh = {
 				addMapping: '添加映射',
 				dimensionKey: '维度键',
 				quantityDescription: '按请求的正数数量乘以价格。',
+				unitSize: '计费单位（像素）',
+				proportionalDescription:
+					'按“基础价格 × 像素数 ÷ 计费单位”计算。每百万像素计费请填写 1000000。',
 				ruleKinds: {
 					exact_map: '精确映射',
 					numeric_tier: '数值分层',
 					unit_blocks: '单位分块',
+					proportional: '按单位线性计费',
 					quantity: '数量'
 				}
 			},
@@ -220,7 +225,8 @@ const en = {
 			resolution: 'Resolution',
 			aspect_ratio: 'Aspect ratio',
 			quality: 'Quality',
-			image_count: 'Image count'
+			image_count: 'Image count',
+			pixel_count: 'Pixel count'
 		},
 		common: {
 			unit: 'credits',
@@ -307,10 +313,14 @@ const en = {
 				addMapping: 'Add mapping',
 				dimensionKey: 'Dimension key',
 				quantityDescription: 'Multiplies price by the requested positive quantity.',
+				unitSize: 'Billing unit (pixels)',
+				proportionalDescription:
+					'Calculates base price × pixel count ÷ billing unit. Enter 1000000 for per-megapixel pricing.',
 				ruleKinds: {
 					exact_map: 'Exact map',
 					numeric_tier: 'Numeric tier',
 					unit_blocks: 'Unit blocks',
+					proportional: 'Proportional units',
 					quantity: 'Quantity'
 				}
 			},
