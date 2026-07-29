@@ -26,6 +26,7 @@
 	import NotesIcon from './icons/Notes.svelte';
 	import PinIcon from './icons/Pin.svelte';
 	import PinSlashIcon from './icons/PinSlash.svelte';
+	import Photo from '$lib/components/icons/Photo.svelte';
 	import Settings from '$lib/components/icons/Settings.svelte';
 	import KeyIcon from './icons/Key.svelte';
 	import UserIcon from './icons/User.svelte';
@@ -429,7 +430,7 @@
 					<a
 						href="/images"
 						draggable="false"
-						class="flex flex-1 rounded-xl py-1.5 px-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer select-none"
+						class="flex flex-1 h-[1.6875rem] items-center gap-2 rounded-xl px-2 text-[13px] hover:bg-gray-50/40 dark:hover:bg-gray-800/40 transition cursor-pointer select-none"
 						on:click={async (e) => {
 							if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
 							e.preventDefault();
@@ -441,7 +442,7 @@
 							}
 						}}
 					>
-						<div class="self-center mr-3">
+						<div class="self-center">
 							<Photo className="size-5" strokeWidth="1.5" />
 						</div>
 						<div class="self-center truncate">{$i18n.t('Images')}</div>
@@ -458,9 +459,9 @@
 								on:click|preventDefault|stopPropagation={() => togglePin('images')}
 							>
 								{#if isPinned('images')}
-									<PinSlash className="size-3.5" strokeWidth="1.5" />
+									<PinSlashIcon className="size-3.5" strokeWidth="1.5" />
 								{:else}
-									<Pin className="size-3.5" strokeWidth="1.5" />
+									<PinIcon className="size-3.5" strokeWidth="1.5" />
 								{/if}
 							</button>
 						</Tooltip>

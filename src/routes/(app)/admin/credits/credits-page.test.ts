@@ -32,6 +32,9 @@ describe('admin credit page composition', () => {
 	test('adds a credit navigation entry with an active state and no payment UI', () => {
 		expect(layoutSource).toContain("$page.url.pathname.includes('/admin/credits')");
 		expect(layoutSource).toContain('href="/admin/credits"');
+		expect(layoutSource).toContain('class="min-w-fit px-1 text-sm');
+		expect(layoutSource).not.toContain('p-11');
+		expect(layoutSource.match(/import \{ WEBUI_NAME, config, mobile/g)).toHaveLength(1);
 		expect(pageSource).not.toMatch(/payment|充值|recharge/i);
 	});
 });

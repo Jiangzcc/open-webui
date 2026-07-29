@@ -4,7 +4,6 @@
 
 	import { WEBUI_NAME, config, mobile, showSettings, showSidebar, user } from '$lib/stores';
 	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
-	import { WEBUI_NAME, config, mobile, showSidebar, user } from '$lib/stores';
 	import { page } from '$app/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
@@ -96,7 +95,7 @@
 
 						<a
 							draggable="false"
-							class="min-w-fit p-11 text-sm {$page.url.pathname.includes('/admin/credits')
+							class="min-w-fit px-1 text-sm {$page.url.pathname.includes('/admin/credits')
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
 							href="/admin/credits">{$i18n.t('credits.admin.management')}</a

@@ -131,6 +131,23 @@
 			config.ENABLE_IMAGE_GENERATION = false;
 
 			return null;
+		} else if (config.IMAGE_GENERATION_ENGINE === 'fal' && config.FAL_API_KEY === '') {
+			toast.error($i18n.t('fal.ai API Key is required.'));
+			config.ENABLE_IMAGE_GENERATION = false;
+
+			return null;
+		}
+
+		if (
+			config.ENABLE_IMAGE_EDIT &&
+			config.IMAGE_EDIT_ENGINE === 'fal' &&
+			config.IMAGES_EDIT_FAL_API_KEY === '' &&
+			config.FAL_API_KEY === ''
+		) {
+			toast.error($i18n.t('fal.ai API Key is required.'));
+			config.ENABLE_IMAGE_EDIT = false;
+
+			return null;
 		}
 
 		const res = await updateConfig(localStorage.token, {
@@ -326,6 +343,7 @@
 							<option value="comfyui">{$i18n.t('ComfyUI')}</option>
 							<option value="automatic1111">{$i18n.t('Automatic1111')}</option>
 							<option value="gemini">{$i18n.t('Gemini')}</option>
+							<option value="fal">{$i18n.t('fal.ai')}</option>
 						</SettingsSelect>
 					</AdminSettingRow>
 
@@ -706,6 +724,25 @@
 								<option value="generateContent">generateContent</option>
 							</SettingsSelect>
 						</AdminSettingRow>
+					{:else if config?.IMAGE_GENERATION_ENGINE === 'fal'}
+						<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+							<AdminSettingField label={$i18n.t('fal.ai API Base URL')}>
+								<input
+									class={inputClass}
+									placeholder="https://queue.fal.run"
+									bind:value={config.FAL_API_BASE_URL}
+								/>
+							</AdminSettingField>
+
+							<AdminSettingField label={$i18n.t('fal.ai API Key')}>
+								<SensitiveInput
+									variant="settings"
+									placeholder={$i18n.t('API Key')}
+									bind:value={config.FAL_API_KEY}
+									required={true}
+								/>
+							</AdminSettingField>
+						</div>
 					{/if}
 				</AdminSettingSection>
 
@@ -729,6 +766,7 @@
 							<option value="openai">{$i18n.t('Default (Open AI)')}</option>
 							<option value="comfyui">{$i18n.t('ComfyUI')}</option>
 							<option value="gemini">{$i18n.t('Gemini')}</option>
+							<option value="fal">{$i18n.t('fal.ai')}</option>
 						</SettingsSelect>
 					</AdminSettingRow>
 
@@ -974,6 +1012,25 @@
 									placeholder={$i18n.t('API Key')}
 									bind:value={config.IMAGES_EDIT_GEMINI_API_KEY}
 									required={true}
+								/>
+							</AdminSettingField>
+						</div>
+					{:else if config?.IMAGE_EDIT_ENGINE === 'fal'}
+						<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+							<AdminSettingField label={$i18n.t('fal.ai API Base URL')}>
+								<input
+									class={inputClass}
+									placeholder="https://queue.fal.run"
+									bind:value={config.IMAGES_EDIT_FAL_API_BASE_URL}
+								/>
+							</AdminSettingField>
+
+							<AdminSettingField label={$i18n.t('fal.ai API Key')}>
+								<SensitiveInput
+									variant="settings"
+									placeholder={$i18n.t('API Key')}
+									bind:value={config.IMAGES_EDIT_FAL_API_KEY}
+									required={false}
 								/>
 							</AdminSettingField>
 						</div>

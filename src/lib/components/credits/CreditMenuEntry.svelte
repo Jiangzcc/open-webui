@@ -55,21 +55,23 @@
 </script>
 
 <button
-	class="flex w-full cursor-pointer select-none rounded-xl px-3 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-800"
+	class="flex h-[1.6875rem] w-full cursor-pointer select-none items-center gap-2 rounded-xl px-2 text-left text-[13px] transition hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
 	type="button"
 	on:click={() => dispatch('openLedger')}
 >
-	<div class="mr-3 self-center">
-		<ChartBar className="size-5" strokeWidth="1.5" />
+	<div class="flex size-4.5 shrink-0 items-center justify-center self-center">
+		<ChartBar className="size-3.5" strokeWidth="1.5" />
 	</div>
-	<div class="flex min-w-0 flex-1 items-center justify-between gap-2">
-		<div class="truncate">{$i18n.t('credits.balance')}</div>
+	<div class="self-center min-w-0 flex-1 truncate">{$i18n.t('credits.balance')}</div>
+	<div
+		class="ml-auto shrink-0 text-[11px] leading-none text-gray-500 tabular-nums dark:text-gray-400"
+	>
 		{#if balanceState.status === 'ready'}
-			<div class="shrink-0 font-medium tabular-nums">{balanceState.balance}</div>
+			{balanceState.balance}
 		{:else if balanceState.status === 'loading'}
-			<div class="shrink-0 text-xs text-gray-500">{$i18n.t('credits.common.loading')}</div>
+			{$i18n.t('credits.common.loading')}
 		{:else if balanceState.status === 'unavailable'}
-			<div class="shrink-0 text-xs text-gray-500">{$i18n.t('credits.unavailable')}</div>
+			{$i18n.t('credits.unavailable')}
 		{/if}
 	</div>
 </button>
