@@ -4,15 +4,15 @@
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { quoteImageCredits, type ImageQuoteInput } from '$lib/apis/credits';
+	import { getImageGenerationErrorCode } from '$lib/apis/images/generation';
 	import {
-		createImageGeneration,
-		editImageGeneration,
-		getImageGenerationErrorCode
-	} from '$lib/apis/images/generation';
+		createImageGenerationTask,
+		getImageGenerationTask,
+		listImageGenerationTasks
+	} from '$lib/apis/creations/generation-tasks';
 	import ImageCreditQuoteBadge from '$lib/components/credits/ImageCreditQuoteBadge.svelte';
 	import {
 		createImageQuoteState,
-		createImageSubmissionIdempotency,
 		isImageQuoteSubmittable,
 		type ImageQuoteState
 	} from '$lib/components/credits/quote-state';
@@ -27,7 +27,6 @@
 		getImageModelCapability,
 		getPrimaryImageModels,
 		normalizeImageGenerationModels,
-		normalizeImageResults,
 		resolveActiveImageModel,
 		resolveImageEditModel,
 		supportsImageEditing,
@@ -36,6 +35,15 @@
 		type ImageAspectRatio,
 		type ImageGenerationModel
 	} from '$lib/utils/image-generation';
+	import {
+		buildCreationDraft,
+		consumePendingCreationDraft,
+		generationElapsedSeconds,
+		isGenerationTaskTerminal,
+		mergeGenerationTask,
+		type ImageCreationDraft,
+		type ImageGenerationBatch
+	} from '$lib/utils/image-generation-batches';
 
 	import {
 		groupByVendor,
@@ -74,6 +82,7 @@
 	let showAspectRatioPicker = false;
 	let showModelSelector = false;
 	let selectedVendor = '';
+	let pendingCreationDraft: ImageCreationDraft | null = null;
 
 	let selection: 'generate' | 'mine' | 'all' = 'generate';
 	let libraryRevision = 0;
@@ -95,7 +104,11 @@
 
 	let models: ImageGenerationModel[] = [];
 	let referenceImages: ReferenceImage[] = [];
-	let generatedImages: GeneratedImage[] = [];
+	let generationBatches: ImageGenerationBatch[] = [];
+	let elapsedNow = Date.now();
+	let taskPollTimer: ReturnType<typeof setInterval> | null = null;
+	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+	let pollingTasks = false;
 	let showImagePreview = false;
 	let previewImageUrl = '';
 	let previewImageAlt = '';
@@ -330,42 +343,42 @@
 		return `width: ${Math.max(minimumPreviewSize, (previewSize * width) / height)}px; height: ${previewSize}px;`;
 	};
 
-	const getGeneratedBatchLayoutClass = (imageCount: number) => {
-		if (imageCount === 1) {
-			return 'flex justify-center';
-		}
+	const getCompletedBatchLayoutClass = () =>
+		'flex flex-wrap items-start justify-center gap-3 md:gap-4';
 
-		if (imageCount === 2) {
-			return 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-3 md:gap-4';
-		}
-
-		return 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4';
-	};
+	const getPendingBatchLayoutClass = (imageCount: number) =>
+		imageCount === 1 ? 'flex justify-center' : 'grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4';
 
 	const getGeneratedImageCardClass = (imageCount: number) => {
 		if (imageCount === 1) {
-			return 'w-full max-w-5xl';
+			return 'w-fit max-w-full shrink-0';
 		}
 
-		return 'w-full';
+		return 'w-fit max-w-full shrink-0 sm:max-w-[calc(50%_-_0.5rem)]';
 	};
 
-	const getGeneratedImageFrameClass = (imageCount: number) => {
-		const baseClass = 'relative w-full bg-gray-50 dark:bg-gray-900 overflow-hidden text-left';
+	const getGeneratedImageFrameClass = () =>
+		'relative flex max-w-full items-center justify-center overflow-hidden bg-stone-100 text-left dark:bg-black/30';
 
-		if (imageCount === 1) {
-			return `${baseClass} flex h-[calc(100dvh-24rem)] min-h-[16rem] max-h-[36rem] items-center justify-center`;
+	const getGeneratedImageClass = (imageCount: number) =>
+		`block h-auto w-auto max-w-full object-contain transition duration-300 group-hover:scale-[1.01] ${
+			imageCount === 1 ? 'max-h-[68dvh] sm:max-h-[72dvh]' : 'max-h-[58dvh] sm:max-h-[62dvh]'
+		}`;
+
+	const batchAspectStyle = (batch: ImageGenerationBatch) => {
+		const ratio = batch.aspectRatio;
+		if (/^\d+(\.\d+)?:\d+(\.\d+)?$/.test(ratio)) {
+			return `aspect-ratio: ${ratio.replace(':', ' / ')}`;
 		}
-
-		return `${baseClass} block aspect-square`;
+		const size = batch.resolution.match(/^(\d+)x(\d+)$/);
+		return size ? `aspect-ratio: ${size[1]} / ${size[2]}` : 'aspect-ratio: 4 / 3';
 	};
 
-	const getGeneratedImageClass = (imageCount: number) => {
-		if (imageCount <= 1) {
-			return 'h-full w-full object-cover transition duration-300 group-hover:scale-[1.01]';
-		}
-
-		return 'h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]';
+	const generationStatusLabel = (batch: ImageGenerationBatch) => {
+		if (batch.status === 'queued') return $i18n.t('Queued');
+		if (batch.status === 'running') return $i18n.t('Generating');
+		if (batch.status === 'failed') return $i18n.t('Generation failed');
+		return $i18n.t('Completed');
 	};
 
 	const getImageModelDisplayName = (model: ImageGenerationModel) => {
@@ -400,6 +413,12 @@
 			}
 		}
 		modelsLoading = false;
+		if (pendingCreationDraft) {
+			const draft = pendingCreationDraft;
+			pendingCreationDraft = null;
+			await tick();
+			await applyCreationDraft(draft);
+		}
 	};
 
 	const readFileAsDataUrl = (file: File) => {
@@ -416,6 +435,23 @@
 			reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
 			reader.readAsDataURL(file);
 		});
+	};
+
+	const resolveDraftReferenceImage = async (url: string) => {
+		if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
+			return url;
+		}
+		const response = await fetch(url, {
+			headers: { authorization: `Bearer ${localStorage.token}` }
+		});
+		if (!response.ok) throw new Error('reference image unavailable');
+		const blob = await response.blob();
+		if (!blob.type.startsWith('image/') || blob.size > MAX_REFERENCE_IMAGE_BYTES) {
+			throw new Error('invalid reference image');
+		}
+		return readFileAsDataUrl(
+			new File([blob], 'previous-creation', { type: blob.type || 'image/png' })
+		);
 	};
 
 	const addFiles = async (files: File[]) => {
@@ -588,6 +624,90 @@
 		}
 	};
 
+	const applyCreationDraft = async (draft: ImageCreationDraft) => {
+		let referenceImageUrl: string | null = null;
+		if (draft.referenceImageUrl) {
+			try {
+				referenceImageUrl = await resolveDraftReferenceImage(draft.referenceImageUrl);
+			} catch {
+				toast.error($i18n.t('Failed to load reference image'));
+				return;
+			}
+		}
+
+		let targetModel = primaryModels.find(
+			(model) => model.id === draft.modelId || model.editModel === draft.modelId
+		);
+		if (referenceImageUrl && (!targetModel || !supportsImageEditing(targetModel, models))) {
+			targetModel = primaryModels.find((model) => supportsImageEditing(model, models));
+		}
+		if (targetModel) {
+			selectModel(targetModel.id);
+			await tick();
+		}
+		if (draft.aspectRatio && aspectRatioOptions.includes(draft.aspectRatio)) {
+			selectedAspectRatio = draft.aspectRatio;
+		}
+		if (draft.resolution && resolutionOptions.includes(draft.resolution)) {
+			selectedResolution = draft.resolution;
+		}
+		if (draft.quality && qualityOptions.includes(draft.quality)) {
+			selectedQuality = draft.quality;
+		}
+		prompt = draft.prompt;
+		referenceImages = referenceImageUrl
+			? [{ url: referenceImageUrl, name: $i18n.t('Previous creation') }]
+			: [];
+		await selectSelection('generate');
+		await tick();
+		resizePromptTextarea();
+		promptTextareaElement?.focus();
+		toast.success($i18n.t('Creation settings loaded'));
+	};
+
+	const loadRecentGenerationTasks = async () => {
+		try {
+			const tasks = await listImageGenerationTasks(localStorage.token, 20);
+			for (const task of tasks) generationBatches = mergeGenerationTask(generationBatches, task);
+		} catch {
+			toast.error($i18n.t('Failed to restore generation tasks'));
+		}
+	};
+
+	const pollGenerationTasks = async () => {
+		if (pollingTasks) return;
+		const active = generationBatches.filter((batch) => !isGenerationTaskTerminal(batch.status));
+		if (active.length === 0) return;
+		pollingTasks = true;
+		try {
+			const previousStatuses = new Map(active.map((batch) => [batch.id, batch.status]));
+			const tasks = await Promise.all(
+				active.map((batch) => getImageGenerationTask(localStorage.token, batch.id))
+			);
+			for (const task of tasks) {
+				generationBatches = mergeGenerationTask(generationBatches, task);
+				if (task.status === 'succeeded' && previousStatuses.get(task.id) !== 'succeeded') {
+					libraryRevision += 1;
+					toast.success($i18n.t('Image generation completed'));
+				}
+			}
+		} catch {
+			// A temporary polling failure must not turn a running server task into a
+			// failed UI task. The next interval retries with the same task id.
+		} finally {
+			pollingTasks = false;
+		}
+	};
+
+	const reuseBatch = (batch: ImageGenerationBatch) =>
+		applyCreationDraft(
+			buildCreationDraft({
+				prompt: batch.prompt,
+				model_id: batch.modelId,
+				params: batch.params
+			})
+		);
+
 	const submitHandler = async () => {
 		const validation = validateImagePrompt(prompt);
 		if (!validation.ok) {
@@ -620,30 +740,13 @@
 							referenceImages: referenceImages.map((image) => image.url)
 						})
 					: buildImageGenerationPayload(commonPayload);
-			const submission = createImageSubmissionIdempotency(uuidv4);
-			const result =
-				referenceImages.length > 0
-					? await submission.run((idempotencyKey) =>
-							editImageGeneration(localStorage.token, payload, { idempotencyKey })
-						)
-					: await submission.run((idempotencyKey) =>
-							createImageGeneration(localStorage.token, payload, { idempotencyKey })
-						);
-
-			const images = normalizeImageResults(result).map((image) => ({
-				...image,
-				prompt: validation.prompt,
-				aspectRatio: selectedAspectRatio,
-				createdAt: Date.now()
-			}));
-
-			if (images.length === 0) {
-				toast.error($i18n.t('No images were returned.'));
-				return;
-			}
-
-			generatedImages = [...images, ...generatedImages];
-			libraryRevision += 1;
+			const task = await createImageGenerationTask(
+				localStorage.token,
+				referenceImages.length > 0 ? 'image-to-image' : 'text-to-image',
+				payload,
+				uuidv4()
+			);
+			generationBatches = mergeGenerationTask(generationBatches, task);
 			referenceImages = [];
 			prompt = '';
 			await tick();
@@ -658,13 +761,19 @@
 	};
 
 	onMount(async () => {
+		pendingCreationDraft = consumePendingCreationDraft(sessionStorage);
 		loaded = true;
+		await loadRecentGenerationTasks();
+		taskPollTimer = setInterval(() => void pollGenerationTasks(), 2_000);
+		elapsedTimer = setInterval(() => (elapsedNow = Date.now()), 1_000);
 		await tick();
 		resizePromptTextarea();
 	});
 
 	onDestroy(() => {
 		imageQuoteStateMachine.dispose();
+		if (taskPollTimer) clearInterval(taskPollTimer);
+		if (elapsedTimer) clearInterval(elapsedTimer);
 	});
 </script>
 
@@ -771,7 +880,7 @@
 		>
 			<div class="mx-auto max-w-6xl min-h-full flex flex-col">
 				<div class="flex-1">
-					{#if generatedImages.length === 0}
+					{#if generationBatches.length === 0}
 						<section class="min-h-[calc(100dvh-20rem)] flex items-center justify-center py-12">
 							<div class="text-center px-4">
 								<div
@@ -792,71 +901,130 @@
 							</div>
 						</section>
 					{:else}
-						<section class="pt-18 sm:pt-18">
-							<div class={getGeneratedBatchLayoutClass(generatedImages.length)}>
-								{#each generatedImages as image, index (`${image.url}-${index}`)}
-									<div
-										class="group rounded-3xl overflow-hidden border border-gray-100 dark:border-gray-850 bg-white dark:bg-gray-900/60 shadow-sm {getGeneratedImageCardClass(
-											generatedImages.length
-										)}"
+						<section class="space-y-6 pb-6 pt-18 sm:pt-18" aria-live="polite">
+							{#each generationBatches as batch (batch.id)}
+								<article
+									class="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm dark:border-gray-850 dark:bg-gray-900/60"
+								>
+									<header
+										class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
 									>
-										<button
-											type="button"
-											class={getGeneratedImageFrameClass(generatedImages.length)}
-											on:click={() => openImagePreview(image)}
-											aria-label={$i18n.t('Preview generated image')}
+										<div class="min-w-0">
+											<p class="line-clamp-1 text-sm font-medium text-gray-900 dark:text-gray-100">
+												{batch.prompt}
+											</p>
+											<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+												{batch.modelId ?? $i18n.t('Default Model')} · {getAspectRatioLabel(
+													batch.aspectRatio
+												)} · {batch.expectedCount}
+											</p>
+										</div>
+										<div class="flex shrink-0 items-center gap-2 text-xs">
+											<span
+												class="inline-flex min-h-8 items-center gap-2 rounded-full px-3 {batch.status ===
+												'failed'
+													? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300'
+													: batch.status === 'succeeded'
+														? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+														: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}"
+											>
+												{#if !isGenerationTaskTerminal(batch.status)}
+													<Spinner className="size-3.5" />
+												{/if}
+												{generationStatusLabel(batch)}
+												{#if !isGenerationTaskTerminal(batch.status)}
+													· {generationElapsedSeconds(batch, elapsedNow)}s
+												{/if}
+											</span>
+											<button
+												type="button"
+												class="min-h-8 rounded-full px-3 font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+												on:click={() => reuseBatch(batch)}
+											>
+												{$i18n.t('Create again')}
+											</button>
+										</div>
+									</header>
+
+									<div class="px-3 pb-3 sm:px-4 sm:pb-4">
+										<div
+											class={batch.status === 'succeeded' && batch.images.length > 0
+												? getCompletedBatchLayoutClass()
+												: getPendingBatchLayoutClass(batch.expectedCount)}
 										>
-											<img
-												src={image.url}
-												alt={image.prompt ?? $i18n.t('Generated image')}
-												class={getGeneratedImageClass(generatedImages.length)}
-											/>
-											<div
-												class="absolute inset-x-3 bottom-3 flex justify-end opacity-0 transition group-hover:opacity-100"
-											>
-												<span
-													class="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-gray-800 shadow-sm backdrop-blur dark:bg-gray-950/90 dark:text-gray-100"
+											{#if batch.status === 'succeeded' && batch.images.length > 0}
+												{#each batch.images as image, index (`${image.url}-${index}`)}
+													<div
+														class="group overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800 {getGeneratedImageCardClass(
+															batch.images.length
+														)}"
+													>
+														<button
+															type="button"
+															class={getGeneratedImageFrameClass()}
+															on:click={() => openImagePreview(image)}
+															aria-label={$i18n.t('Preview generated image')}
+														>
+															<img
+																src={image.url}
+																alt={image.prompt ?? $i18n.t('Generated image')}
+																class={getGeneratedImageClass(batch.images.length)}
+															/>
+														</button>
+														<div class="flex items-center justify-end gap-1 px-2 py-2">
+															<button
+																type="button"
+																class="min-h-9 rounded-full px-3 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+																on:click={() => openImagePreview(image)}
+																>{$i18n.t('Preview')}</button
+															>
+															<button
+																type="button"
+																class="min-h-9 rounded-full px-3 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+																on:click={() => downloadImage(image, index)}
+																>{$i18n.t('Download')}</button
+															>
+														</div>
+													</div>
+												{/each}
+											{:else if batch.status === 'failed'}
+												<div
+													class="col-span-full flex min-h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-red-200 bg-red-50/40 px-5 text-center dark:border-red-900/60 dark:bg-red-950/20"
+													style={batchAspectStyle(batch)}
 												>
-													{$i18n.t('Preview')}
-												</span>
-											</div>
-										</button>
-										<div class="px-3 py-2.5">
-											<div
-												class="text-xs text-gray-500 dark:text-gray-400 flex justify-between gap-2"
-											>
-												<span>
-													{image.aspectRatio
-														? getAspectRatioLabel(image.aspectRatio)
-														: $i18n.t('Smart')}
-												</span>
-												<span>{modeLabel}</span>
-											</div>
-											{#if image.prompt}
-												<div class="mt-1 text-sm text-gray-800 dark:text-gray-200 line-clamp-2">
-													{image.prompt}
+													<p class="text-sm font-medium text-red-600 dark:text-red-300">
+														{$i18n.t('Generation failed')}
+													</p>
+													{#if batch.errorCode}<p class="mt-1 text-xs text-red-500/80">
+															{batch.errorCode}
+														</p>{/if}
+													<button
+														type="button"
+														class="mt-3 min-h-11 rounded-full bg-gray-950 px-4 text-sm font-medium text-white dark:bg-white dark:text-gray-950"
+														on:click={() => reuseBatch(batch)}>{$i18n.t('Load settings')}</button
+													>
 												</div>
+											{:else}
+												{#each Array(batch.expectedCount) as _, index (index)}
+													<div
+														class="relative min-h-48 overflow-hidden rounded-2xl bg-stone-100 dark:bg-gray-800"
+														style={batchAspectStyle(batch)}
+													>
+														<div
+															class="absolute inset-0 animate-pulse bg-gradient-to-br from-transparent via-white/45 to-transparent dark:via-white/5"
+														></div>
+														<div
+															class="absolute inset-0 flex items-center justify-center text-xs text-gray-400 dark:text-gray-500"
+														>
+															{$i18n.t('Creating image {{index}}', { index: index + 1 })}
+														</div>
+													</div>
+												{/each}
 											{/if}
-											<div class="mt-2 flex items-center justify-end gap-2">
-												<button
-													type="button"
-													class="rounded-full px-3 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
-													on:click={() => openImagePreview(image)}
-												>
-													{$i18n.t('Preview')}
-												</button>
-												<button
-													type="button"
-													class="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-850 dark:text-gray-200 dark:hover:bg-gray-800"
-													on:click={() => downloadImage(image, index)}
-												>
-													{$i18n.t('Download')}
-												</button>
-											</div>
 										</div>
 									</div>
-								{/each}
-							</div>
+								</article>
+							{/each}
 						</section>
 					{/if}
 				</div>
@@ -1000,10 +1168,10 @@
 																	</Tooltip>
 																{/if}
 																{#if modelBasePrice(model)}
-																			<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-																				{modelBasePrice(model)}
-																				{$i18n.t('credits.common.unit')}
-																			</span>
+																	<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+																		{modelBasePrice(model)}
+																		{$i18n.t('credits.common.unit')}
+																	</span>
 																{/if}
 																{#if isProxyModel(model)}
 																	<span class="shrink-0 text-xs text-amber-600 dark:text-amber-400">
@@ -1267,6 +1435,7 @@
 					active={view === 'library'}
 					scope={libraryScope}
 					revision={libraryRevision}
+					onReuse={applyCreationDraft}
 				/>
 			</div>
 		</div>

@@ -174,4 +174,23 @@ describe('CreationDetailsModal source contract', () => {
 		expect(source).toContain('updateCreation');
 		expect(source).toContain('deleteCreation');
 	});
+
+	test('routes admin management through explicit admin endpoints', () => {
+		expect(source).toContain('deleteAdminCreation');
+		expect(source).toContain('publishAdminCreation');
+		expect(source).toContain('withdrawAdminCreationPublication');
+		expect(source).toContain("requestedScope === 'all'");
+		expect(source).toContain('isAdminScope() ? publishAdminCreation : publishCreation');
+		expect(source).toContain('canManage && !isAdminScope()');
+	});
+
+	test('resolves protected creation content before using it as a reference', () => {
+		const imagesSource = readFileSync(
+			fileURLToPath(new URL('./Images.svelte', import.meta.url)),
+			'utf-8'
+		);
+		expect(imagesSource).toContain('resolveDraftReferenceImage');
+		expect(imagesSource).toContain('authorization: `Bearer ${localStorage.token}`');
+		expect(imagesSource).toContain("$i18n.t('Failed to load reference image')");
+	});
 });

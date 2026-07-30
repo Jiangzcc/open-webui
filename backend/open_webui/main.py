@@ -132,7 +132,10 @@ from open_webui.extensions.credits.registration import (
     shutdown_credit_extension,
 )
 from open_webui.extensions.credits.router import router as credits_router
-from open_webui.extensions.creations.registration import initialize_creations_extension
+from open_webui.extensions.creations.registration import (
+    initialize_creations_extension,
+    shutdown_creations_extension,
+)
 from open_webui.extensions.creations.router import router as creations_router
 from open_webui.internal.db import engine, get_async_session
 from open_webui.models.access_grants import AccessGrants
@@ -455,6 +458,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await publish_event(app, EVENTS.SYSTEM_SHUTDOWN_STARTED, source='system')
+    await shutdown_creations_extension(app)
     await shutdown_credit_extension(app)
 
     # Shutdown: clean up shared resources

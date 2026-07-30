@@ -18,6 +18,9 @@ CreationKind = Literal['image']
 CreationAvailability = Literal['available', 'missing']
 DiscoverySort = Literal['latest', 'popular']
 ReactionKind = Literal['like', 'favorite']
+ImageGenerationTaskStatus = Literal['queued', 'running', 'succeeded', 'failed']
+CreationPublicationFilter = Literal['published', 'unpublished']
+CreationListSort = Literal['newest', 'oldest']
 
 _CURSOR_VERSION = 1
 _MAX_ENCODED_CURSOR_LENGTH = 512
@@ -111,6 +114,24 @@ class CaptionUpdateForm(_StrictModel):
         return stripped
 
 
+class BulkCreationDeleteForm(_StrictModel):
+    ids: tuple[str, ...] = Field(min_length=1, max_length=100)
+
+    @field_validator('ids')
+    @classmethod
+    def _normalize_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(dict.fromkeys(item.strip() for item in value if item.strip()))
+        if not normalized:
+            raise ValueError('at least one creation id is required')
+        if any(len(item) > _MAX_CREATION_ID_LENGTH for item in normalized):
+            raise ValueError('creation id exceeds maximum length')
+        return normalized
+
+
+class BulkCreationDeleteResponse(_StrictModel):
+    removed_ids: tuple[str, ...]
+
+
 class PublishCreationForm(_StrictModel):
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
@@ -124,6 +145,31 @@ class PublishCreationForm(_StrictModel):
         if not isinstance(value, str):
             raise ValueError('value must be a string or null')
         return value.strip() or None
+
+
+class ImageGenerationTaskSubmitForm(_StrictModel):
+    kind: CreationTask
+    payload: dict[str, object]
+
+
+class ImageGenerationTaskResponse(_StrictModel):
+    id: str
+    status: ImageGenerationTaskStatus
+    kind: CreationTask
+    prompt: str
+    model_id: str | None
+    params: dict[str, object] | None
+    expected_count: int = Field(ge=1)
+    result: tuple[dict[str, object], ...]
+    error_code: str | None
+    created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    started_at: int | None = Field(default=None, ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    completed_at: int | None = Field(default=None, ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+    updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
+
+
+class ImageGenerationTaskListResponse(_StrictModel):
+    items: tuple[ImageGenerationTaskResponse, ...]
 
 
 class CreationPublication(_StrictModel):
@@ -160,6 +206,7 @@ class DiscoveryPostSummary(_StrictModel):
 
 
 class DiscoveryPostDetail(DiscoveryPostSummary):
+    model_id: str | None
     prompt: str | None
     negative_prompt: str | None
     params: dict[str, object] | None
@@ -196,6 +243,7 @@ class CreationSummary(_StrictModel):
     prompt_preview: str | None
     model_name: str | None
     task: CreationTask
+    publication_status: Literal['published', 'withdrawn', 'hidden'] | None = None
     created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
     updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
 
@@ -244,6 +292,7 @@ class AdminCreationSummary(_StrictModel):
     prompt_preview: str | None
     model_name: str | None
     task: CreationTask
+    publication_status: Literal['published', 'withdrawn', 'hidden'] | None = None
     created_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
     updated_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
     owner: AdminOwner
@@ -332,6 +381,8 @@ __all__ = [
     'AdminCreationSummary',
     'AdminOwner',
     'AuthorizationScope',
+    'BulkCreationDeleteForm',
+    'BulkCreationDeleteResponse',
     'CaptionUpdateForm',
     'CapturedImageBatch',
     'CapturedImageResult',
@@ -340,16 +391,22 @@ __all__ = [
     'CreationCaptureContext',
     'CreationDetail',
     'CreationKind',
+    'CreationListSort',
     'CreationListResponse',
     'CreationReference',
     'CreationSource',
     'CreationSummary',
     'CreationTask',
     'CreationPublication',
+    'CreationPublicationFilter',
     'DiscoveryPostDetail',
     'DiscoveryPostListResponse',
     'DiscoveryPostSummary',
     'DiscoverySort',
+    'ImageGenerationTaskListResponse',
+    'ImageGenerationTaskResponse',
+    'ImageGenerationTaskStatus',
+    'ImageGenerationTaskSubmitForm',
     'PreparedReference',
     'PublicOwner',
     'PublishCreationForm',

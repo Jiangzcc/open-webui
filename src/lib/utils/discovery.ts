@@ -26,6 +26,7 @@ export type DiscoveryPostSummary = {
 };
 
 export type DiscoveryPostDetail = DiscoveryPostSummary & {
+	model_id: string | null;
 	prompt: string | null;
 	negative_prompt: string | null;
 	params: Record<string, unknown> | null;

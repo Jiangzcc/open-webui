@@ -45,7 +45,9 @@ describe('CreditMenuEntry', () => {
 		expect(componentSource).toContain('h-[1.6875rem]');
 		expect(componentSource).toContain('gap-2 rounded-xl px-2 text-left text-[13px]');
 		expect(componentSource).toContain('hover:bg-gray-50/40 dark:hover:bg-gray-800/40');
-		expect(componentSource).toContain('ChartBar className="size-3.5"');
+		expect(componentSource).toContain("import CreditCoins from './CreditCoins.svelte'");
+		expect(componentSource).toContain('CreditCoins className="size-3.5"');
+		expect(componentSource).not.toContain('ChartBar');
 		expect(componentSource).toContain('text-[11px] leading-none text-gray-500 tabular-nums');
 		expect(componentSource).not.toContain('rounded-xl px-3 py-1.5');
 	});

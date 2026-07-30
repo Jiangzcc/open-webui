@@ -4,8 +4,9 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Literal
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse
 from open_webui.extensions.creations.db import get_creation_session
@@ -18,16 +19,30 @@ from open_webui.extensions.creations.discovery_service import (
     set_reaction,
     withdraw_creation,
 )
+from open_webui.extensions.creations.generation_tasks import (
+    create_generation_task,
+    get_generation_task,
+    list_generation_tasks,
+    schedule_generation_task,
+)
 from open_webui.extensions.creations.schemas import (
     AdminCreationDetail,
     AdminCreationListResponse,
+    BulkCreationDeleteForm,
+    BulkCreationDeleteResponse,
     CaptionUpdateForm,
     CreationDetail,
     CreationListResponse,
+    CreationListSort,
     CreationPublication,
+    CreationPublicationFilter,
+    CreationTask,
     DiscoveryPostDetail,
     DiscoveryPostListResponse,
     DiscoverySort,
+    ImageGenerationTaskListResponse,
+    ImageGenerationTaskResponse,
+    ImageGenerationTaskSubmitForm,
     PublishCreationForm,
     ReactionKind,
     ReactionState,
@@ -38,6 +53,7 @@ from open_webui.extensions.creations.service import (
     list_admin_creations,
     list_personal_creations,
     soft_delete,
+    soft_delete_many,
     update_caption,
 )
 from open_webui.storage.provider import Storage
@@ -55,16 +71,94 @@ def _invalid_cursor_response() -> JSONResponse:
     return JSONResponse(status_code=422, content={'detail': 'invalid creation cursor'})
 
 
+@router.post(
+    '/generation-tasks',
+    response_model=ImageGenerationTaskResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_image_generation_task(
+    request: Request,
+    submission: ImageGenerationTaskSubmitForm,
+    idempotency_key: Annotated[str | None, Header(alias='Idempotency-Key')] = None,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    from open_webui.routers.images import CreateImageForm, EditImageForm
+
+    try:
+        form = (
+            EditImageForm.model_validate(submission.payload)
+            if submission.kind == 'image-to-image'
+            else CreateImageForm.model_validate(submission.payload)
+        )
+    except ValidationError as error:
+        return JSONResponse(status_code=422, content=jsonable_encoder(error.errors()))
+
+    key = (idempotency_key or str(uuid4())).strip()
+    if not key or len(key) > 128:
+        raise HTTPException(status_code=422, detail='invalid idempotency key')
+    task, created = await create_generation_task(
+        session,
+        user_id=user.id,
+        idempotency_key=key,
+        kind=submission.kind,
+        payload=form.model_dump(exclude_none=True),
+    )
+    if created:
+        schedule_generation_task(
+            request,
+            task_id=task.id,
+            user=user,
+            form=form,
+            kind=submission.kind,
+        )
+    return task
+
+
+@router.get('/generation-tasks', response_model=ImageGenerationTaskListResponse)
+async def list_image_generation_tasks(
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    return await list_generation_tasks(session, user.id, limit)
+
+
+@router.get('/generation-tasks/{task_id}', response_model=ImageGenerationTaskResponse)
+async def get_image_generation_task(
+    task_id: str,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    task = await get_generation_task(session, user.id, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail='generation task not found')
+    return task
+
+
 @router.get('/media', response_model=CreationListResponse)
 async def list_media(
     scope: PersonalScope = 'mine',
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    task: CreationTask | None = None,
+    publication_status: CreationPublicationFilter | None = None,
+    sort: CreationListSort = 'newest',
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_personal_creations(session, user.id, limit, cursor)
+        return await list_personal_creations(
+            session,
+            user.id,
+            limit,
+            cursor,
+            search=search,
+            task=task,
+            publication_status=publication_status,
+            sort=sort,
+        )
     except ValueError:
         return _invalid_cursor_response()
 
@@ -111,6 +205,17 @@ async def delete_media(
     if not removed:
         raise HTTPException(status_code=404, detail='creation not found')
     return None
+
+
+@router.post('/media/bulk-delete', response_model=BulkCreationDeleteResponse)
+async def bulk_delete_media(
+    form: BulkCreationDeleteForm,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    return BulkCreationDeleteResponse(
+        removed_ids=await soft_delete_many(session, user.id, form.ids)
+    )
 
 
 @router.post('/media/{creation_id}/publish', response_model=CreationPublication)
@@ -249,6 +354,58 @@ async def get_admin_media(
     if detail is None:
         raise HTTPException(status_code=404, detail='creation not found')
     return detail
+
+
+@router.post('/admin/media/{creation_id}/publish', response_model=CreationPublication)
+async def publish_admin_media(
+    creation_id: str,
+    form: PublishCreationForm,
+    user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    detail = await get_admin_detail(session, creation_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail='creation not found')
+    publication = await publish_creation(
+        session,
+        detail.owner.user_id,
+        creation_id,
+        form,
+        allow_hidden=True,
+    )
+    if publication is None:
+        raise HTTPException(status_code=404, detail='creation not found')
+    return publication
+
+
+@router.delete('/admin/media/{creation_id}/publish', status_code=204)
+async def withdraw_admin_media(
+    creation_id: str,
+    user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    detail = await get_admin_detail(session, creation_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail='creation not found')
+    withdrawn = await withdraw_creation(session, detail.owner.user_id, creation_id)
+    if not withdrawn:
+        raise HTTPException(status_code=404, detail='publication not found')
+    return None
+
+
+@router.delete('/admin/media/{creation_id}', status_code=204)
+async def delete_admin_media(
+    creation_id: str,
+    user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    detail = await get_admin_detail(session, creation_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail='creation not found')
+    removed = await soft_delete(session, detail.owner.user_id, creation_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail='creation not found')
+    return None
 
 
 __all__ = ['router']

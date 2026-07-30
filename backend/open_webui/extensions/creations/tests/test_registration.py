@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from open_webui.extensions.creations import registration
 
 
@@ -29,13 +28,16 @@ async def test_initialization_runs_migration_then_schema_validation(monkeypatch)
 
     monkeypatch.setattr(registration, 'run_creation_migrations', run_creation_migrations)
     monkeypatch.setattr(registration, '_validate_creation_schema', _validate_creation_schema)
-    await registration.initialize_creations_extension(_app())
+    monkeypatch.setattr(registration, 'fail_incomplete_generation_tasks', lambda: _async_value(0))
+    app = _app()
+    await registration.initialize_creations_extension(app)
     assert calls == [
         'run_creation_migrations',
         'migrated',
         '_validate_creation_schema',
         'validated',
     ]
+    assert app.state.creation_generation_tasks == set()
 
 
 @pytest.mark.asyncio
@@ -49,15 +51,22 @@ async def test_initialization_failure_propagates(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_initialization_does_not_register_background_worker(monkeypatch) -> None:
+async def test_initialization_registers_generation_task_set(monkeypatch) -> None:
     app = _app()
-    await registration.initialize_creations_extension(_app())
-    assert not hasattr(app.state, 'creations_worker_task')
+    monkeypatch.setattr(registration, 'run_creation_migrations', lambda: None)
+    monkeypatch.setattr(registration, '_validate_creation_schema', lambda: None)
+    monkeypatch.setattr(registration, 'fail_incomplete_generation_tasks', lambda: _async_value(0))
+    await registration.initialize_creations_extension(app)
+    assert app.state.creation_generation_tasks == set()
     assert not hasattr(app.state, 'credit_recovery_task')
 
 
-def test_initialize_creations_extension_has_no_shutdown_partner() -> None:
-    assert not hasattr(registration, 'shutdown_creations_extension')
+async def _async_value(value):
+    return value
+
+
+def test_initialize_creations_extension_has_shutdown_partner() -> None:
+    assert hasattr(registration, 'shutdown_creations_extension')
 
 
 def test_main_py_initializes_creations_after_credits_and_includes_router_once() -> None:
@@ -72,5 +81,6 @@ def test_main_py_initializes_creations_after_credits_and_includes_router_once() 
     assert source.index('initialize_credit_extension') < source.index('initialize_creations_extension')
     # router included exactly once
     assert source.count('include_router(creations_router)') == 1
-    # no creations shutdown hook
-    assert 'shutdown_creations_extension' not in source
+    assert source.index('shutdown_creations_extension(app)') < source.index(
+        'shutdown_credit_extension(app)'
+    )

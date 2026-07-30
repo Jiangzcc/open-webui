@@ -17,7 +17,7 @@ from open_webui.extensions.creations.schemas import (
     decode_creation_cursor,
     encode_creation_cursor,
 )
-from sqlalchemy import and_, desc, or_, select, update
+from sqlalchemy import and_, asc, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _CONTENT_URL_TEMPLATE = '/api/v1/files/{}/content'
@@ -99,7 +99,9 @@ def _index_files_by_id(files: Iterable[object]) -> dict[str, object]:
     return {getattr(file, 'id'): file for file in files if getattr(file, 'id', None) is not None}
 
 
-def _summary_from_item(item: CreationMediaItem, file: object | None) -> CreationSummary:
+def _summary_from_item(
+    item: CreationMediaItem, file: object | None, publication_status: str | None = None
+) -> CreationSummary:
     content_url, mime_type, availability = _file_content_url_and_mime(file, item.user_id)
     return CreationSummary(
         id=item.id,
@@ -111,6 +113,7 @@ def _summary_from_item(item: CreationMediaItem, file: object | None) -> Creation
         prompt_preview=_prompt_preview(item),
         model_name=_model_display_name(item),
         task=item.task,
+        publication_status=publication_status,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -201,19 +204,22 @@ async def _owners_for_items(items: list[CreationMediaItem]) -> dict[str, AdminOw
     return owners
 
 
-def _apply_cursor(stmt, cursor: str | None):
+def _apply_cursor(stmt, cursor: str | None, sort: str = 'newest'):
     if not cursor:
         return stmt
     cursor_created_at, cursor_id = decode_creation_cursor(cursor)
-    return stmt.where(
+    comparator = (
         or_(
+            CreationMediaItem.created_at > cursor_created_at,
+            and_(CreationMediaItem.created_at == cursor_created_at, CreationMediaItem.id > cursor_id),
+        )
+        if sort == 'oldest'
+        else or_(
             CreationMediaItem.created_at < cursor_created_at,
-            and_(
-                CreationMediaItem.created_at == cursor_created_at,
-                CreationMediaItem.id < cursor_id,
-            ),
+            and_(CreationMediaItem.created_at == cursor_created_at, CreationMediaItem.id < cursor_id),
         )
     )
+    return stmt.where(comparator)
 
 
 async def list_personal_creations(
@@ -221,28 +227,58 @@ async def list_personal_creations(
     user_id: str,
     limit: int,
     cursor: str | None,
+    search: str | None = None,
+    task: str | None = None,
+    publication_status: str | None = None,
+    sort: str = 'newest',
 ) -> CreationListResponse:
     stmt = (
-        select(CreationMediaItem)
+        select(CreationMediaItem, CreationPost.status)
+        .outerjoin(CreationPostMedia, CreationPostMedia.creation_id == CreationMediaItem.id)
+        .outerjoin(CreationPost, CreationPost.id == CreationPostMedia.post_id)
         .where(
             CreationMediaItem.user_id == user_id,
             CreationMediaItem.soft_deleted.is_(False),
         )
-        .order_by(desc(CreationMediaItem.created_at), desc(CreationMediaItem.id))
-        .limit(limit + 1)
     )
-    stmt = _apply_cursor(stmt, cursor)
-    rows = (await session.execute(stmt)).scalars().all()
+    normalized_search = (search or '').strip()
+    if normalized_search:
+        pattern = f'%{normalized_search}%'
+        stmt = stmt.where(
+            or_(
+                CreationMediaItem.prompt.ilike(pattern),
+                CreationMediaItem.caption.ilike(pattern),
+                CreationMediaItem.model_name_snapshot.ilike(pattern),
+                CreationMediaItem.model_id.ilike(pattern),
+            )
+        )
+    if task:
+        stmt = stmt.where(CreationMediaItem.task == task)
+    if publication_status == 'published':
+        stmt = stmt.where(CreationPost.status == 'published')
+    elif publication_status == 'unpublished':
+        stmt = stmt.where(or_(CreationPost.status.is_(None), CreationPost.status != 'published'))
+    ordering = (
+        (asc(CreationMediaItem.created_at), asc(CreationMediaItem.id))
+        if sort == 'oldest'
+        else (desc(CreationMediaItem.created_at), desc(CreationMediaItem.id))
+    )
+    stmt = stmt.order_by(*ordering).limit(limit + 1)
+    stmt = _apply_cursor(stmt, cursor, sort)
+    rows = (await session.execute(stmt)).all()
     items = list(rows)
     next_cursor = None
     if len(items) > limit:
         page = items[:limit]
-        boundary = page[-1]
+        boundary = page[-1][0]
         next_cursor = encode_creation_cursor(boundary.created_at, boundary.id)
     else:
         page = items
-    files_by_id = await _bulk_load_files(_collect_file_ids(page))
-    summaries = tuple(_summary_from_item(item, files_by_id.get(item.file_id)) for item in page)
+    media_items = [item for item, _status in page]
+    files_by_id = await _bulk_load_files(_collect_file_ids(media_items))
+    summaries = tuple(
+        _summary_from_item(item, files_by_id.get(item.file_id), status) for item, status in page
+    )
     return CreationListResponse(items=summaries, next_cursor=next_cursor)
 
 
@@ -252,25 +288,28 @@ async def list_admin_creations(
     cursor: str | None,
 ) -> AdminCreationListResponse:
     stmt = (
-        select(CreationMediaItem)
+        select(CreationMediaItem, CreationPost.status)
+        .outerjoin(CreationPostMedia, CreationPostMedia.creation_id == CreationMediaItem.id)
+        .outerjoin(CreationPost, CreationPost.id == CreationPostMedia.post_id)
         .where(CreationMediaItem.soft_deleted.is_(False))
         .order_by(desc(CreationMediaItem.created_at), desc(CreationMediaItem.id))
         .limit(limit + 1)
     )
     stmt = _apply_cursor(stmt, cursor)
-    rows = (await session.execute(stmt)).scalars().all()
+    rows = (await session.execute(stmt)).all()
     items = list(rows)
     next_cursor = None
     if len(items) > limit:
         page = items[:limit]
-        boundary = page[-1]
+        boundary = page[-1][0]
         next_cursor = encode_creation_cursor(boundary.created_at, boundary.id)
     else:
         page = items
-    files_by_id = await _bulk_load_files(_collect_file_ids(page))
-    owners = await _owners_for_items(page)
+    media_items = [item for item, _status in page]
+    files_by_id = await _bulk_load_files(_collect_file_ids(media_items))
+    owners = await _owners_for_items(media_items)
     summaries: list[AdminCreationSummary] = []
-    for item in page:
+    for item, publication_status in page:
         content_url, mime_type, availability = _file_content_url_and_mime(files_by_id.get(item.file_id), item.user_id)
         summaries.append(
             AdminCreationSummary(
@@ -283,6 +322,7 @@ async def list_admin_creations(
                 prompt_preview=_prompt_preview(item),
                 model_name=_model_display_name(item),
                 task=item.task,
+                publication_status=publication_status,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
                 owner=owners[item.user_id],
@@ -387,6 +427,40 @@ async def soft_delete(
     return True
 
 
+async def soft_delete_many(
+    session: AsyncSession, user_id: str, creation_ids: tuple[str, ...]
+) -> tuple[str, ...]:
+    owned = tuple(
+        (
+            await session.execute(
+                select(CreationMediaItem.id).where(
+                    CreationMediaItem.id.in_(creation_ids),
+                    CreationMediaItem.user_id == user_id,
+                    CreationMediaItem.soft_deleted.is_(False),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not owned:
+        return ()
+    now = _now()
+    await session.execute(
+        update(CreationMediaItem)
+        .where(CreationMediaItem.id.in_(owned), CreationMediaItem.user_id == user_id)
+        .values(soft_deleted=True, updated_at=now)
+    )
+    post_ids = select(CreationPostMedia.post_id).where(CreationPostMedia.creation_id.in_(owned))
+    await session.execute(
+        update(CreationPost)
+        .where(CreationPost.id.in_(post_ids), CreationPost.status != 'hidden')
+        .values(status='withdrawn', updated_at=now)
+    )
+    await session.commit()
+    return owned
+
+
 def _flatten_reference_ids(item: CreationMediaItem) -> list[str]:
     raw = item.reference_file_ids_json or []
     if not isinstance(raw, list):
@@ -400,5 +474,6 @@ __all__ = [
     'list_admin_creations',
     'list_personal_creations',
     'soft_delete',
+    'soft_delete_many',
     'update_caption',
 ]

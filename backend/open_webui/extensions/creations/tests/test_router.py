@@ -6,13 +6,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from open_webui.extensions.creations import service
+from open_webui.extensions.creations import discovery_service, service
 from open_webui.extensions.creations.db import get_creation_session
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.creations.router import router as creations_router
 from open_webui.utils.auth import get_admin_user, get_verified_user
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _build_app(sessions) -> FastAPI:
@@ -144,11 +143,14 @@ def test_non_admin_cannot_upgrade_to_global_scope(app_and_client, user_override)
     _, client = app_and_client
     user_override(id='user-1', role='user')
     assert client.get('/api/v1/creations/admin/media').status_code == 401
+    assert client.post('/api/v1/creations/admin/media/c1/publish', json={}).status_code == 401
+    assert client.delete('/api/v1/creations/admin/media/c1/publish').status_code == 401
+    assert client.delete('/api/v1/creations/admin/media/c1').status_code == 401
     response = client.get('/api/v1/creations/media?scope=all')
     assert response.status_code == 422
 
 
-def test_admin_global_list_is_read_only_and_includes_deleted_owner(
+def test_admin_global_list_includes_deleted_owner_and_supports_management(
     app_and_client, admin_override, creation_sessions, monkeypatch
 ) -> None:
     app, client = app_and_client
@@ -157,6 +159,11 @@ def test_admin_global_list_is_read_only_and_includes_deleted_owner(
     _seed_item(creation_sessions, cid='orphaned-creation', user_id='ghost', file_id='fg', created_at=20)
     monkeypatch.setattr(service, 'Files', _FakeFiles([_file('fu', 'user-1'), _file('fg', 'ghost')]))
     monkeypatch.setattr(service, 'Users', _FakeUsers([_user('user-1')]))
+    monkeypatch.setattr(
+        discovery_service,
+        'Files',
+        _FakeFiles([_file('fu', 'user-1'), _file('fg', 'ghost')]),
+    )
 
     response = client.get('/api/v1/creations/admin/media')
     assert response.status_code == 200
@@ -168,9 +175,23 @@ def test_admin_global_list_is_read_only_and_includes_deleted_owner(
     assert client.patch('/api/v1/creations/media/user-creation', json={'caption': 'admin overwrite'}).status_code == 404
     assert client.delete('/api/v1/creations/media/user-creation').status_code == 404
 
-    # admin route is read-only: no PATCH/DELETE wired
+    # Caption editing remains owner-only; admin management uses explicit routes.
     assert client.patch('/api/v1/creations/admin/media/user-creation', json={'caption': 'x'}).status_code == 405
-    assert client.delete('/api/v1/creations/admin/media/user-creation').status_code == 405
+
+    published = client.post(
+        '/api/v1/creations/admin/media/user-creation/publish',
+        json={'title': 'Admin selected', 'show_prompt': True},
+    )
+    assert published.status_code == 200
+    assert published.json()['status'] == 'published'
+    assert published.json()['title'] == 'Admin selected'
+
+    withdrawn = client.delete('/api/v1/creations/admin/media/user-creation/publish')
+    assert withdrawn.status_code == 204
+
+    removed = client.delete('/api/v1/creations/admin/media/user-creation')
+    assert removed.status_code == 204
+    assert client.get('/api/v1/creations/admin/media/user-creation').status_code == 404
 
 
 def test_same_second_cursor_has_no_duplicates(app_and_client, user_override, creation_sessions, monkeypatch) -> None:
@@ -240,6 +261,25 @@ def test_owner_can_update_caption_and_remove(app_and_client, user_override, crea
     assert client.delete('/api/v1/creations/media/c1').status_code == 204
     # invisible after deletion
     assert client.get('/api/v1/creations/media/c1').status_code == 404
+
+
+def test_owner_can_bulk_remove_without_touching_other_users_items(
+    app_and_client, user_override, creation_sessions
+) -> None:
+    _, client = app_and_client
+    user_override(id='user-1', role='user')
+    _seed_item(creation_sessions, cid='mine-1', user_id='user-1', file_id='f1')
+    _seed_item(creation_sessions, cid='mine-2', user_id='user-1', file_id='f2')
+    _seed_item(creation_sessions, cid='theirs', user_id='user-2', file_id='f3')
+
+    response = client.post(
+        '/api/v1/creations/media/bulk-delete',
+        json={'ids': ['mine-1', 'theirs', 'mine-2']},
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()['removed_ids']) == {'mine-1', 'mine-2'}
+    assert client.get('/api/v1/creations/media/theirs').status_code == 404
 
 
 def test_admin_detail_exposes_full_payload_for_other_user(

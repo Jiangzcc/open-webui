@@ -141,9 +141,44 @@ class CreationPostReaction(CreationBase):
     created_at = Column(BigInteger, nullable=False)
 
 
+class ImageGenerationTask(CreationBase):
+    __tablename__ = 'ext_image_generation_task'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'idempotency_key', name='uq_ext_image_task_user_key'),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed')",
+            name='ck_ext_image_task_status',
+        ),
+        CheckConstraint(
+            "kind IN ('text-to-image', 'image-to-image')",
+            name='ck_ext_image_task_kind',
+        ),
+        CheckConstraint('expected_count >= 1', name='ck_ext_image_task_expected_count'),
+        Index('ix_ext_image_task_user_created', 'user_id', 'created_at', 'id'),
+        Index('ix_ext_image_task_status_updated', 'status', 'updated_at', 'id'),
+    )
+
+    id = Column(String(128), primary_key=True)
+    user_id = Column(String(128), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    status = Column(String(16), nullable=False)
+    kind = Column(String(32), nullable=False)
+    prompt = Column(Text, nullable=False)
+    model_id = Column(String(256), nullable=True)
+    params_json = Column(JSONField, nullable=True)
+    expected_count = Column(Integer, nullable=False)
+    result_json = Column(JSONField, nullable=True)
+    error_code = Column(String(64), nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+    started_at = Column(BigInteger, nullable=True)
+    completed_at = Column(BigInteger, nullable=True)
+    updated_at = Column(BigInteger, nullable=False)
+
+
 __all__ = [
     'CreationMediaItem',
     'CreationPost',
     'CreationPostMedia',
     'CreationPostReaction',
+    'ImageGenerationTask',
 ]

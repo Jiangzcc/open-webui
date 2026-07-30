@@ -10,6 +10,7 @@ from open_webui.env import DATABASE_SCHEMA
 from sqlalchemy import inspect
 
 from .db import engine
+from .generation_tasks import fail_incomplete_generation_tasks, shutdown_generation_tasks
 from .migrations.runner import _migration_config, run_creation_migrations
 from .models import CreationBase
 
@@ -22,6 +23,7 @@ _REQUIRED_UNIQUE = {
         {'uq_ext_creation_post_media_creation', 'uq_ext_creation_post_media_position'}
     ),
     'ext_creation_post_reaction': frozenset({'uq_ext_creation_post_reaction_actor_kind'}),
+    'ext_image_generation_task': frozenset({'uq_ext_image_task_user_key'}),
 }
 _REQUIRED_CHECKS = {
     'ext_creation_media_item': frozenset(
@@ -39,6 +41,13 @@ _REQUIRED_CHECKS = {
         }
     ),
     'ext_creation_post_reaction': frozenset({'ck_ext_creation_post_reaction_kind'}),
+    'ext_image_generation_task': frozenset(
+        {
+            'ck_ext_image_task_status',
+            'ck_ext_image_task_kind',
+            'ck_ext_image_task_expected_count',
+        }
+    ),
 }
 _REQUIRED_INDEXES = {
     'ext_creation_media_item': frozenset(
@@ -57,6 +66,9 @@ _REQUIRED_INDEXES = {
     ),
     'ext_creation_post_media': frozenset({'ix_ext_creation_post_media_creation'}),
     'ext_creation_post_reaction': frozenset({'ix_ext_creation_post_reaction_user_kind'}),
+    'ext_image_generation_task': frozenset(
+        {'ix_ext_image_task_user_created', 'ix_ext_image_task_status_updated'}
+    ),
 }
 
 
@@ -120,12 +132,20 @@ def _validate_creation_schema() -> None:
 async def initialize_creations_extension(app: FastAPI) -> None:
     """Run the creation migration chain and validate the resulting schema.
 
-    Creations has no background worker and no shutdown hook: capture
-    finalization piggy-backs on the credits terminal transaction, and soft
-    deletes need no periodic reconciliation.
+    Media capture still piggy-backs on the credits terminal transaction. Direct
+    image-page submissions additionally keep a tracked set of in-process tasks
+    so the HTTP request can return immediately while status remains queryable.
     """
     await anyio.to_thread.run_sync(run_creation_migrations)
     await anyio.to_thread.run_sync(_validate_creation_schema)
+    app.state.creation_generation_tasks = set()
+    interrupted = await fail_incomplete_generation_tasks()
+    if interrupted:
+        log.warning('Marked %s interrupted image generation task(s) as failed', interrupted)
 
 
-__all__ = ['initialize_creations_extension']
+async def shutdown_creations_extension(app: FastAPI) -> None:
+    await shutdown_generation_tasks(app)
+
+
+__all__ = ['initialize_creations_extension', 'shutdown_creations_extension']

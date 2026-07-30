@@ -156,4 +156,8 @@ describe('CreationsLibrary source contract', () => {
 	test('offers a non-hover retry affordance', () => {
 		expect(source).toContain("$i18n.t('Retry')");
 	});
+
+	test('enables admin management from the global library detail', () => {
+		expect(source).toContain("canManage={scope === 'mine' || scope === 'all'}");
+	});
 });

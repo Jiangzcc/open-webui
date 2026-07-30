@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
+	import JSZip from 'jszip';
+	import { toast } from 'svelte-sonner';
 
-	import { listAdminCreations, listCreations } from '$lib/apis/creations';
+	import { deleteCreations, listAdminCreations, listCreations } from '$lib/apis/creations';
 	import {
 		applyCreationPage,
 		assignLanes,
@@ -11,34 +13,36 @@
 		removeCreationOptimistically,
 		type AdminCreationDetail,
 		type CreationDetail,
+		type CreationListFilters,
 		type CreationScope,
 		type CreationSummary
 	} from '$lib/utils/creations-library';
+	import type { ImageCreationDraft } from '$lib/utils/image-generation-batches';
 
 	import { onDestroy, onMount } from 'svelte';
 
 	import Loader from '$lib/components/common/Loader.svelte';
+	import Select from '$lib/components/common/Select.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
-	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
 	import CreationDetailsModal from './CreationDetailsModal.svelte';
 
 	export let active = false;
 	export let scope: CreationScope = 'mine';
 	export let revision = 0;
+	export let onReuse: (draft: ImageCreationDraft) => void = () => {};
 
 	const i18n = getContext('i18n');
 
 	const PAGE_SIZE = 20;
 
-	// Lane breakpoints mirror the former columns-* ladder (2/3/4/5) so the
-	// density curve is preserved; only the packing mechanic changes — from
-	// browser-balanced CSS multicol to deterministic round-robin lanes that
-	// never reshuffle existing items when a later page streams in.
+	// Keep personal assets calmer than the public discovery feed: two touch-safe
+	// lanes on phones, three on tablets, and four on desktop. Deterministic
+	// round-robin lanes never reshuffle existing items when another page arrives.
 	const LANE_BREAKPOINTS: ReadonlyArray<[string, number]> = [
-		['(min-width: 1024px)', 5],
-		['(min-width: 768px)', 4],
-		['(min-width: 640px)', 3],
+		['(min-width: 1024px)', 4],
+		['(min-width: 768px)', 3],
+		['(min-width: 640px)', 2],
 		['(min-width: 0px)', 2]
 	];
 	const laneQueries =
@@ -86,6 +90,7 @@
 			query.removeEventListener('change', onLaneChange);
 		}
 		window.removeEventListener('resize', syncLaneCount);
+		if (searchTimer) clearTimeout(searchTimer);
 	});
 
 	let scopes: Record<'mine' | 'all', ReturnType<typeof createCreationScopeState>> = {
@@ -93,15 +98,20 @@
 		all: createCreationScopeState()
 	};
 	let appliedRevision = 0;
+	let searchDraft = '';
+	let filters: CreationListFilters = {
+		search: '',
+		task: '',
+		publicationStatus: '',
+		sort: 'newest'
+	};
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+	let selectionMode = false;
+	let selectedIds = new Set<string>();
+	let bulkBusy = false;
 
 	let modalShow = false;
 	let modalCreationId: string | null = null;
-
-	// Lightweight big-image preview, decoupled from the full details modal: a
-	// tap on the photo opens this; the floating "details" chip opens the modal.
-	let previewShow = false;
-	let previewSrc = '';
-	let previewAlt = '';
 
 	$: state = scopes[scope];
 	$: lanes = assignLanes(state.items, laneCount);
@@ -114,7 +124,7 @@
 			const page =
 				targetScope === 'all'
 					? await listAdminCreations(localStorage.token, PAGE_SIZE, targetState.nextCursor)
-					: await listCreations(localStorage.token, PAGE_SIZE, targetState.nextCursor);
+					: await listCreations(localStorage.token, PAGE_SIZE, targetState.nextCursor, filters);
 			applyCreationPage(targetState, generation, page, isFirst);
 		} catch {
 			applyCreationPage(targetState, generation, null, isFirst);
@@ -161,16 +171,101 @@
 		modalShow = true;
 	};
 
-	const openPreview = (item: CreationSummary) => {
-		if (!item.content_url) {
-			// Nothing to enlarge — fall back to the details modal so the card
-			// never feels like a dead tap when the underlying file is gone.
-			openDetails(item);
+	const reloadWithFilters = () => {
+		const target = scopes.mine;
+		target.requestGeneration += 1;
+		target.items = [];
+		target.nextCursor = null;
+		target.loaded = false;
+		target.loading = false;
+		target.error = null;
+		scopes = { ...scopes };
+		selectedIds = new Set();
+		if (active && scope === 'mine') void loadPage('mine', true);
+	};
+
+	const updateFilters = (patch: Partial<CreationListFilters>) => {
+		filters = { ...filters, ...patch };
+		reloadWithFilters();
+	};
+
+	const scheduleSearch = () => {
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => updateFilters({ search: searchDraft }), 350);
+	};
+
+	const toggleSelected = (item: CreationSummary) => {
+		const next = new Set(selectedIds);
+		if (next.has(item.id)) next.delete(item.id);
+		else next.add(item.id);
+		selectedIds = next;
+	};
+
+	const handleCardClick = (item: CreationSummary) => {
+		if (selectionMode) toggleSelected(item);
+		else openDetails(item);
+	};
+
+	const leaveSelectionMode = () => {
+		selectionMode = false;
+		selectedIds = new Set();
+	};
+
+	const downloadSelected = async () => {
+		if (selectedIds.size === 0 || bulkBusy) return;
+		bulkBusy = true;
+		try {
+			const zip = new JSZip();
+			const selected = state.items.filter((item) => selectedIds.has(item.id) && item.content_url);
+			await Promise.all(
+				selected.map(async (item, index) => {
+					const response = await fetch(item.content_url as string);
+					if (!response.ok) throw new Error('download failed');
+					const blob = await response.blob();
+					const extension = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+					zip.file(`${String(index + 1).padStart(2, '0')}-${item.id}.${extension}`, blob);
+				})
+			);
+			const archive = await zip.generateAsync({ type: 'blob' });
+			const url = URL.createObjectURL(archive);
+			const anchor = document.createElement('a');
+			anchor.href = url;
+			anchor.download = `creations-${Date.now()}.zip`;
+			anchor.click();
+			URL.revokeObjectURL(url);
+		} catch {
+			toast.error($i18n.t('Failed to download selected creations'));
+		} finally {
+			bulkBusy = false;
+		}
+	};
+
+	const removeSelected = async () => {
+		if (
+			selectedIds.size === 0 ||
+			bulkBusy ||
+			!window.confirm($i18n.t('Remove selected creations from your library?'))
+		) {
 			return;
 		}
-		previewSrc = item.content_url;
-		previewAlt = item.caption ?? $i18n.t('Artwork');
-		previewShow = true;
+		bulkBusy = true;
+		try {
+			const response = await deleteCreations(localStorage.token, [...selectedIds]);
+			for (const id of response.removed_ids) {
+				for (const targetScope of ['mine', 'all'] as const) {
+					if (scopes[targetScope].items.some((item) => item.id === id)) {
+						removeCreationOptimistically(scopes[targetScope], id);
+					}
+				}
+			}
+			scopes = { ...scopes };
+			leaveSelectionMode();
+			toast.success($i18n.t('Selected creations removed'));
+		} catch {
+			toast.error($i18n.t('Failed to remove selected creations'));
+		} finally {
+			bulkBusy = false;
+		}
 	};
 
 	const onModalUpdated = (detail: CreationDetail | AdminCreationDetail) => {
@@ -179,6 +274,7 @@
 			if (item) {
 				Object.assign(item, {
 					caption: detail.caption,
+					publication_status: detail.publication?.status ?? null,
 					updated_at: detail.updated_at
 				});
 			}
@@ -199,6 +295,94 @@
 </script>
 
 <section class="flex h-full flex-col" aria-label={$i18n.t('Library')}>
+	{#if scope === 'mine'}
+		<div class="shrink-0 border-b border-gray-100 px-3 pb-3 dark:border-gray-850 sm:px-4">
+			{#if selectionMode}
+				<div
+					class="flex min-h-11 flex-wrap items-center gap-2 rounded-2xl bg-gray-100 px-3 py-2 dark:bg-gray-850"
+				>
+					<p class="mr-auto text-sm font-medium text-gray-800 dark:text-gray-100">
+						{$i18n.t('{{count}} selected', { count: selectedIds.size })}
+					</p>
+					<button
+						type="button"
+						class="min-h-11 rounded-xl px-3 text-sm text-gray-700 hover:bg-white dark:text-gray-200 dark:hover:bg-gray-800"
+						disabled={selectedIds.size === 0 || bulkBusy}
+						on:click={downloadSelected}>{$i18n.t('Download ZIP')}</button
+					>
+					<button
+						type="button"
+						class="min-h-11 rounded-xl px-3 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+						disabled={selectedIds.size === 0 || bulkBusy}
+						on:click={removeSelected}>{$i18n.t('Remove')}</button
+					>
+					<button
+						type="button"
+						class="min-h-11 rounded-xl px-3 text-sm text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800"
+						on:click={leaveSelectionMode}>{$i18n.t('Cancel')}</button
+					>
+				</div>
+			{:else}
+				<div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+					<label class="col-span-2 min-w-0 flex-1 sm:max-w-md">
+						<span class="sr-only">{$i18n.t('Search creations')}</span>
+						<input
+							type="search"
+							bind:value={searchDraft}
+							on:input={scheduleSearch}
+							placeholder={$i18n.t('Search prompts, notes, or models')}
+							class="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+						/>
+					</label>
+					<Select
+						value={filters.task}
+						items={[
+							{ value: '', label: $i18n.t('All types') },
+							{ value: 'text-to-image', label: $i18n.t('Text to Image') },
+							{ value: 'image-to-image', label: $i18n.t('Image to Image') }
+						]}
+						placeholder={$i18n.t('All types')}
+						triggerClass="flex min-h-11 w-full min-w-0 items-center rounded-xl border border-gray-200 bg-white px-3 text-left text-sm text-gray-700 outline-none transition focus-visible:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:w-auto sm:min-w-32"
+						labelClass="block min-w-0 truncate"
+						onChange={(task) => updateFilters({ task: task as CreationListFilters['task'] })}
+					/>
+					<Select
+						value={filters.publicationStatus}
+						items={[
+							{ value: '', label: $i18n.t('All visibility') },
+							{ value: 'published', label: $i18n.t('Published') },
+							{ value: 'unpublished', label: $i18n.t('Not published') }
+						]}
+						placeholder={$i18n.t('All visibility')}
+						triggerClass="flex min-h-11 w-full min-w-0 items-center rounded-xl border border-gray-200 bg-white px-3 text-left text-sm text-gray-700 outline-none transition focus-visible:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:w-auto sm:min-w-32"
+						labelClass="block min-w-0 truncate"
+						onChange={(publicationStatus) =>
+							updateFilters({
+								publicationStatus: publicationStatus as CreationListFilters['publicationStatus']
+							})}
+					/>
+					<Select
+						value={filters.sort}
+						items={[
+							{ value: 'newest', label: $i18n.t('Newest first') },
+							{ value: 'oldest', label: $i18n.t('Oldest first') }
+						]}
+						placeholder={$i18n.t('Newest first')}
+						triggerClass="flex min-h-11 w-full min-w-0 items-center rounded-xl border border-gray-200 bg-white px-3 text-left text-sm text-gray-700 outline-none transition focus-visible:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:w-auto sm:min-w-32"
+						labelClass="block min-w-0 truncate"
+						onChange={(sort) => updateFilters({ sort: sort as CreationListFilters['sort'] })}
+					/>
+					<button
+						type="button"
+						class="min-h-11 rounded-xl border border-gray-200 px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+						on:click={() => (selectionMode = true)}
+					>
+						{$i18n.t('Select')}
+					</button>
+				</div>
+			{/if}
+		</div>
+	{/if}
 	<div class="flex-1 min-h-0 overflow-y-auto">
 		{#if state.loading && !state.loaded}
 			<div class="flex items-center justify-center py-16">
@@ -226,18 +410,23 @@
 				</p>
 			</div>
 		{:else}
-			<div class="flex gap-1.5 px-3 sm:px-4">
+			<div class="flex gap-2 px-3 sm:gap-3 sm:px-4 lg:gap-4">
 				{#each lanes as lane, laneIndex (laneIndex)}
-					<div class="flex min-w-0 flex-1 flex-col gap-1.5">
+					<div class="flex min-w-0 flex-1 flex-col gap-2 sm:gap-3 lg:gap-4">
 						{#each lane as item (item.id)}
 							<article
-								class="group relative w-full overflow-hidden rounded-lg border border-gray-100 bg-white text-left transition hover:border-gray-200 focus-within:border-gray-200 dark:border-gray-800 dark:bg-gray-900/60 dark:hover:border-gray-700"
+								class="group relative w-full overflow-hidden rounded-xl border bg-white text-left transition dark:bg-gray-900/60 {selectedIds.has(
+									item.id
+								)
+									? 'border-gray-950 ring-2 ring-gray-950/15 dark:border-white dark:ring-white/20'
+									: 'border-gray-100 hover:border-gray-300 focus-within:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700'}"
 							>
 								<button
 									type="button"
 									class="block w-full overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"
-									on:click={() => openPreview(item)}
-									aria-label={$i18n.t('Preview')}
+									on:click={() => handleCardClick(item)}
+									aria-label={$i18n.t('View creation')}
+									aria-pressed={selectionMode ? selectedIds.has(item.id) : undefined}
 								>
 									<div class="relative w-full overflow-hidden bg-gray-50 dark:bg-gray-800">
 										{#if item.content_url}
@@ -248,15 +437,6 @@
 												decoding="async"
 												class="h-auto w-full transition duration-300 group-hover:scale-[1.01]"
 											/>
-											{#if item.prompt_preview}
-												<div
-													class="prompt-overlay pointer-events-none absolute inset-x-0 bottom-0 translate-y-1 bg-gradient-to-t from-black/70 via-black/40 to-transparent px-2.5 py-2 pr-16 opacity-0 transition duration-200 ease-out group-hover:translate-y-0 group-hover:opacity-100"
-												>
-													<p class="line-clamp-2 text-xs leading-snug text-white/90">
-														{item.prompt_preview}
-													</p>
-												</div>
-											{/if}
 										{:else}
 											<div
 												class="flex min-h-32 w-full items-center justify-center px-3 text-center text-xs text-gray-400 dark:text-gray-500"
@@ -264,14 +444,19 @@
 												{$i18n.t('Source file unavailable')}
 											</div>
 										{/if}
+										{#if selectionMode}
+											<span
+												class="absolute right-2 top-2 flex size-8 items-center justify-center rounded-full border-2 text-sm font-semibold shadow-sm backdrop-blur {selectedIds.has(
+													item.id
+												)
+													? 'border-gray-950 bg-gray-950 text-white dark:border-white dark:bg-white dark:text-gray-950'
+													: 'border-white bg-black/25 text-transparent'}"
+												aria-hidden="true"
+											>
+												✓
+											</span>
+										{/if}
 									</div>
-								</button>
-								<button
-									type="button"
-									class="details-btn absolute bottom-2 right-2 z-10 inline-flex min-h-8 items-center gap-1 rounded-full bg-black/35 px-2.5 text-xs font-medium text-white opacity-0 backdrop-blur-sm transition duration-200 ease-out hover:bg-black/55 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/80 group-hover:opacity-100"
-									on:click={() => openDetails(item)}
-								>
-									{$i18n.t('Details')}
 								</button>
 							</article>
 						{/each}
@@ -307,27 +492,8 @@
 	bind:show={modalShow}
 	creationId={modalCreationId}
 	{scope}
-	canManage={scope === 'mine'}
+	canManage={scope === 'mine' || scope === 'all'}
 	onUpdated={onModalUpdated}
 	onRemoved={onModalRemoved}
+	{onReuse}
 />
-
-<ImagePreview bind:show={previewShow} src={previewSrc} alt={previewAlt} />
-
-<style>
-	/* Touch devices have no hover, so the prompt overlay would sit forever
-	   invisible if we honoured the opacity-0 default. On hover-less clients we
-	   pin it visible at a modest transparency so the prompt is legible without
-	   swamping the artwork; pointer-events-none above lets taps reach the
-	   preview button beneath it. The details chip dims to 0.7 on phones so it
-	   stays reachable without competing with every thumbnail's composition. */
-	@media (hover: none) {
-		.prompt-overlay {
-			opacity: 0.85;
-			transform: translateY(0);
-		}
-		.details-btn {
-			opacity: 0.7;
-		}
-	}
-</style>

@@ -4,10 +4,13 @@
 	import dayjs from 'dayjs';
 
 	import {
+		deleteAdminCreation,
 		deleteCreation,
 		getAdminCreation,
 		getCreation,
+		publishAdminCreation,
 		publishCreation,
+		withdrawAdminCreationPublication,
 		withdrawCreationPublication,
 		updateCreation
 	} from '$lib/apis/creations';
@@ -17,13 +20,14 @@
 		CreationScope,
 		ParamTag
 	} from '$lib/utils/creations-library';
+	import { buildCreationDraft, type ImageCreationDraft } from '$lib/utils/image-generation-batches';
 
 	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
-	import Modal from '$lib/components/common/Modal.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Clipboard from '$lib/components/icons/Clipboard.svelte';
+	import Download from '$lib/components/icons/Download.svelte';
 	import Pencil from '$lib/components/icons/Pencil.svelte';
-	import XMark from '$lib/components/icons/XMark.svelte';
+	import Sparkles from '$lib/components/icons/Sparkles.svelte';
+	import ArtworkViewerShell from './ArtworkViewerShell.svelte';
 
 	import { copyToClipboard, formatDate } from '$lib/utils';
 	import { extractParamTags } from '$lib/utils/creations-library';
@@ -34,6 +38,7 @@
 	export let canManage = false;
 	export let onUpdated: (detail: CreationDetail | AdminCreationDetail) => void = () => {};
 	export let onRemoved: (creationId: string) => void = () => {};
+	export let onReuse: (draft: ImageCreationDraft) => void = () => {};
 
 	const i18n = getContext('i18n');
 
@@ -165,7 +170,10 @@
 		const requestedScope = scope;
 		removing = true;
 		try {
-			await deleteCreation(localStorage.token, sid);
+			await (requestedScope === 'all' ? deleteAdminCreation : deleteCreation)(
+				localStorage.token,
+				sid
+			);
 			detailCache.delete(cacheKey(sid, requestedScope));
 			onRemoved(sid);
 			if (creationId === sid && scope === requestedScope) {
@@ -195,7 +203,8 @@
 		if (!detail || !creationId || publishing) return;
 		publishing = true;
 		try {
-			const publication = await publishCreation(localStorage.token, creationId, {
+			const publish = isAdminScope() ? publishAdminCreation : publishCreation;
+			const publication = await publish(localStorage.token, creationId, {
 				title: publicationTitle.trim() || null,
 				description: publicationDescription.trim() || null,
 				show_prompt: publicationShowPrompt
@@ -217,7 +226,10 @@
 		if (!detail || !creationId || withdrawingPublication) return;
 		withdrawingPublication = true;
 		try {
-			await withdrawCreationPublication(localStorage.token, creationId);
+			const withdraw = isAdminScope()
+				? withdrawAdminCreationPublication
+				: withdrawCreationPublication;
+			await withdraw(localStorage.token, creationId);
 			const publication = detail.publication
 				? { ...detail.publication, status: 'withdrawn' as const }
 				: null;
@@ -237,6 +249,29 @@
 		previewSrc = url;
 		previewAlt = alt;
 		showPreview = true;
+	};
+
+	const reuseCreation = (useAsReference = false) => {
+		if (!detail) return;
+		onReuse(
+			buildCreationDraft({
+				prompt: detail.prompt,
+				model_id: detail.model_id,
+				params: detail.params,
+				content_url: detail.content_url,
+				useAsReference
+			})
+		);
+		show = false;
+	};
+
+	const downloadCreation = () => {
+		if (!detail?.content_url) return;
+		const anchor = document.createElement('a');
+		anchor.href = detail.content_url;
+		anchor.download = `creation-${detail.id}.png`;
+		anchor.rel = 'noopener';
+		anchor.click();
 	};
 
 	// Localise the curated param keys onto short chip labels. Kept tight beside
@@ -302,237 +337,215 @@
 				.filter(Boolean)
 				.join(' · ')
 		: '';
+	$: headerTitle = detail
+		? isAdminScope() && 'owner' in detail
+			? detail.owner.deleted
+				? $i18n.t('Deleted user')
+				: (detail.owner.name ?? detail.owner.user_id)
+			: detail.caption || $i18n.t('My creation')
+		: '';
 </script>
 
-<Modal
+<ArtworkViewerShell
 	bind:show
-	size="lg"
-	containerClassName="px-2 py-2 sm:px-3 sm:py-4 max-h-[100dvh] flex"
-	className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm rounded-2xl sm:rounded-3xl !w-fit max-w-5xl max-h-[96dvh] sm:max-h-[92dvh] overflow-hidden"
+	{loading}
+	{error}
+	{headerTitle}
+	{headerSubtitle}
+	mediaLabel={$i18n.t('Artwork')}
+	detailsClassName="lg:w-[22rem]"
 >
-	<div class="flex max-h-[96dvh] min-w-0 flex-col sm:max-h-[92dvh]">
-		<div
-			class="flex shrink-0 items-center justify-between gap-3 px-4 pt-2.5 pb-1.5 sm:px-5 sm:pt-3"
-		>
-			<button
-				type="button"
-				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-				on:click={() => (show = false)}
-				aria-label={$i18n.t('Close')}
-			>
-				<XMark className="size-5" strokeWidth="2" />
-			</button>
-			<div class="flex min-w-0 items-center gap-2 text-right">
-				{#if detail && isAdminScope() && 'owner' in detail}
-					<!-- Admin-only owner badge: collapsed to a chip, expands the email on
-					     hover/focus so audit info stops crowding everyone else's first frame. -->
-					<div class="group/admn relative shrink-0">
-						<span
-							class="inline-flex max-w-[10rem] items-center truncate rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-							tabindex={detail.owner.deleted || !detail.owner.email ? '-1' : '0'}
-							title={detail.owner.deleted ? '' : (detail.owner.email ?? '')}
-						>
-							{detail.owner.deleted
-								? $i18n.t('Deleted user')
-								: (detail.owner.name ?? detail.owner.user_id)}
-						</span>
-						{#if !detail.owner.deleted && detail.owner.email}
-							<a
-								href={`mailto:${detail.owner.email}`}
-								class="pointer-events-none absolute right-0 top-full z-10 mt-1 hidden truncate rounded-md bg-gray-900 px-2.5 py-1 text-xs text-white shadow-lg group-hover/admn:block group-focus-within/admn:block dark:bg-gray-700"
-							>
-								{detail.owner.email}
-							</a>
-						{/if}
-					</div>
-				{/if}
-				{#if headerSubtitle}
-					<span class="truncate text-xs text-gray-500 dark:text-gray-400">
-						{headerSubtitle}
-					</span>
-				{/if}
-			</div>
-		</div>
-
-		{#if loading}
-			<div class="flex flex-1 items-center justify-center py-16">
-				<Spinner className="size-6" />
-			</div>
-		{:else if error}
-			<div class="flex-1 overflow-y-auto px-5 py-10 text-center">
-				<p class="text-sm text-red-500 dark:text-red-400">{error}</p>
-			</div>
-		{:else if detail}
-			<div
-				class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:items-start lg:overflow-hidden"
-			>
-				<section
-					class="flex min-w-0 items-center justify-center bg-neutral-100 p-3 sm:p-4 lg:min-h-0 lg:flex-initial lg:self-stretch lg:bg-transparent lg:p-5 dark:bg-black/40 lg:dark:bg-transparent"
-					aria-label={$i18n.t('Artwork')}
+	<svelte:fragment slot="media">
+		{#if detail}
+			{#if detail.content_url}
+				<button
+					type="button"
+					class="flex max-h-[80dvh] items-center justify-center overflow-hidden rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:rounded-2xl lg:max-h-[72dvh]"
+					on:click={() =>
+						openPreview(detail.content_url as string, detail.caption ?? detail.prompt)}
+					aria-label={$i18n.t('Preview')}
 				>
-					{#if detail.content_url}
+					<img
+						src={detail.content_url}
+						alt={detail.caption ?? detail.prompt}
+						loading="lazy"
+						decoding="async"
+						class="h-auto w-auto max-h-[80dvh] max-w-full rounded-xl object-contain sm:rounded-2xl lg:max-h-[72dvh]"
+					/>
+				</button>
+			{:else}
+				<div
+					class="flex h-full min-h-64 w-full items-center justify-center rounded-2xl bg-gray-100 px-4 text-center text-sm text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+				>
+					{$i18n.t('Source file unavailable')}
+				</div>
+			{/if}
+		{/if}
+	</svelte:fragment>
+
+	<svelte:fragment slot="details">
+		{#if detail}
+			<div class="grid grid-cols-2 gap-2">
+				<button
+					type="button"
+					class="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 text-sm font-medium text-white transition hover:bg-gray-800 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
+					on:click={() => reuseCreation(false)}
+				>
+					<Sparkles className="size-4" strokeWidth="1.8" />
+					{$i18n.t('Create again')}
+				</button>
+				{#if detail.content_url}
+					<button
+						type="button"
+						class="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+						on:click={() => reuseCreation(true)}
+					>
+						{$i18n.t('Use as reference')}
+					</button>
+					<button
+						type="button"
+						class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+						on:click={downloadCreation}
+					>
+						<Download className="size-4" strokeWidth="1.8" />
+						{$i18n.t('Download')}
+					</button>
+				{/if}
+			</div>
+			<!-- ── 区① 创作由来 ── -->
+			<section class="space-y-3 lg:flex lg:flex-1 lg:min-h-0 lg:flex-col">
+				<div
+					class="relative rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+				>
+					<div class="mb-1 flex items-center justify-between gap-2">
+						<h3
+							class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+						>
+							{$i18n.t('Prompt')}
+						</h3>
 						<button
 							type="button"
-							class="flex max-h-[80dvh] items-center justify-center overflow-hidden rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:rounded-2xl lg:max-h-[72dvh]"
-							on:click={() =>
-								openPreview(detail.content_url as string, detail.caption ?? detail.prompt)}
-							aria-label={$i18n.t('Preview')}
+							class="-mr-1 -mt-1 inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-1.5 text-gray-400 hover:bg-gray-200/70 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+							disabled={!detail.prompt || copyingPrompt}
+							on:click={copyPrompt}
+							aria-label={$i18n.t('Copy')}
+							title={$i18n.t('Copy')}
 						>
-							<img
-								src={detail.content_url}
-								alt={detail.caption ?? detail.prompt}
-								loading="lazy"
-								decoding="async"
-								class="h-auto w-auto max-h-[80dvh] max-w-full rounded-xl object-contain sm:rounded-2xl lg:max-h-[72dvh]"
-							/>
+							<Clipboard className="size-4" strokeWidth="2" />
 						</button>
-					{:else}
-						<div
-							class="flex h-full min-h-64 w-full items-center justify-center rounded-2xl bg-gray-100 px-4 text-center text-sm text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-						>
-							{$i18n.t('Source file unavailable')}
-						</div>
-					{/if}
-				</section>
-
-				<aside
-					class="flex min-w-0 flex-col gap-5 border-t border-gray-100 px-4 py-4 lg:w-[22rem] lg:shrink-0 lg:self-stretch lg:overflow-y-auto lg:border-t-0 lg:border-l lg:px-5 dark:border-gray-800"
-				>
-					<!-- ── 区① 创作由来 ── -->
-					<section class="space-y-3 lg:flex lg:flex-1 lg:min-h-0 lg:flex-col">
-						<div
-							class="relative rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
-						>
-							<div class="mb-1 flex items-center justify-between gap-2">
-								<h3
-									class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
-								>
-									{$i18n.t('Prompt')}
-								</h3>
-								<button
-									type="button"
-									class="-mr-1 -mt-1 inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-1.5 text-gray-400 hover:bg-gray-200/70 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-									disabled={!detail.prompt || copyingPrompt}
-									on:click={copyPrompt}
-									aria-label={$i18n.t('Copy')}
-									title={$i18n.t('Copy')}
-								>
-									<Clipboard className="size-4" strokeWidth="2" />
-								</button>
-							</div>
-							<p
-								class="max-h-48 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm text-gray-800 lg:flex-1 lg:max-h-none dark:text-gray-100"
+					</div>
+					<p
+						class="max-h-48 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm text-gray-800 lg:flex-1 lg:max-h-none dark:text-gray-100"
+					>
+						{detail.prompt}
+					</p>
+				</div>
+				{#if detail.negative_prompt}
+					<p class="whitespace-pre-wrap break-words text-xs text-gray-500 dark:text-gray-400">
+						<span class="font-medium">{$i18n.t('Negative Prompt')}: </span>{detail.negative_prompt}
+					</p>
+				{/if}
+				{#if paramTags.length > 0 || detail.model_name || detail.model_id}
+					<ul class="flex flex-wrap gap-1.5">
+						{#if detail.model_name || detail.model_id}
+							<li
+								class="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 							>
-								{detail.prompt}
-							</p>
-						</div>
-						{#if detail.negative_prompt}
-							<p class="whitespace-pre-wrap break-words text-xs text-gray-500 dark:text-gray-400">
-								<span class="font-medium"
-									>{$i18n.t('Negative Prompt')}:
-								</span>{detail.negative_prompt}
-							</p>
+								<span class="mr-1 font-medium text-gray-500 dark:text-gray-400">
+									{$i18n.t('Model')}:
+								</span>
+								<span class="break-words">{detail.model_name ?? detail.model_id}</span>
+							</li>
 						{/if}
-						{#if paramTags.length > 0 || detail.model_name || detail.model_id}
-							<ul class="flex flex-wrap gap-1.5">
-								{#if detail.model_name || detail.model_id}
-									<li
-										class="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-									>
-										<span class="mr-1 font-medium text-gray-500 dark:text-gray-400">
-											{$i18n.t('Model')}:
-										</span>
-										<span class="break-words">{detail.model_name ?? detail.model_id}</span>
-									</li>
-								{/if}
-								{#each paramTags as tag (tag.key)}
-									<li
-										class="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-									>
-										<span class="mr-1 font-medium text-gray-500 dark:text-gray-400">
-											{paramLabel(tag.key)}:
-										</span>
-										<span class="break-words">{tag.value}</span>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</section>
+						{#each paramTags as tag (tag.key)}
+							<li
+								class="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+							>
+								<span class="mr-1 font-medium text-gray-500 dark:text-gray-400">
+									{paramLabel(tag.key)}:
+								</span>
+								<span class="break-words">{tag.value}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
 
-					<!-- ── 区② 素材与管理 ── -->
-					<section class="space-y-3">
-						{#if canManage}
-							<div class="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-								{#if publicationEditing}
-									<div class="space-y-2.5">
-										<label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
-											{$i18n.t('Title')}
-											<input
-												type="text"
-												bind:value={publicationTitle}
-												maxlength="200"
-												class="mt-1 min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-											/>
-										</label>
-										<label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
-											{$i18n.t('Description')}
-											<textarea
-												bind:value={publicationDescription}
-												maxlength="1000"
-												rows="3"
-												class="mt-1 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-											></textarea>
-										</label>
-										<label
-											class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
-										>
-											<input type="checkbox" bind:checked={publicationShowPrompt} class="size-4" />
-											{$i18n.t('Show prompt in Discover')}
-										</label>
-										<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-											<button
-												type="button"
-												class="min-h-11 rounded-lg px-3 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-												on:click={() => (publicationEditing = false)}>{$i18n.t('Cancel')}</button
-											>
-											<button
-												type="button"
-												class="min-h-11 rounded-lg bg-gray-950 px-4 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
-												disabled={publishing}
-												on:click={savePublication}
-												>{publishing ? $i18n.t('Publishing...') : $i18n.t('Publish')}</button
-											>
-										</div>
-									</div>
-								{:else if detail.publication?.status === 'published'}
-									<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-										<div>
-											<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
-												{$i18n.t('Published in Discover')}
-											</p>
-											<p class="text-xs text-gray-500 dark:text-gray-400">
-												{$i18n.t('Everyone can now see this creation.')}
-											</p>
-										</div>
-										<div class="flex gap-2">
-											<button
-												type="button"
-												class="min-h-11 rounded-lg px-3 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-												on:click={beginPublicationEdit}>{$i18n.t('Edit')}</button
-											>
-											<button
-												type="button"
-												class="min-h-11 rounded-lg px-3 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
-												disabled={withdrawingPublication}
-												on:click={withdrawPublication}>{$i18n.t('Remove')}</button
-											>
-										</div>
-									</div>
-								{:else if detail.publication?.status === 'hidden'}
-									<p class="text-sm text-gray-500 dark:text-gray-400">
-										{$i18n.t('This publication was hidden by an administrator.')}
+			<!-- ── 区② 素材与管理 ── -->
+			<section class="space-y-3">
+				{#if canManage}
+					<div class="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+						{#if publicationEditing}
+							<div class="space-y-2.5">
+								<label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+									{$i18n.t('Title')}
+									<input
+										type="text"
+										bind:value={publicationTitle}
+										maxlength="200"
+										class="mt-1 min-h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+									/>
+								</label>
+								<label class="block text-xs font-medium text-gray-600 dark:text-gray-300">
+									{$i18n.t('Description')}
+									<textarea
+										bind:value={publicationDescription}
+										maxlength="1000"
+										rows="3"
+										class="mt-1 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+									></textarea>
+								</label>
+								<label
+									class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
+								>
+									<input type="checkbox" bind:checked={publicationShowPrompt} class="size-4" />
+									{$i18n.t('Show prompt in Discover')}
+								</label>
+								<div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+									<button
+										type="button"
+										class="min-h-11 rounded-lg px-3 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+										on:click={() => (publicationEditing = false)}>{$i18n.t('Cancel')}</button
+									>
+									<button
+										type="button"
+										class="min-h-11 rounded-lg bg-gray-950 px-4 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
+										disabled={publishing}
+										on:click={savePublication}
+										>{publishing ? $i18n.t('Publishing...') : $i18n.t('Publish')}</button
+									>
+								</div>
+							</div>
+						{:else if detail.publication?.status === 'published'}
+							<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+								<div>
+									<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+										{$i18n.t('Published in Discover')}
 									</p>
-								{:else}
+									<p class="text-xs text-gray-500 dark:text-gray-400">
+										{$i18n.t('Everyone can now see this creation.')}
+									</p>
+								</div>
+								<div class="flex gap-2">
+									<button
+										type="button"
+										class="min-h-11 rounded-lg px-3 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+										on:click={beginPublicationEdit}>{$i18n.t('Edit')}</button
+									>
+									<button
+										type="button"
+										class="min-h-11 rounded-lg px-3 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
+										disabled={withdrawingPublication}
+										on:click={withdrawPublication}>{$i18n.t('Remove')}</button
+									>
+								</div>
+							</div>
+						{:else if detail.publication?.status === 'hidden'}
+							<div class="space-y-3">
+								<p class="text-sm text-gray-500 dark:text-gray-400">
+									{$i18n.t('This publication was hidden by an administrator.')}
+								</p>
+								{#if isAdminScope()}
 									<button
 										type="button"
 										class="min-h-11 w-full rounded-lg bg-gray-950 px-4 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
@@ -542,137 +555,147 @@
 									</button>
 								{/if}
 							</div>
+						{:else}
+							<button
+								type="button"
+								class="min-h-11 w-full rounded-lg bg-gray-950 px-4 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
+								on:click={beginPublicationEdit}
+							>
+								{$i18n.t('Publish to Discover')}
+							</button>
 						{/if}
-						{#if detail.references.length > 0}
-							<div>
-								<h3
-									class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
-								>
-									{$i18n.t('Reference images')}
-								</h3>
-								<div class="flex flex-wrap gap-2">
-									{#each detail.references as reference (reference.position)}
-										{#if reference.content_url}
-											<button
-												type="button"
-												class="overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800"
-												on:click={() =>
-													openPreview(reference.content_url as string, $i18n.t('Reference image'))}
-												aria-label={$i18n.t('Reference image')}
-											>
-												<img
-													src={reference.content_url}
-													alt={`#${reference.position}`}
-													loading="lazy"
-													decoding="async"
-													class="size-20 object-cover"
-												/>
-											</button>
-										{:else}
-											<div
-												class="flex size-20 items-center justify-center rounded-xl border border-dashed border-gray-200 px-2 text-center text-xs text-gray-400 dark:border-gray-700 dark:text-gray-500"
-											>
-												{$i18n.t('Reference image unavailable')}
-											</div>
-										{/if}
-									{/each}
-								</div>
-							</div>
-						{/if}
-
-						{#if canManage}
-							{#if captionEditing}
-								<div class="flex items-start gap-2">
-									<input
-										id="creation-caption"
-										type="text"
-										bind:value={captionDraft}
-										maxlength="1000"
-										placeholder={$i18n.t('Add a note')}
-										class="min-h-9 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
-									/>
+					</div>
+				{/if}
+				{#if detail.references.length > 0}
+					<div>
+						<h3
+							class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+						>
+							{$i18n.t('Reference images')}
+						</h3>
+						<div class="flex flex-wrap gap-2">
+							{#each detail.references as reference (reference.position)}
+								{#if reference.content_url}
 									<button
 										type="button"
-										class="min-h-9 shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-										disabled={savingCaption}
-										on:click={saveCaption}
+										class="overflow-hidden rounded-xl border border-gray-100 dark:border-gray-800"
+										on:click={() =>
+											openPreview(reference.content_url as string, $i18n.t('Reference image'))}
+										aria-label={$i18n.t('Reference image')}
 									>
-										{savingCaption ? $i18n.t('Saving...') : $i18n.t('Save')}
+										<img
+											src={reference.content_url}
+											alt={`#${reference.position}`}
+											loading="lazy"
+											decoding="async"
+											class="size-20 object-cover"
+										/>
 									</button>
-									<button
-										type="button"
-										class="min-h-9 shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-										on:click={cancelCaptionEdit}
+								{:else}
+									<div
+										class="flex size-20 items-center justify-center rounded-xl border border-dashed border-gray-200 px-2 text-center text-xs text-gray-400 dark:border-gray-700 dark:text-gray-500"
 									>
-										{$i18n.t('Cancel')}
-									</button>
-								</div>
-							{:else}
-								<button
-									type="button"
-									class="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-200/70 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-									on:click={() => {
-										captionDraft = detail.caption ?? '';
-										captionEditing = true;
-									}}
-								>
-									<Pencil className="size-3 shrink-0" strokeWidth="2" />
-									<span class="truncate">{detail.caption ?? $i18n.t('Add a note')}</span>
-								</button>
-							{/if}
-						{:else if detail.caption}
-							<p class="text-xs text-gray-500 dark:text-gray-400">
-								{detail.caption}
-							</p>
-						{/if}
-					</section>
-
-					<!-- ── 区③ 危险动作 ── -->
-					{#if canManage}
-						<section class="mt-auto border-t border-gray-100 pt-3 dark:border-gray-800">
-							{#if confirmRemove}
-								<div class="space-y-2">
-									<p class="text-sm text-gray-700 dark:text-gray-200">
-										{$i18n.t('Remove this creation from your library?')}
-									</p>
-									<p class="text-xs text-gray-500 dark:text-gray-400">
-										{$i18n.t(
-											'This will not delete images in chats, but it cannot be restored to the library in this version.'
-										)}
-									</p>
-									<div class="flex justify-end gap-2">
-										<button
-											type="button"
-											class="min-h-11 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-											on:click={() => (confirmRemove = false)}
-										>
-											{$i18n.t('Cancel')}
-										</button>
-										<button
-											type="button"
-											class="min-h-11 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-											disabled={removing}
-											on:click={removeCreation}
-										>
-											{removing ? $i18n.t('Removing...') : $i18n.t('Remove from library')}
-										</button>
+										{$i18n.t('Reference image unavailable')}
 									</div>
-								</div>
-							{:else}
+								{/if}
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if canManage && !isAdminScope()}
+					{#if captionEditing}
+						<div class="flex items-start gap-2">
+							<input
+								id="creation-caption"
+								type="text"
+								bind:value={captionDraft}
+								maxlength="1000"
+								placeholder={$i18n.t('Add a note')}
+								class="min-h-9 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500"
+							/>
+							<button
+								type="button"
+								class="min-h-9 shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
+								disabled={savingCaption}
+								on:click={saveCaption}
+							>
+								{savingCaption ? $i18n.t('Saving...') : $i18n.t('Save')}
+							</button>
+							<button
+								type="button"
+								class="min-h-9 shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+								on:click={cancelCaptionEdit}
+							>
+								{$i18n.t('Cancel')}
+							</button>
+						</div>
+					{:else}
+						<button
+							type="button"
+							class="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-200/70 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+							on:click={() => {
+								captionDraft = detail.caption ?? '';
+								captionEditing = true;
+							}}
+						>
+							<Pencil className="size-3 shrink-0" strokeWidth="2" />
+							<span class="truncate">{detail.caption ?? $i18n.t('Add a note')}</span>
+						</button>
+					{/if}
+				{:else if detail.caption}
+					<p class="text-xs text-gray-500 dark:text-gray-400">
+						{detail.caption}
+					</p>
+				{/if}
+			</section>
+
+			<!-- ── 区③ 危险动作 ── -->
+			{#if canManage}
+				<section class="mt-auto border-t border-gray-100 pt-3 dark:border-gray-800">
+					{#if confirmRemove}
+						<div class="space-y-2">
+							<p class="text-sm text-gray-700 dark:text-gray-200">
+								{isAdminScope()
+									? $i18n.t("Remove this creation from the user's library?")
+									: $i18n.t('Remove this creation from your library?')}
+							</p>
+							<p class="text-xs text-gray-500 dark:text-gray-400">
+								{$i18n.t(
+									'This will not delete images in chats, but it cannot be restored to the library in this version.'
+								)}
+							</p>
+							<div class="flex justify-end gap-2">
 								<button
 									type="button"
-									class="min-h-11 w-full rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950"
-									on:click={() => (confirmRemove = true)}
+									class="min-h-11 rounded-lg px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+									on:click={() => (confirmRemove = false)}
 								>
-									{$i18n.t('Remove from library')}
+									{$i18n.t('Cancel')}
 								</button>
-							{/if}
-						</section>
+								<button
+									type="button"
+									class="min-h-11 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+									disabled={removing}
+									on:click={removeCreation}
+								>
+									{removing ? $i18n.t('Removing...') : $i18n.t('Remove from library')}
+								</button>
+							</div>
+						</div>
+					{:else}
+						<button
+							type="button"
+							class="min-h-11 w-full rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950"
+							on:click={() => (confirmRemove = true)}
+						>
+							{$i18n.t('Remove from library')}
+						</button>
 					{/if}
-				</aside>
-			</div>
+				</section>
+			{/if}
 		{/if}
-	</div>
-</Modal>
+	</svelte:fragment>
+</ArtworkViewerShell>
 
 <ImagePreview bind:show={showPreview} src={previewSrc} alt={previewAlt} />

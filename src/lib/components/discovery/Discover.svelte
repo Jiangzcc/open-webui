@@ -1,9 +1,14 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { listDiscoveryPosts, listFavoritePosts, setDiscoveryReaction } from '$lib/apis/discovery';
 	import { mobile, showSidebar, WEBUI_NAME } from '$lib/stores';
+	import {
+		storePendingCreationDraft,
+		type ImageCreationDraft
+	} from '$lib/utils/image-generation-batches';
 	import {
 		applyDiscoveryPage,
 		applyReactionState,
@@ -71,6 +76,15 @@
 	const openDetails = (item: DiscoveryPostSummary) => {
 		detailsPostId = item.id;
 		detailsShow = true;
+	};
+
+	const reuseCreation = async (draft: ImageCreationDraft) => {
+		try {
+			storePendingCreationDraft(sessionStorage, draft);
+			await goto('/images');
+		} catch {
+			toast.error($i18n.t('Failed to load creation settings'));
+		}
 	};
 
 	const updateEveryCopy = (reaction: ReactionState) => {
@@ -301,4 +315,5 @@
 	bind:show={detailsShow}
 	postId={detailsPostId}
 	onReaction={updateEveryCopy}
+	onReuse={reuseCreation}
 />

@@ -6,7 +6,10 @@ from alembic import context
 from open_webui.env import DATABASE_SCHEMA
 from open_webui.extensions.creations.db import CreationBase
 from open_webui.extensions.creations.migrations.config import migration_context_options
-from open_webui.extensions.creations.models import CreationMediaItem  # noqa: F401
+from open_webui.extensions.creations.models import (  # noqa: F401
+    CreationMediaItem,
+    ImageGenerationTask,
+)
 from sqlalchemy import engine_from_config, pool
 
 config = context.config

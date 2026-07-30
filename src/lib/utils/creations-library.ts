@@ -19,8 +19,16 @@ export type CreationSummary = {
 	prompt_preview: string | null;
 	model_name: string | null;
 	task: 'text-to-image' | 'image-to-image';
+	publication_status?: 'published' | 'withdrawn' | 'hidden' | null;
 	created_at: number;
 	updated_at: number;
+};
+
+export type CreationListFilters = {
+	search?: string;
+	task?: '' | 'text-to-image' | 'image-to-image';
+	publicationStatus?: '' | 'published' | 'unpublished';
+	sort?: 'newest' | 'oldest';
 };
 
 export type CreationPublication = {

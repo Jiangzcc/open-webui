@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
-
 from open_webui.extensions.creations import service
-from open_webui.extensions.creations.models import CreationMediaItem
+from open_webui.extensions.creations.models import CreationMediaItem, CreationPost, CreationPostMedia
 from open_webui.extensions.creations.service import (
     get_admin_detail,
     get_personal_detail,
     list_admin_creations,
     list_personal_creations,
     soft_delete,
+    soft_delete_many,
     update_caption,
 )
 from open_webui.extensions.creations.tests.conftest import make_file, make_user
@@ -86,6 +84,33 @@ async def _seed(sessions, items):
             session.add(item)
 
 
+async def _seed_publication(sessions, *, creation_id: str, user_id: str, status: str = 'published'):
+    async with sessions() as session, session.begin():
+        session.add(
+            CreationPost(
+                id=f'post-{creation_id}',
+                user_id=user_id,
+                status=status,
+                title=None,
+                description=None,
+                show_prompt=True,
+                like_count=0,
+                favorite_count=0,
+                published_at=200,
+                created_at=200,
+                updated_at=200,
+            )
+        )
+        session.add(
+            CreationPostMedia(
+                post_id=f'post-{creation_id}',
+                position=0,
+                creation_id=creation_id,
+                created_at=200,
+            )
+        )
+
+
 @pytest.mark.asyncio
 async def test_personal_list_returns_only_own_visible_creations(creation_sessions, monkeypatch) -> None:
     await _seed(
@@ -129,6 +154,73 @@ async def test_personal_list_rejects_invalid_cursor(creation_sessions) -> None:
     async with creation_sessions() as session:
         with pytest.raises(ValueError):
             await list_personal_creations(session, 'user-1', 20, 'not-a-real-cursor')
+
+
+@pytest.mark.asyncio
+async def test_personal_list_filters_search_task_publication_and_oldest_sort(
+    creation_sessions, monkeypatch
+) -> None:
+    await _seed(
+        creation_sessions,
+        [
+            _item(
+                cid='published-edit',
+                user_id='user-1',
+                file_id='f1',
+                task='image-to-image',
+                prompt='misty mountain',
+                created_at=30,
+            ),
+            _item(
+                cid='draft-edit',
+                user_id='user-1',
+                file_id='f2',
+                task='image-to-image',
+                caption='Misty draft',
+                created_at=10,
+            ),
+            _item(
+                cid='published-text',
+                user_id='user-1',
+                file_id='f3',
+                task='text-to-image',
+                prompt='misty valley',
+                created_at=20,
+            ),
+        ],
+    )
+    await _seed_publication(
+        creation_sessions, creation_id='published-edit', user_id='user-1'
+    )
+    await _seed_publication(
+        creation_sessions, creation_id='published-text', user_id='user-1'
+    )
+    monkeypatch.setattr(service, 'Files', _FakeFiles([]))
+
+    async with creation_sessions() as session:
+        published = await list_personal_creations(
+            session,
+            'user-1',
+            20,
+            None,
+            search='MISTY',
+            task='image-to-image',
+            publication_status='published',
+        )
+        unpublished = await list_personal_creations(
+            session,
+            'user-1',
+            20,
+            None,
+            task='image-to-image',
+            publication_status='unpublished',
+            sort='oldest',
+        )
+
+    assert [item.id for item in published.items] == ['published-edit']
+    assert published.items[0].publication_status == 'published'
+    assert [item.id for item in unpublished.items] == ['draft-edit']
+    assert unpublished.items[0].publication_status is None
 
 
 @pytest.mark.asyncio
@@ -250,6 +342,33 @@ async def test_soft_delete_returns_false_for_stranger(creation_sessions) -> None
     await _seed(creation_sessions, [_item(cid='c1', user_id='user-2', file_id='fx')])
     async with creation_sessions() as session:
         assert await soft_delete(session, 'user-1', 'c1') is False
+
+
+@pytest.mark.asyncio
+async def test_soft_delete_many_only_removes_owned_visible_items_and_withdraws_publication(
+    creation_sessions,
+) -> None:
+    await _seed(
+        creation_sessions,
+        [
+            _item(cid='owned', user_id='user-1', file_id='f1'),
+            _item(cid='already-gone', user_id='user-1', file_id='f2', soft_deleted=True),
+            _item(cid='stranger', user_id='user-2', file_id='f3'),
+        ],
+    )
+    await _seed_publication(creation_sessions, creation_id='owned', user_id='user-1')
+
+    async with creation_sessions() as session:
+        removed = await soft_delete_many(
+            session, 'user-1', ('owned', 'already-gone', 'stranger', 'missing')
+        )
+
+    assert removed == ('owned',)
+    async with creation_sessions() as session:
+        owned = await session.get(CreationMediaItem, 'owned')
+        post = await session.get(CreationPost, 'post-owned')
+    assert owned.soft_deleted is True
+    assert post.status == 'withdrawn'
 
 
 @pytest.mark.asyncio

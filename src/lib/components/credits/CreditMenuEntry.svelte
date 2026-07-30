@@ -5,7 +5,7 @@
 
 	import { getMyCredits } from '$lib/apis/credits';
 	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
-	import ChartBar from '$lib/components/icons/ChartBar.svelte';
+	import CreditCoins from './CreditCoins.svelte';
 
 	import {
 		idleCreditBalanceState,
@@ -59,8 +59,8 @@
 	type="button"
 	on:click={() => dispatch('openLedger')}
 >
-	<div class="flex size-4.5 shrink-0 items-center justify-center self-center">
-		<ChartBar className="size-3.5" strokeWidth="1.5" />
+	<div class="flex size-4 shrink-0 items-center justify-center self-center">
+		<CreditCoins className="size-3.5" strokeWidth="1.5" />
 	</div>
 	<div class="self-center min-w-0 flex-1 truncate">{$i18n.t('credits.balance')}</div>
 	<div

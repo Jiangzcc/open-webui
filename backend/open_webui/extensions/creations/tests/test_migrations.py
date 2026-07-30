@@ -34,6 +34,7 @@ TABLE_NAMES = {
     'ext_creation_post',
     'ext_creation_post_media',
     'ext_creation_post_reaction',
+    'ext_image_generation_task',
 }
 EXPECTED_INDEXES = {
     'ext_creation_media_item': {
@@ -48,6 +49,10 @@ EXPECTED_INDEXES = {
     },
     'ext_creation_post_media': {'ix_ext_creation_post_media_creation'},
     'ext_creation_post_reaction': {'ix_ext_creation_post_reaction_user_kind'},
+    'ext_image_generation_task': {
+        'ix_ext_image_task_user_created',
+        'ix_ext_image_task_status_updated',
+    },
 }
 EXPECTED_CHECKS = {
     'ck_ext_creation_media_kind',
@@ -57,12 +62,16 @@ EXPECTED_CHECKS = {
     'ck_ext_creation_post_like_count',
     'ck_ext_creation_post_favorite_count',
     'ck_ext_creation_post_reaction_kind',
+    'ck_ext_image_task_status',
+    'ck_ext_image_task_kind',
+    'ck_ext_image_task_expected_count',
 }
 BIGINT_COLUMNS = {
     'ext_creation_media_item': {'created_at', 'updated_at'},
     'ext_creation_post': {'published_at', 'created_at', 'updated_at'},
     'ext_creation_post_media': {'created_at'},
     'ext_creation_post_reaction': {'created_at'},
+    'ext_image_generation_task': {'created_at', 'started_at', 'completed_at', 'updated_at'},
 }
 TEXT_COLUMNS = {'ext_creation_media_item': {'prompt', 'negative_prompt'}}
 
@@ -105,7 +114,7 @@ def test_upgrade_creates_only_creation_objects_and_preserves_upstream_sentinel(s
         assert names == {'user', *TABLE_NAMES, 'ext_creation_schema_version'}
         assert 'alembic_version' not in names
         assert connection.execute(text('SELECT version_num FROM ext_creation_schema_version')).scalar_one() == (
-            '0002_create_discovery_tables'
+            '0003_create_image_generation_tasks'
         )
     assert not Path(f'{database_path}.creation-migrations.lock').exists()
 
@@ -149,6 +158,10 @@ def test_revision_has_required_constraints_and_indexes(sqlite_database):
         constraint['name'] for constraint in inspector.get_unique_constraints('ext_creation_post_reaction')
     }
     assert reaction_unique >= {'uq_ext_creation_post_reaction_actor_kind'}
+    task_unique = {
+        constraint['name'] for constraint in inspector.get_unique_constraints('ext_image_generation_task')
+    }
+    assert task_unique >= {'uq_ext_image_task_user_key'}
 
     existing_checks = set()
     for table_name in TABLE_NAMES:

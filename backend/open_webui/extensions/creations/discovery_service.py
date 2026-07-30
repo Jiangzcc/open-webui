@@ -112,6 +112,8 @@ async def publish_creation(
     user_id: str,
     creation_id: str,
     form: PublishCreationForm,
+    *,
+    allow_hidden: bool = False,
 ) -> CreationPublication | None:
     item = (
         await session.execute(
@@ -163,7 +165,7 @@ async def publish_creation(
             )
         )
     else:
-        if post.user_id != user_id or post.status == 'hidden':
+        if post.user_id != user_id or (post.status == 'hidden' and not allow_hidden):
             return None
         post.status = 'published'
         post.title = form.title
@@ -375,9 +377,10 @@ async def get_discovery_post(session: AsyncSession, user_id: str, post_id: str) 
     summary = (await _summaries(session, user_id, [(post, item)]))[0]
     return DiscoveryPostDetail(
         **summary.model_dump(),
+        model_id=item.model_id,
         prompt=item.prompt if post.show_prompt else None,
         negative_prompt=item.negative_prompt if post.show_prompt else None,
-        params=item.params_json if post.show_prompt else None,
+        params=item.params_json,
         task=item.task,
     )
 

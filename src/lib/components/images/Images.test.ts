@@ -75,6 +75,16 @@ describe('images page controls', () => {
 		expect(submitHandler).not.toContain('toast.error(`${error}`)');
 	});
 
+	test('replaces the current creation draft without a confirmation dialog', () => {
+		const applyDraftStart = source.indexOf('const applyCreationDraft = async');
+		const applyDraftEnd = source.indexOf('\n\tconst loadRecentGenerationTasks', applyDraftStart);
+		const applyDraft = source.slice(applyDraftStart, applyDraftEnd);
+
+		expect(applyDraft).not.toContain('window.confirm');
+		expect(applyDraft).not.toContain("$i18n.t('Replace your current creation draft?')");
+		expect(applyDraft).toContain('prompt = draft.prompt;');
+	});
+
 	test('places the credit quote directly before the submit button on the right', () => {
 		const toolbarStart = source.indexOf(
 			'class="mt-2 flex min-w-0 items-center justify-between gap-2"'
@@ -112,6 +122,22 @@ describe('images page controls', () => {
 		expect(source).toContain('id="images-library-panel"');
 		expect(source).toContain("hidden={view !== 'library'}");
 		expect(source).not.toContain('{#if canUseImages}');
+	});
+
+	test('sizes completed result cards from the real image instead of a full-width ratio frame', () => {
+		expect(source).toContain("'flex flex-wrap items-start justify-center gap-3 md:gap-4'");
+		expect(source).toContain("return 'w-fit max-w-full shrink-0';");
+		expect(source).toContain("'w-fit max-w-full shrink-0 sm:max-w-[calc(50%_-_0.5rem)]'");
+		expect(source).toContain('block h-auto w-auto max-w-full object-contain');
+		expect(source).toMatch(/getGeneratedImageCardClass\(\s*batch\.images\.length\s*\)/);
+		expect(source).toContain('getGeneratedImageClass(batch.images.length)');
+
+		const completedResultStart = source.indexOf("{#if batch.status === 'succeeded'");
+		const completedResultEnd = source.indexOf('{:else if batch.status', completedResultStart);
+		const completedResult = source.slice(completedResultStart, completedResultEnd);
+
+		expect(completedResult).not.toContain('style={batchAspectStyle(batch)}');
+		expect(source).toContain('style={batchAspectStyle(batch)}');
 	});
 
 	test('lifts the three-segment pill out of flow so the library tops out', () => {

@@ -117,8 +117,10 @@ async def test_feed_hides_withdrawn_posts_and_prompt_when_disabled(creation_sess
     assert [item.id for item in feed.items] == [first.post_id]
     assert feed.items[0].prompt_preview is None
     assert detail is not None
+    assert detail.model_id == 'public/model'
     assert detail.prompt is None
     assert detail.negative_prompt is None
+    assert detail.params == {'size': '1024x1024'}
 
 
 @pytest.mark.asyncio
