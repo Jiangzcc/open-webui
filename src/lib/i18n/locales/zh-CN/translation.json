@@ -3121,5 +3121,6 @@
 	"Generation parameters": "生成参数",
 	"Failed to load creation settings": "带入创作设置失败",
 	"Failed to load reference image": "加载参考图失败",
-	"Failed to copy": "复制失败"
+	"Failed to copy": "复制失败",
+	"Edit again": "再次编辑"
 }

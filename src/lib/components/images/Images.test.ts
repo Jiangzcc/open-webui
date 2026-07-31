@@ -124,20 +124,37 @@ describe('images page controls', () => {
 		expect(source).not.toContain('{#if canUseImages}');
 	});
 
-	test('sizes completed result cards from the real image instead of a full-width ratio frame', () => {
-		expect(source).toContain("'flex flex-wrap items-start justify-center gap-3 md:gap-4'");
-		expect(source).toContain("return 'w-fit max-w-full shrink-0';");
-		expect(source).toContain("'w-fit max-w-full shrink-0 sm:max-w-[calc(50%_-_0.5rem)]'");
-		expect(source).toContain('block h-auto w-auto max-w-full object-contain');
-		expect(source).toMatch(/getGeneratedImageCardClass\(\s*batch\.images\.length\s*\)/);
-		expect(source).toContain('getGeneratedImageClass(batch.images.length)');
+	test('sizes completed result cards as fixed square thumbnails in a 4/2 column grid', () => {
+		// 图网格固定列数（宽屏 4 列、窄屏 2 列），单张图尺寸不随数量变化。
+		// 图框 aspect-square + object-cover；无 contain 退路、无按比例定型的旧 style。
+		expect(source).toContain('const getGeneratedImageCardClass = ()');
+		expect(source).toContain('aspect-square w-full');
+		expect(source).toContain('block h-full w-full object-cover');
+		expect(source).not.toContain('block h-full w-full object-contain');
+		expect(source).toMatch(/getCompletedBatchGridClass\(\)/);
+		expect(source).toMatch(/getGeneratedImageFrameClass\(\)/);
+		expect(source).toMatch(/getGeneratedImageClass\(\)/);
+		expect(source).toContain("'grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4'");
+		// 已删除按数量动态算列数与移动端横滚分支。
+		expect(source).not.toContain('getCompletedBatchMobileClass');
+		expect(source).not.toContain('lg:grid-cols-${n}');
 
 		const completedResultStart = source.indexOf("{#if batch.status === 'succeeded'");
 		const completedResultEnd = source.indexOf('{:else if batch.status', completedResultStart);
 		const completedResult = source.slice(completedResultStart, completedResultEnd);
 
-		expect(completedResult).not.toContain('style={batchAspectStyle(batch)}');
-		expect(source).toContain('style={batchAspectStyle(batch)}');
+		expect(completedResult).toContain('getGeneratedImageFrameClass()');
+		// aspect-square 在 frame class 定义里；骨架/失败块用 batchSquareStyle（aspect-ratio: 1/1）。
+		expect(source).toContain('aspect-square');
+		expect(source).toContain('style={batchSquareStyle()}');
+		expect(source).not.toContain('style={batchAspectStyle(batch)}');
+	});
+
+	test('keeps repeated metadata labels from colliding in a keyed each block', () => {
+		expect(source).toContain(
+			'{#each getBatchMetaPills(batch, primaryModels) as pill, index (`${index}-${pill}`)}'
+		);
+		expect(source).not.toContain('{#each getBatchMetaPills(batch, primaryModels) as pill (pill)}');
 	});
 
 	test('lifts the three-segment pill out of flow so the library tops out', () => {
@@ -174,11 +191,13 @@ describe('images page controls', () => {
 	});
 
 	test('increments library revision after a successful generation', () => {
-		const success = source.slice(
-			source.indexOf('generatedImages = ['),
-			source.indexOf('} catch', source.indexOf('generatedImages = ['))
-		);
-		expect(success).toContain('libraryRevision += 1;');
+		// 成功判定从旧的同步 generatedImages 路径迁到 pollGenerationTasks 轮询：
+		// 任务转 succeeded 时自增 libraryRevision，触发作品库刷新。
+		const pollStart = source.indexOf('const pollGenerationTasks');
+		const pollEnd = source.indexOf('} finally', pollStart);
+		const poll = source.slice(pollStart, pollEnd);
+		expect(poll).toContain("task.status === 'succeeded'");
+		expect(poll).toContain('libraryRevision += 1;');
 	});
 
 	test('drops the canUseImagesPage import and reactive gate', () => {

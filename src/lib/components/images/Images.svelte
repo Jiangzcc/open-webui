@@ -117,6 +117,7 @@
 	let fileInputElement: HTMLInputElement;
 	let modelSelectorElement: HTMLDivElement;
 	let imageOptionsElement: HTMLDivElement;
+	let generationPanelElement: HTMLDivElement;
 
 	$: modeLabel = referenceImages.length > 0 ? $i18n.t('Image to Image') : $i18n.t('Text to Image');
 	$: selectedModelConfig =
@@ -343,42 +344,112 @@
 		return `width: ${Math.max(minimumPreviewSize, (previewSize * width) / height)}px; height: ${previewSize}px;`;
 	};
 
-	const getCompletedBatchLayoutClass = () =>
-		'flex flex-wrap items-start justify-center gap-3 md:gap-4';
+	// ===== 结果块（heytop 式聊天消息卡片）展示范式 =====
+	// 每个 batch 是一条「消息记录」：消息头(模型短名+时间) → 全展开 prompt
+	// → pill 参数行 → 图网格(正方形) → 操作行(重新编辑 i2i / 重新生成 t2i)。
+	// 块最大宽与输入框同宽对齐；图片一律 aspect-square 占满格，统一网格高度。
+	// 桌面端 1×4 横排正方形；中屏 2 列；移动端单图占满、2–4 图横滚 strip。
+	// 用 flex flex-col gap-3 统一行间距，避免 space-y 的 margin 被 m-0 等覆盖导致行间塌陷。
+	const BATCH_ARTICLE_CLASS =
+		'rounded-2xl bg-gray-50/60 p-3 dark:bg-gray-900/30 sm:p-4 mx-auto w-full max-w-5xl flex flex-col gap-3';
 
-	const getPendingBatchLayoutClass = (imageCount: number) =>
-		imageCount === 1 ? 'flex justify-center' : 'grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4';
+	// 完成态图网格：固定列数，单张图尺寸不随数量变化。
+	// 宽屏 lg 一行最多 4 张，窄屏 2 张；图卡 aspect-square 占满格，高度随列宽固定。
+	const getCompletedBatchGridClass = () => 'grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4';
 
-	const getGeneratedImageCardClass = (imageCount: number) => {
-		if (imageCount === 1) {
-			return 'w-fit max-w-full shrink-0';
-		}
+	// 生成中骨架网格：与完成态同构无缝替换。
+	const getPendingBatchGridClass = () => 'grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4';
 
-		return 'w-fit max-w-full shrink-0 sm:max-w-[calc(50%_-_0.5rem)]';
-	};
+	// 单张图卡：group hover 下载浮层用。
+	const getGeneratedImageCardClass = () => 'group relative min-w-0';
 
+	// 图框：1px 浅边 + 圆角 8px；aspect-square 占满格，高度统一。
 	const getGeneratedImageFrameClass = () =>
-		'relative flex max-w-full items-center justify-center overflow-hidden bg-stone-100 text-left dark:bg-black/30';
+		'relative flex items-center justify-center overflow-hidden rounded-lg border border-gray-200/80 bg-stone-50 aspect-square w-full dark:border-gray-800/80 dark:bg-gray-900/40';
 
-	const getGeneratedImageClass = (imageCount: number) =>
-		`block h-auto w-auto max-w-full object-contain transition duration-300 group-hover:scale-[1.01] ${
-			imageCount === 1 ? 'max-h-[68dvh] sm:max-h-[72dvh]' : 'max-h-[58dvh] sm:max-h-[62dvh]'
-		}`;
+	const getGeneratedImageClass = () => 'block h-full w-full object-cover';
 
-	const batchAspectStyle = (batch: ImageGenerationBatch) => {
-		const ratio = batch.aspectRatio;
-		if (/^\d+(\.\d+)?:\d+(\.\d+)?$/.test(ratio)) {
-			return `aspect-ratio: ${ratio.replace(':', ' / ')}`;
-		}
-		const size = batch.resolution.match(/^(\d+)x(\d+)$/);
-		return size ? `aspect-ratio: ${size[1]} / ${size[2]}` : 'aspect-ratio: 4 / 3';
-	};
+	// 骨架/失败块：aspect-square，与完成态同形。
+	const batchSquareStyle = () => 'aspect-ratio: 1 / 1; width: 100%;';
 
+	// 长 prompt 不再折叠：heytop 式全展开，让块自然变高。
 	const generationStatusLabel = (batch: ImageGenerationBatch) => {
 		if (batch.status === 'queued') return $i18n.t('Queued');
 		if (batch.status === 'running') return $i18n.t('Generating');
 		if (batch.status === 'failed') return $i18n.t('Generation failed');
 		return $i18n.t('Completed');
+	};
+
+	// 消息头模型短名：剥厂商前缀，回退到默认模型。
+	// 注意：必须把 primaryModels 作为参数显式传入并在模板里写出，
+	// 否则 Svelte 4 不会把 primaryModels 当作响应式依赖 —— models 异步加载
+	// 完成后已渲染的 batch 消息头不会刷新，会一直停在「默认模型」回退态，
+	// 直到 generationBatches 因新生成而重渲染才“突然”显示真名。
+	// 按 batch.modelId 在当前模型列表里查回 model 对象（含 provider），供消息头厂商图标使用。
+	// 同样需把 modelList 作为参数显式传入，保证 Svelte 响应式追踪。
+	const getBatchModel = (batch: ImageGenerationBatch, modelList: ImageGenerationModel[]) =>
+		modelList.find((m) => m.id === batch.modelId) ?? null;
+
+	const getBatchModelLabel = (batch: ImageGenerationBatch, modelList: ImageGenerationModel[]) => {
+		const model = getBatchModel(batch, modelList);
+		return model ? stripVendorFromName(model) : $i18n.t('Default Model');
+	};
+
+	// pill 参数：模型 · 比例 · 分辨率(若有) · 张数 · 质量(若有)。
+	// 同样需显式传 modelList，让模板引用 primaryModels 触发响应式。
+	const getBatchMetaPills = (batch: ImageGenerationBatch, modelList: ImageGenerationModel[]) => {
+		const pills = [getBatchModelLabel(batch, modelList), getAspectRatioLabel(batch.aspectRatio)];
+		if (batch.resolution) pills.push(getResolutionLabel(batch.resolution));
+		pills.push(String(batch.expectedCount));
+		const q = batch.quality?.trim();
+		if (q) pills.push(getQualityLabel(q));
+		return pills;
+	};
+
+	// 时间：完成用 completedAt，否则 startedAt/createdAt（秒级时间戳）。
+	// 今天只显示 HH:MM；今年其它天补 M月D日；跨年带年份，避免只看时分无法区分批次日期。
+	const formatBatchTime = (ts: number | null) => {
+		if (!ts) return '';
+		const date = new Date(ts * 1000);
+		if (Number.isNaN(date.getTime())) return '';
+		const now = new Date();
+		const hh = String(date.getHours()).padStart(2, '0');
+		const mm = String(date.getMinutes()).padStart(2, '0');
+		const time = `${hh}:${mm}`;
+		const sameDay =
+			date.getFullYear() === now.getFullYear() &&
+			date.getMonth() === now.getMonth() &&
+			date.getDate() === now.getDate();
+		if (sameDay) return time;
+		const md = `${date.getMonth() + 1}/${date.getDate()}`;
+		if (date.getFullYear() === now.getFullYear()) return `${md} ${time}`;
+		return `${date.getFullYear()}/${md} ${time}`;
+	};
+	const getBatchTime = (batch: ImageGenerationBatch) =>
+		formatBatchTime(batch.completedAt ?? batch.startedAt ?? batch.createdAt);
+
+	// 重新生成(t2i)：用原 prompt/参数，不带参考图。
+	const reuseBatchGenerate = (batch: ImageGenerationBatch) =>
+		applyCreationDraft(
+			buildCreationDraft({
+				prompt: batch.prompt,
+				model_id: batch.modelId,
+				params: batch.params
+			})
+		);
+
+	// 重新编辑(i2i)：同样参数，但带入本批首图作为参考图（若有）。
+	const reuseBatchEdit = (batch: ImageGenerationBatch) => {
+		const firstImage = batch.images[0]?.url ?? null;
+		return applyCreationDraft(
+			buildCreationDraft({
+				prompt: batch.prompt,
+				model_id: batch.modelId,
+				params: batch.params,
+				content_url: firstImage,
+				useAsReference: Boolean(firstImage)
+			})
+		);
 	};
 
 	const getImageModelDisplayName = (model: ImageGenerationModel) => {
@@ -699,15 +770,6 @@
 		}
 	};
 
-	const reuseBatch = (batch: ImageGenerationBatch) =>
-		applyCreationDraft(
-			buildCreationDraft({
-				prompt: batch.prompt,
-				model_id: batch.modelId,
-				params: batch.params
-			})
-		);
-
 	const submitHandler = async () => {
 		const validation = validateImagePrompt(prompt);
 		if (!validation.ok) {
@@ -750,6 +812,8 @@
 			referenceImages = [];
 			prompt = '';
 			await tick();
+			// 新生成结果插入到列表最上面，提交后自动滚到顶，让用户立刻看到新 batch 的进度。
+			generationPanelElement?.scrollTo({ top: 0, behavior: 'smooth' });
 			resizePromptTextarea();
 		} catch (error) {
 			if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -873,12 +937,13 @@
 
 		<div
 			id="images-generate-panel"
+			bind:this={generationPanelElement}
 			role="tabpanel"
 			aria-labelledby="images-generate-tab"
-			class="flex-1 min-h-0 overflow-y-auto px-3 md:px-6"
+			class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8"
 			hidden={view !== 'generate'}
 		>
-			<div class="mx-auto max-w-6xl min-h-full flex flex-col">
+			<div class="mx-auto max-w-5xl min-h-full flex flex-col sm:px-2">
 				<div class="flex-1">
 					{#if generationBatches.length === 0}
 						<section class="min-h-[calc(100dvh-20rem)] flex items-center justify-center py-12">
@@ -901,64 +966,68 @@
 							</div>
 						</section>
 					{:else}
-						<section class="space-y-6 pb-6 pt-18 sm:pt-18" aria-live="polite">
+						<!-- 连续流：每批一块极淡背景卡片。块内消息头→prompt→pill→图网格→操作行，space-y-3 统一间距。 -->
+						<section class="space-y-4 pb-6 pt-18 sm:pt-18" aria-live="polite">
 							{#each generationBatches as batch (batch.id)}
-								<article
-									class="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm dark:border-gray-850 dark:bg-gray-900/60"
-								>
-									<header
-										class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-									>
-										<div class="min-w-0">
-											<p class="line-clamp-1 text-sm font-medium text-gray-900 dark:text-gray-100">
-												{batch.prompt}
-											</p>
-											<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-												{batch.modelId ?? $i18n.t('Default Model')} · {getAspectRatioLabel(
-													batch.aspectRatio
-												)} · {batch.expectedCount}
-											</p>
-										</div>
-										<div class="flex shrink-0 items-center gap-2 text-xs">
+								<article class={BATCH_ARTICLE_CLASS}>
+									<!-- 消息头：厂商图标 + 模型短名 + 时间 -->
+									<div class="flex items-center gap-2">
+										{#if getBatchModel(batch, primaryModels)?.provider}
+											<img
+												src={vendorLogoUrl(getBatchModel(batch, primaryModels).provider)}
+												alt=""
+												class="size-5 shrink-0 rounded-full object-cover"
+												loading="lazy"
+												decoding="async"
+											/>
+										{:else}
 											<span
-												class="inline-flex min-h-8 items-center gap-2 rounded-full px-3 {batch.status ===
-												'failed'
-													? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300'
-													: batch.status === 'succeeded'
-														? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-														: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'}"
-											>
-												{#if !isGenerationTaskTerminal(batch.status)}
-													<Spinner className="size-3.5" />
-												{/if}
-												{generationStatusLabel(batch)}
-												{#if !isGenerationTaskTerminal(batch.status)}
-													· {generationElapsedSeconds(batch, elapsedNow)}s
-												{/if}
-											</span>
-											<button
-												type="button"
-												class="min-h-8 rounded-full px-3 font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-												on:click={() => reuseBatch(batch)}
-											>
-												{$i18n.t('Create again')}
-											</button>
-										</div>
-									</header>
-
-									<div class="px-3 pb-3 sm:px-4 sm:pb-4">
-										<div
-											class={batch.status === 'succeeded' && batch.images.length > 0
-												? getCompletedBatchLayoutClass()
-												: getPendingBatchLayoutClass(batch.expectedCount)}
+												class="size-5 shrink-0 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700"
+											></span>
+										{/if}
+										<span
+											class="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100"
+											>{getBatchModelLabel(batch, primaryModels)}</span
 										>
-											{#if batch.status === 'succeeded' && batch.images.length > 0}
+										<span class="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500"
+											>{getBatchTime(batch)}</span
+										>
+									</div>
+
+									<!-- prompt：全展开，不折叠 -->
+									<p
+										class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200"
+									>
+										{batch.prompt}
+									</p>
+
+									<!-- pill 参数行：模型 · 比例 · 分辨率 · 张数 · 质量；生成中附状态 -->
+									<div class="flex flex-wrap items-center gap-1.5">
+										{#each getBatchMetaPills(batch, primaryModels) as pill, index (`${index}-${pill}`)}
+											<span
+												class="inline-flex min-h-6 items-center rounded-md bg-gray-100 px-2 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+												>{pill}</span
+											>
+										{/each}
+										{#if !isGenerationTaskTerminal(batch.status)}
+											<span
+												class="inline-flex min-h-6 items-center gap-1 rounded-md bg-amber-50 px-2 text-[11px] text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+											>
+												<Spinner className="size-3" />
+												{generationStatusLabel(batch)} · {generationElapsedSeconds(
+													batch,
+													elapsedNow
+												)}s
+											</span>
+										{/if}
+									</div>
+
+									<div class="min-w-0">
+										{#if batch.status === 'succeeded' && batch.images.length > 0}
+											<!-- 图网格：宽屏一行 4 张，窄屏 2 张；图卡 aspect-square 固定尺寸 -->
+											<div class={getCompletedBatchGridClass()}>
 												{#each batch.images as image, index (`${image.url}-${index}`)}
-													<div
-														class="group overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800 {getGeneratedImageCardClass(
-															batch.images.length
-														)}"
-													>
+													<div class={getGeneratedImageCardClass()}>
 														<button
 															type="button"
 															class={getGeneratedImageFrameClass()}
@@ -968,60 +1037,118 @@
 															<img
 																src={image.url}
 																alt={image.prompt ?? $i18n.t('Generated image')}
-																class={getGeneratedImageClass(batch.images.length)}
+																class={getGeneratedImageClass()}
+																loading="lazy"
+																decoding="async"
 															/>
 														</button>
-														<div class="flex items-center justify-end gap-1 px-2 py-2">
+														<!-- 下载：移动端常驻，桌面 hover 浮层 -->
+														<div
+															class="pointer-events-none absolute right-1.5 top-1.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
+														>
 															<button
 																type="button"
-																class="min-h-9 rounded-full px-3 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-																on:click={() => openImagePreview(image)}
-																>{$i18n.t('Preview')}</button
+																class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
+																on:click|stopPropagation={() => downloadImage(image, index)}
+																aria-label={$i18n.t('Download')}
 															>
-															<button
-																type="button"
-																class="min-h-9 rounded-full px-3 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-																on:click={() => downloadImage(image, index)}
-																>{$i18n.t('Download')}</button
-															>
+																<svg
+																	class="size-3.5"
+																	viewBox="0 0 24 24"
+																	fill="none"
+																	stroke="currentColor"
+																	stroke-width="2"
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	aria-hidden="true"
+																	><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+																>
+															</button>
 														</div>
 													</div>
 												{/each}
-											{:else if batch.status === 'failed'}
-												<div
-													class="col-span-full flex min-h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-red-200 bg-red-50/40 px-5 text-center dark:border-red-900/60 dark:bg-red-950/20"
-													style={batchAspectStyle(batch)}
+											</div>
+										{:else if batch.status === 'failed'}
+											<div
+												class="flex w-full flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-5 py-10 text-center dark:border-red-900/60 dark:bg-red-950/20"
+												style={batchSquareStyle()}
+											>
+												<p class="text-sm font-medium text-red-600 dark:text-red-300">
+													{$i18n.t('Generation failed')}
+												</p>
+												{#if batch.errorCode}<p class="mt-1 text-xs text-red-500/80">
+														{batch.errorCode}
+													</p>{/if}
+												<button
+													type="button"
+													class="mt-3 min-h-11 rounded-full bg-gray-950 px-4 text-sm font-medium text-white dark:bg-white dark:text-gray-950"
+													on:click={() => reuseBatchGenerate(batch)}
+													>{$i18n.t('Load settings')}</button
 												>
-													<p class="text-sm font-medium text-red-600 dark:text-red-300">
-														{$i18n.t('Generation failed')}
-													</p>
-													{#if batch.errorCode}<p class="mt-1 text-xs text-red-500/80">
-															{batch.errorCode}
-														</p>{/if}
-													<button
-														type="button"
-														class="mt-3 min-h-11 rounded-full bg-gray-950 px-4 text-sm font-medium text-white dark:bg-white dark:text-gray-950"
-														on:click={() => reuseBatch(batch)}>{$i18n.t('Load settings')}</button
-													>
-												</div>
-											{:else}
+											</div>
+										{:else}
+											<!-- 生成中：正方形骨架占位 + 居中 Spinner -->
+											<div class={getPendingBatchGridClass()}>
 												{#each Array(batch.expectedCount) as _, index (index)}
 													<div
-														class="relative min-h-48 overflow-hidden rounded-2xl bg-stone-100 dark:bg-gray-800"
-														style={batchAspectStyle(batch)}
+														class="relative overflow-hidden rounded-lg bg-stone-100 dark:bg-gray-900/40"
+														style={batchSquareStyle()}
 													>
 														<div
-															class="absolute inset-0 animate-pulse bg-gradient-to-br from-transparent via-white/45 to-transparent dark:via-white/5"
+															class="absolute inset-0 animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
 														></div>
 														<div
-															class="absolute inset-0 flex items-center justify-center text-xs text-gray-400 dark:text-gray-500"
+															class="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-xs text-gray-400 dark:text-gray-600"
 														>
-															{$i18n.t('Creating image {{index}}', { index: index + 1 })}
+															<Spinner className="size-5" />
+															<span
+																>{$i18n.t('Creating image {{index}}', { index: index + 1 })}</span
+															>
 														</div>
 													</div>
 												{/each}
-											{/if}
-										</div>
+											</div>
+										{/if}
+									</div>
+
+									<!-- 操作行：重新编辑(i2i) + 重新生成(t2i)，紧凑次级按钮 -->
+									<div class="flex flex-wrap items-center gap-1.5">
+										<button
+											type="button"
+											class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+											on:click={() => reuseBatchEdit(batch)}
+											disabled={batch.images.length === 0}
+										>
+											<svg
+												class="size-3.5"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												aria-hidden="true"
+												><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg
+											>
+											{$i18n.t('Edit again')}
+										</button>
+										<button
+											type="button"
+											class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+											on:click={() => reuseBatchGenerate(batch)}
+										>
+											<svg
+												class="size-3.5"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
+											>
+											{$i18n.t('Regenerate')}
+										</button>
 									</div>
 								</article>
 							{/each}
@@ -1032,7 +1159,7 @@
 				<div
 					class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
 				>
-					<div class="mx-auto w-full sm:max-w-[40rem] lg:max-w-[52rem] xl:max-w-[60rem]">
+					<div class="mx-auto w-full max-w-5xl sm:px-2">
 						<form
 							class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
 							on:submit|preventDefault={submitHandler}
