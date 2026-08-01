@@ -1434,15 +1434,15 @@
 									</button>
 
 									{#if showModelSelector}
-										<div
-											class="fixed inset-x-3 bottom-14 z-50 max-h-[60dvh] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:h-80 sm:w-[30rem] sm:p-2 dark:border-gray-800 dark:bg-gray-900"
+											<div
+											class="fixed inset-x-3 bottom-14 z-50 h-[min(60dvh,28rem)] min-w-0 overflow-hidden overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:h-80 sm:w-[30rem] sm:p-2 dark:border-gray-800 dark:bg-gray-900"
 											role="listbox"
 											aria-label={$i18n.t('Select image model')}
 										>
-											<div class="flex h-full gap-2 sm:min-w-[22rem] sm:flex-row flex-col">
+											<div class="flex h-full min-h-0 min-w-0 flex-row gap-2 sm:min-w-[22rem]">
 												<!-- Brand level (left/top) -->
-												<ul
-													class="flex shrink-0 snap-x snap-mandatory gap-1 overflow-x-auto pb-1 sm:w-40 sm:flex-col sm:overflow-visible sm:border-r sm:border-gray-100 sm:pr-1 sm:pb-0 dark:sm:border-gray-800"
+													<ul
+														class="flex min-h-0 w-28 shrink-0 flex-col gap-1 overflow-y-auto overflow-x-hidden overscroll-contain border-r border-gray-100 pr-1 dark:border-gray-800 sm:w-40 sm:pr-1"
 													role="group"
 													aria-label={$i18n.t('Brands')}
 												>
@@ -1450,7 +1450,7 @@
 														<li class="snap-start">
 															<button
 																type="button"
-																class="flex w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor ===
+																class="flex min-w-0 w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor ===
 																vendor
 																	? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
 																	: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
@@ -1464,14 +1464,14 @@
 																	loading="lazy"
 																	decoding="async"
 																/>
-																<span class="whitespace-nowrap capitalize">{vendor}</span>
+																<span class="min-w-0 truncate capitalize">{vendor}</span>
 															</button>
 														</li>
 													{/each}
 												</ul>
 												<!-- Model level (right/bottom) -->
-												<ul
-													class="h-72 overflow-y-auto sm:h-full sm:flex-1"
+													<ul
+														class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain sm:h-full"
 													role="group"
 													aria-label={$i18n.t('Models')}
 												>

@@ -213,6 +213,26 @@ def _set_integer_fields(data: dict[str, Any], form_data: Any, fields: list[dict[
         data[field] = value
 
 
+def _set_number_fields(data: dict[str, Any], form_data: Any, fields: list[dict[str, Any]] | None) -> None:
+    for item in fields or []:
+        field = item.get('field')
+        if not field:
+            continue
+
+        value = _get_field_value(form_data, item.get('source'), field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+
+        minimum = item.get('min')
+        maximum = item.get('max')
+        if isinstance(minimum, (int, float)) and value < minimum:
+            continue
+        if isinstance(maximum, (int, float)) and value > maximum:
+            continue
+
+        data[field] = value
+
+
 def _set_text_fields(data: dict[str, Any], form_data: Any, fields: list[dict[str, Any]] | None) -> None:
     for item in fields or []:
         field = item.get('field')
@@ -333,9 +353,9 @@ def get_fal_edit_model(model: str | None) -> str:
 
 def build_fal_image_payload(form_data: Any, model: str | None, image_urls: list[str] | None = None) -> dict[str, Any]:
     model_info = _get_fal_model_info(model)
-    data = {
-        'prompt': form_data.prompt,
-    }
+    data = {}
+    if model_info is None or model_info.get('supports_prompt', True) is not False:
+        data['prompt'] = form_data.prompt
 
     if image_urls is not None:
         image_input_field = model_info.get('image_input_field', 'image_urls') if model_info else 'image_urls'
@@ -384,6 +404,7 @@ def build_fal_image_payload(form_data: Any, model: str | None, image_urls: list[
         _set_option_fields(data, form_data, model_info.get('option_fields'))
         _set_boolean_fields(data, form_data, model_info.get('boolean_fields'))
         _set_integer_fields(data, form_data, model_info.get('integer_fields'))
+        _set_number_fields(data, form_data, model_info.get('number_fields'))
         _set_text_fields(data, form_data, model_info.get('text_fields'))
 
         system_prompt = getattr(form_data, 'system_prompt', None)

@@ -1,0 +1,3031 @@
+[
+  {
+    "id": "fal-ai/flux-1/dev",
+    "public_id": "flux-1-dev",
+    "name": "Black Forest Labs / Flux-1 Dev",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-1/dev/image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-1/dev/image-to-image",
+    "public_id": "flux-1-dev-image-to-image",
+    "name": "Black Forest Labs / Flux-1 Dev Image-To-Image",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-1/dev",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-1/krea",
+    "public_id": "flux-1-krea",
+    "name": "Black Forest Labs / Flux-1 Krea",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-1/krea/image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-1/krea/image-to-image",
+    "public_id": "flux-1-krea-image-to-image",
+    "name": "Black Forest Labs / Flux-1 Krea Image-To-Image",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-1/krea",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-1/schnell",
+    "public_id": "flux-1-schnell",
+    "name": "Black Forest Labs / Flux-1 Schnell",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 12
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-1/srpo",
+    "public_id": "flux-1-srpo",
+    "name": "Black Forest Labs / Flux-1 Srpo",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-1/srpo/image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-1/srpo/image-to-image",
+    "public_id": "flux-1-srpo-image-to-image",
+    "name": "Black Forest Labs / Flux-1 Srpo Image-To-Image",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-1/srpo",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2",
+    "public_id": "flux-2",
+    "name": "Black Forest Labs / Flux-2",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/edit",
+    "public_id": "flux-2-edit",
+    "name": "Black Forest Labs / Flux-2 Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/flash",
+    "public_id": "flux-2-flash",
+    "name": "Black Forest Labs / Flux-2 Flash",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2/flash/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/flash/edit",
+    "public_id": "flux-2-flash-edit",
+    "name": "Black Forest Labs / Flux-2 Flash Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2/flash",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2-flex",
+    "public_id": "flux-2-flex",
+    "name": "Black Forest Labs / Flux-2-Flex",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2-flex/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 2,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1.5,
+        "max": 10
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "default": "5"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2-flex/edit",
+    "public_id": "flux-2-flex-edit",
+    "name": "Black Forest Labs / Flux-2-Flex Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2-flex",
+    "hosting": "serverless",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 2,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1.5,
+        "max": 10
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "default": "5"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/klein/4b",
+    "public_id": "flux-2-klein-4b",
+    "name": "Black Forest Labs / Flux-2 Klein 4B",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2/klein/4b/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 8
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [],
+    "option_fields": []
+  },
+  {
+    "id": "fal-ai/flux-2/klein/4b/edit",
+    "public_id": "flux-2-klein-4b-edit",
+    "name": "Black Forest Labs / Flux-2 Klein 4B Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2/klein/4b",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 8
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "number_fields": [],
+    "option_fields": []
+  },
+  {
+    "id": "fal-ai/flux-2/klein/4b/base",
+    "public_id": "flux-2-klein-4b-base",
+    "name": "Black Forest Labs / Flux-2 Klein 4B Base",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2/klein/4b/base/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/klein/4b/base/edit",
+    "public_id": "flux-2-klein-4b-base-edit",
+    "name": "Black Forest Labs / Flux-2 Klein 4B Base Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2/klein/4b/base",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/klein/9b",
+    "public_id": "flux-2-klein-9b",
+    "name": "Black Forest Labs / Flux-2 Klein 9B",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2/klein/9b/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 8
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [],
+    "option_fields": []
+  },
+  {
+    "id": "fal-ai/flux-2/klein/9b/edit",
+    "public_id": "flux-2-klein-9b-edit",
+    "name": "Black Forest Labs / Flux-2 Klein 9B Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2/klein/9b",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 8
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "number_fields": [],
+    "option_fields": []
+  },
+  {
+    "id": "fal-ai/flux-2/klein/9b/base",
+    "public_id": "flux-2-klein-9b-base",
+    "name": "Black Forest Labs / Flux-2 Klein 9B Base",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2/klein/9b/base/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/klein/9b/base/edit",
+    "public_id": "flux-2-klein-9b-base-edit",
+    "name": "Black Forest Labs / Flux-2 Klein 9B Base Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2/klein/9b/base",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 4,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2-max",
+    "public_id": "flux-2-max",
+    "name": "Black Forest Labs / Flux-2-Max",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2-max/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "default": "5"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2-max/edit",
+    "public_id": "flux-2-max-edit",
+    "name": "Black Forest Labs / Flux-2-Max Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2-max",
+    "hosting": "serverless",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "default": "5"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2-pro",
+    "public_id": "flux-2-pro",
+    "name": "Black Forest Labs / Flux-2-Pro",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2-pro/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "default": "5"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2-pro/edit",
+    "public_id": "flux-2-pro-edit",
+    "name": "Black Forest Labs / Flux-2-Pro Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2-pro",
+    "hosting": "serverless",
+    "image_counts": [
+      1
+    ],
+    "count_field": null,
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "default": "5"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/turbo",
+    "public_id": "flux-2-turbo",
+    "name": "Black Forest Labs / Flux-2 Turbo",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux-2/turbo/edit",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-2/turbo/edit",
+    "public_id": "flux-2-turbo-edit",
+    "name": "Black Forest Labs / Flux-2 Turbo Edit",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux-2/turbo",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux/dev",
+    "public_id": "flux-dev",
+    "name": "Black Forest Labs / Flux Dev",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux/dev/image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux/dev/image-to-image",
+    "public_id": "flux-dev-image-to-image",
+    "name": "Black Forest Labs / Flux Dev Image-To-Image",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux/dev",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux/krea",
+    "public_id": "flux-krea",
+    "name": "Black Forest Labs / Flux Krea",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux/krea/image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux/krea/image-to-image",
+    "public_id": "flux-krea-image-to-image",
+    "name": "Black Forest Labs / Flux Krea Image-To-Image",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux/krea",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-pro/kontext",
+    "public_id": "flux-pro-kontext",
+    "name": "Black Forest Labs / Flux-Pro Kontext",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enhance_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "aspect_ratios": [
+      "21:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:21"
+    ],
+    "aspect_ratio_field": "aspect_ratio",
+    "default_aspect_ratio": "1:1",
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "generation_model": "fal-ai/flux-pro/kontext/text-to-image"
+  },
+  {
+    "id": "fal-ai/flux-pro/kontext/max",
+    "public_id": "flux-pro-kontext-max",
+    "name": "Black Forest Labs / Flux-Pro Kontext Max",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enhance_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "aspect_ratios": [
+      "21:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:21"
+    ],
+    "aspect_ratio_field": "aspect_ratio",
+    "default_aspect_ratio": "1:1",
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "generation_model": "fal-ai/flux-pro/kontext/max/text-to-image"
+  },
+  {
+    "id": "fal-ai/flux-pro/kontext/max/text-to-image",
+    "public_id": "flux-pro-kontext-max-text-to-image",
+    "name": "Black Forest Labs / Flux-Pro Kontext Max Text-To-Image",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enhance_prompt",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "aspect_ratios": [
+      "21:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:21"
+    ],
+    "aspect_ratio_field": "aspect_ratio",
+    "default_aspect_ratio": "1:1",
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "edit_model": "fal-ai/flux-pro/kontext/max"
+  },
+  {
+    "id": "fal-ai/flux-pro/kontext/text-to-image",
+    "public_id": "flux-pro-kontext-text-to-image",
+    "name": "Black Forest Labs / Flux-Pro Kontext Text-To-Image",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enhance_prompt",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "aspect_ratios": [
+      "21:9",
+      "16:9",
+      "4:3",
+      "3:2",
+      "1:1",
+      "2:3",
+      "3:4",
+      "9:16",
+      "9:21"
+    ],
+    "aspect_ratio_field": "aspect_ratio",
+    "default_aspect_ratio": "1:1",
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "edit_model": "fal-ai/flux-pro/kontext"
+  },
+  {
+    "id": "fal-ai/flux-pro/v1.1",
+    "public_id": "flux-pro-v1.1",
+    "name": "Black Forest Labs / Flux-Pro V1.1",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enhance_prompt",
+        "default": true
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux-pro/v1.1-ultra",
+    "public_id": "flux-pro-v1.1-ultra",
+    "name": "Black Forest Labs / Flux-Pro V1.1-Ultra",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enhance_prompt",
+        "default": true
+      },
+      {
+        "field": "raw",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "image_prompt_strength",
+        "source": "image_prompt_strength",
+        "min": 0,
+        "max": 1
+      }
+    ],
+    "aspect_ratios": [
+      "16:9"
+    ]
+  },
+  {
+    "id": "fal-ai/flux-pro/v1.1-ultra-finetuned",
+    "public_id": "flux-pro-v1.1-ultra-finetuned",
+    "name": "Black Forest Labs / Flux-Pro V1.1-Ultra-Finetuned",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enhance_prompt",
+        "default": true
+      },
+      {
+        "field": "raw",
+        "default": false  
+      },
+      {   
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "option_fields": [
+      {
+        "field": "safety_tolerance",
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        "default": "6"
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "finetune_strength",
+        "source": "finetune_strength",
+        "min": 0,
+        "max": 2
+      }
+    ],
+    "aspect_ratios": [
+      "16:9"
+    ],
+    "text_fields": [
+      {
+        "field": "finetune_id",
+        "source": "finetune_id"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux/schnell",
+    "public_id": "flux-schnell",
+    "name": "Black Forest Labs / Flux Schnell",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 12
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux/srpo",
+    "public_id": "flux-srpo",
+    "name": "Black Forest Labs / Flux Srpo",
+    "provider": "black-forest-labs",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/flux/srpo/image-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/flux/srpo/image-to-image",
+    "public_id": "flux-srpo-image-to-image",
+    "name": "Black Forest Labs / Flux Srpo Image-To-Image",
+    "provider": "black-forest-labs",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/flux/srpo",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ]
+  }
+]

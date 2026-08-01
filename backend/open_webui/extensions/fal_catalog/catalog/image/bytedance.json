@@ -1,0 +1,462 @@
+[
+  {
+    "id": "fal-ai/bytedance/seedream/v4/text-to-image",
+    "public_id": "bytedance-seedream-v4",
+    "name": "ByteDance / Seedream V4",
+    "provider": "bytedance",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/bytedance/seedream/v4/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "enhance_prompt_mode",
+        "options": [
+          "standard",
+          "fast"
+        ],
+        "default": "standard"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "hosting": "serverless"
+  },
+  {
+    "id": "fal-ai/bytedance/seedream/v4/edit",
+    "public_id": "bytedance-seedream-v4/edit",
+    "name": "ByteDance / Seedream V4 Edit",
+    "provider": "bytedance",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/bytedance/seedream/v4/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "enhance_prompt_mode",
+        "options": [
+          "standard",
+          "fast"
+        ],
+        "default": "standard"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 10,
+    "hosting": "serverless"
+  },
+  {
+    "id": "fal-ai/bytedance/seedream/v4.5/text-to-image",
+    "public_id": "bytedance-seedream-v4.5",
+    "name": "ByteDance / Seedream V4.5",
+    "provider": "bytedance",
+    "task": "text-to-image",
+    "edit_model": "fal-ai/bytedance/seedream/v4.5/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "hosting": "serverless"
+  },
+  {
+    "id": "fal-ai/bytedance/seedream/v4.5/edit",
+    "public_id": "bytedance-seedream-v4.5/edit",
+    "name": "ByteDance / Seedream V4.5 Edit",
+    "provider": "bytedance",
+    "task": "image-to-image",
+    "generation_model": "fal-ai/bytedance/seedream/v4.5/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 10,
+    "hosting": "serverless"
+  },
+  {
+    "id": "bytedance/seedream/v5/lite/text-to-image",
+    "public_id": "bytedance-seedream-v5-lite",
+    "name": "ByteDance / Seedream V5 Lite",
+    "provider": "bytedance",
+    "task": "text-to-image",
+    "edit_model": "bytedance/seedream/v5/lite/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "hosting": "serverless"
+  },
+  {
+    "id": "bytedance/seedream/v5/lite/edit",
+    "public_id": "bytedance-seedream-v5-lite/edit",
+    "name": "ByteDance / Seedream V5 Lite Edit",
+    "provider": "bytedance",
+    "task": "image-to-image",
+    "generation_model": "bytedance/seedream/v5/lite/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 10,
+    "hosting": "serverless"
+  },
+  {
+    "id": "bytedance/seedream/v5/pro/text-to-image",
+    "public_id": "bytedance-seedream-v5-pro",
+    "name": "ByteDance / Seedream V5 Pro",
+    "provider": "bytedance",
+    "task": "text-to-image",
+    "edit_model": "bytedance/seedream/v5/pro/edit",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "hosting": "serverless"
+  },
+  {
+    "id": "bytedance/seedream/v5/pro/edit",
+    "public_id": "bytedance-seedream-v5-pro/edit",
+    "name": "ByteDance / Seedream V5 Pro Edit",
+    "provider": "bytedance",
+    "task": "image-to-image",
+    "generation_model": "bytedance/seedream/v5/pro/text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "2048x2048",
+      "4096x4096"
+    ],
+    "default_resolution": "2048x2048",
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "2048x2048": "2048x2048",
+      "4096x4096": "4096x4096"
+    },
+    "image_input_field": "image_urls",
+    "image_input_max_count": 10,
+    "hosting": "serverless"
+  }
+]

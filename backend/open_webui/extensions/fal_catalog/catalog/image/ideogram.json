@@ -1,0 +1,748 @@
+[
+  {
+    "id": "fal-ai/ideogram/v2",
+    "public_id": "ideogram-v2",
+    "name": "Ideogram / Ideogram v2",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "count_field": null,
+    "aspect_ratios": [
+      "10:16",
+      "16:10",
+      "9:16",
+      "16:9",
+      "4:3",
+      "3:4",
+      "1:1",
+      "1:3",
+      "3:1",
+      "3:2",
+      "2:3"
+    ],
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "general",
+          "realistic",
+          "design",
+          "render_3D",
+          "anime"
+        ],
+        "default": "auto"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "edit_model": "fal-ai/ideogram/v2/edit"
+  },
+  {
+    "id": "fal-ai/ideogram/v2/edit",
+    "public_id": "ideogram-v2-edit",
+    "name": "Ideogram / V2 edit",
+    "provider": "ideogram",
+    "task": "image-to-image",
+    "count_field": null,
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "general",
+          "realistic",
+          "design",
+          "render_3D",
+          "anime"
+        ],
+        "default": "auto"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "text_fields": [
+      {
+        "field": "mask_url",
+        "source": "mask_url"
+      }
+    ],
+    "generation_model": "fal-ai/ideogram/v2"
+  },
+  {
+    "id": "fal-ai/ideogram/v2/turbo",
+    "public_id": "ideogram-v2-turbo",
+    "name": "Ideogram / V2 turbo",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "count_field": null,
+    "aspect_ratios": [
+      "10:16",
+      "16:10",
+      "9:16",
+      "16:9",
+      "4:3",
+      "3:4",
+      "1:1",
+      "1:3",
+      "3:1",
+      "3:2",
+      "2:3"
+    ],
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "general",
+          "realistic",
+          "design",
+          "render_3D",
+          "anime"
+        ],
+        "default": "auto"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "edit_model": "fal-ai/ideogram/v2/turbo/edit"
+  },
+  {
+    "id": "fal-ai/ideogram/v2/turbo/edit",
+    "public_id": "ideogram-v2-turbo-edit",
+    "name": "Ideogram / Turbo edit",
+    "provider": "ideogram",
+    "task": "image-to-image",
+    "count_field": null,
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "general",
+          "realistic",
+          "design",
+          "render_3D",
+          "anime"
+        ],
+        "default": "auto"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "text_fields": [
+      {
+        "field": "mask_url",
+        "source": "mask_url"
+      }
+    ],
+    "generation_model": "fal-ai/ideogram/v2/turbo"
+  },
+  {
+    "id": "fal-ai/ideogram/v2a",
+    "public_id": "ideogram-v2a",
+    "name": "Ideogram / Ideogram v2a",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "count_field": null,
+    "aspect_ratios": [
+      "10:16",
+      "16:10",
+      "9:16",
+      "16:9",
+      "4:3",
+      "3:4",
+      "1:1",
+      "1:3",
+      "3:1",
+      "3:2",
+      "2:3"
+    ],
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "general",
+          "realistic",
+          "design",
+          "render_3D",
+          "anime"
+        ],
+        "default": "auto"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/ideogram/v2a/turbo",
+    "public_id": "ideogram-v2a-turbo",
+    "name": "Ideogram / v2a turbo",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "count_field": null,
+    "aspect_ratios": [
+      "10:16",
+      "16:10",
+      "9:16",
+      "16:9",
+      "4:3",
+      "3:4",
+      "1:1",
+      "1:3",
+      "3:1",
+      "3:2",
+      "2:3"
+    ],
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "general",
+          "realistic",
+          "design",
+          "render_3D",
+          "anime"
+        ],
+        "default": "auto"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/ideogram/v3",
+    "public_id": "ideogram-v3",
+    "name": "Ideogram / Ideogram v3",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "rendering_speed",
+        "options": [
+          "TURBO",
+          "BALANCED",
+          "QUALITY"
+        ],
+        "default": "BALANCED"
+      },
+      {
+        "field": "style",
+        "options": [
+          "AUTO",
+          "GENERAL",
+          "REALISTIC",
+          "DESIGN"
+        ],
+        "default": "AUTO"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "edit_model": "fal-ai/ideogram/v3/edit"
+  },
+  {
+    "id": "fal-ai/ideogram/v3/edit",
+    "public_id": "ideogram-v3-edit",
+    "name": "Ideogram / V3 edit",
+    "provider": "ideogram",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "count_field": "num_images",
+    "option_fields": [
+      {
+        "field": "rendering_speed",
+        "options": [
+          "TURBO",
+          "BALANCED",
+          "QUALITY"
+        ],
+        "default": "BALANCED"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt",
+        "source": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "text_fields": [
+      {
+        "field": "mask_url",
+        "source": "mask_url"
+      }
+    ],
+    "generation_model": "fal-ai/ideogram/v3"
+  },
+  {
+    "id": "ideogram/v4",
+    "public_id": "ideogram-v4",
+    "name": "Ideogram / Ideogram v4",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "expansion_model",
+        "options": [
+          "None",
+          "Medium",
+          "Large"
+        ],
+        "default": "Medium"
+      },
+      {
+        "field": "rendering_speed",
+        "options": [
+          "TURBO",
+          "BALANCED",
+          "QUALITY"
+        ],
+        "default": "BALANCED"
+      },
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "low",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "edit_model": "ideogram/v4/image-to-image"
+  },
+  {
+    "id": "ideogram/v4/image-to-image",
+    "public_id": "ideogram-v4-image-to-image",
+    "name": "Ideogram / V4 image To Image",
+    "provider": "ideogram",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "auto"
+    ],
+    "default_resolution": "auto",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "auto": "auto"
+    },
+    "option_fields": [
+      {
+        "field": "expansion_model",
+        "options": [
+          "None",
+          "Medium",
+          "Large"
+        ],
+        "default": "Medium"
+      },
+      {
+        "field": "rendering_speed",
+        "options": [
+          "TURBO",
+          "BALANCED",
+          "QUALITY"
+        ],
+        "default": "BALANCED"
+      },
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "low",
+          "regular",
+          "high"
+        ],
+        "default": "none"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "strength",
+        "min": 0,
+        "max": 1
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "ideogram/v4"
+  },
+  {
+    "id": "ideogram/v4/fast",
+    "public_id": "ideogram-v4-fast",
+    "name": "Ideogram / V4 fast",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "expansion_model",
+        "options": [
+          "None",
+          "Medium"
+        ],
+        "default": "Medium"
+      },
+      {
+        "field": "rendering_speed",
+        "options": [
+          "TURBO",
+          "BALANCED",
+          "QUALITY"
+        ],
+        "default": "BALANCED"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg"
+  },
+  {
+    "id": "ideogram/v4/instant",
+    "public_id": "ideogram-v4-instant",
+    "name": "Ideogram / V4 instant",
+    "provider": "ideogram",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "expansion_model",
+        "options": [
+          "None",
+          "Medium"
+        ],
+        "default": "Medium"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg"
+  }
+]

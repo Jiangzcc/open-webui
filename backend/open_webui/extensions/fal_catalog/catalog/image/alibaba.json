@@ -23,7 +23,7 @@
       },
       {
         "field": "enable_prompt_expansion",
-        "default": false
+        "default": true
       }
     ],
     "resolutions": [
@@ -94,7 +94,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -157,6 +157,11 @@
     "name": "Alibaba / Z Image Base",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "image_counts": [
       1,
       2,
@@ -170,10 +175,6 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
         "default": false
       }
     ],
@@ -231,6 +232,11 @@
     "name": "Alibaba / Qwen Image Max",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "fal-ai/qwen-image-max/edit",
     "image_counts": [
       1,
@@ -245,7 +251,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -289,12 +295,19 @@
     "name": "Alibaba / Qwen Image Max Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/qwen-image-max/text-to-image",
     "image_counts": [
       1,
       2,
       3,
-      4
+      4,
+      5,
+      6
     ],
     "count_field": "num_images",
     "boolean_fields": [
@@ -303,7 +316,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -348,6 +361,11 @@
     "name": "Alibaba / Qwen Image 2 Pro",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "fal-ai/qwen-image-2/pro/edit",
     "image_counts": [
       1,
@@ -362,7 +380,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -406,12 +424,19 @@
     "name": "Alibaba / Qwen Image 2 Pro Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/qwen-image-2/pro/text-to-image",
     "image_counts": [
       1,
       2,
       3,
-      4
+      4,
+      5,
+      6
     ],
     "count_field": "num_images",
     "boolean_fields": [
@@ -420,7 +445,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -465,6 +490,11 @@
     "name": "Alibaba / Qwen Image 2",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "fal-ai/qwen-image-2/edit",
     "image_counts": [
       1,
@@ -479,7 +509,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -523,12 +553,19 @@
     "name": "Alibaba / Qwen Image 2 Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/qwen-image-2/text-to-image",
     "image_counts": [
       1,
       2,
       3,
-      4
+      4,
+      5,
+      6
     ],
     "count_field": "num_images",
     "boolean_fields": [
@@ -537,7 +574,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -582,6 +619,11 @@
     "name": "Alibaba / Qwen Image 2512",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "image_counts": [
       1,
       2,
@@ -595,10 +637,6 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
         "default": false
       }
     ],
@@ -656,6 +694,11 @@
     "name": "Alibaba / Qwen Image",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "fal-ai/qwen-image/image-to-image",
     "image_counts": [
       1,
@@ -670,10 +713,6 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
         "default": false
       }
     ],
@@ -731,6 +770,11 @@
     "name": "Alibaba / Qwen Image Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/qwen-image",
     "image_counts": [
       1,
@@ -745,10 +789,6 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
         "default": false
       }
     ],
@@ -808,6 +848,11 @@
     "name": "Alibaba / Wan 2.7 Pro",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "fal-ai/wan/v2.7/pro/edit",
     "image_counts": [
       1,
@@ -823,11 +868,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
-        "default": true
+        "default": false
       }
     ],
     "resolutions": [
@@ -867,13 +908,17 @@
     "name": "Alibaba / Wan 2.7 Pro Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/wan/v2.7/pro/text-to-image",
     "image_counts": [
       1,
       2,
       3,
-      4,
-      5
+      4
     ],
     "count_field": "num_images",
     "boolean_fields": [
@@ -882,11 +927,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
-        "default": true
+        "default": false
       }
     ],
     "resolutions": [
@@ -927,6 +968,11 @@
     "name": "Alibaba / Wan 2.7",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "fal-ai/wan/v2.7/edit",
     "image_counts": [
       1,
@@ -942,11 +988,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
-        "default": true
+        "default": false
       }
     ],
     "resolutions": [
@@ -986,13 +1028,17 @@
     "name": "Alibaba / Wan 2.7 Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/wan/v2.7/text-to-image",
     "image_counts": [
       1,
       2,
       3,
-      4,
-      5
+      4
     ],
     "count_field": "num_images",
     "boolean_fields": [
@@ -1001,11 +1047,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
-      },
-      {
-        "field": "enable_prompt_expansion",
-        "default": true
+        "default": false
       }
     ],
     "resolutions": [
@@ -1046,6 +1088,11 @@
     "name": "Alibaba / Wan 2.6",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "wan/v2.6/image-to-image",
     "image_counts": [
       1,
@@ -1061,7 +1108,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -1101,13 +1148,17 @@
     "name": "Alibaba / Wan 2.6 Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "wan/v2.6/text-to-image",
     "image_counts": [
       1,
       2,
       3,
-      4,
-      5
+      4
     ],
     "count_field": "max_images",
     "boolean_fields": [
@@ -1116,7 +1167,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -1171,7 +1222,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -1211,6 +1262,11 @@
     "name": "Alibaba / Wan 2.5 Preview Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/wan-v2.5/text-to-image",
     "image_counts": [
       1,
@@ -1225,7 +1281,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
@@ -1266,6 +1322,11 @@
     "name": "Alibaba / Wan 2.2 (A14B)",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "edit_model": "fal-ai/wan/v2.2-a14b/image-to-image",
     "image_counts": [
       1
@@ -1277,11 +1338,15 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
+      },
+      {
+        "field": "enable_output_safety_checker",
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
-        "default": false
+        "default": true
       }
     ],
     "resolutions": [
@@ -1320,6 +1385,11 @@
     "name": "Alibaba / Wan 2.2 (A14B) Edit",
     "provider": "alibaba",
     "task": "image-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "generation_model": "fal-ai/wan/v2.2-a14b/text-to-image",
     "image_counts": [
       1
@@ -1331,11 +1401,15 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
+      },
+      {
+        "field": "enable_output_safety_checker",
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
-        "default": false
+        "default": true
       }
     ],
     "resolutions": [
@@ -1376,6 +1450,11 @@
     "name": "Alibaba / Wan 2.2 (5B)",
     "provider": "alibaba",
     "task": "text-to-image",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
     "image_counts": [
       1
     ],
@@ -1386,11 +1465,15 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
+      },
+      {
+        "field": "enable_output_safety_checker",
+        "default": false
       },
       {
         "field": "enable_prompt_expansion",
-        "default": false
+        "default": true
       }
     ],
     "resolutions": [

@@ -78,6 +78,17 @@ class IntegerField(_InputField):
         return self
 
 
+class NumberField(_InputField):
+    min: float | None = None
+    max: float | None = None
+
+    @model_validator(mode='after')
+    def validate_range(self) -> NumberField:
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError('number field min must not exceed max')
+        return self
+
+
 class TextField(_InputField):
     pass
 
@@ -108,8 +119,10 @@ class FalImageModelDefinition(_StrictModel):
     option_fields: list[OptionField] | None = None
     boolean_fields: list[BooleanField] | None = None
     integer_fields: list[IntegerField] | None = None
+    number_fields: list[NumberField] | None = None
     text_fields: list[TextField] | None = None
     supports_system_prompt: bool | None = None
+    supports_prompt: bool | None = None
     hosting: Literal['serverless', 'proxy'] | None = None
 
     @field_validator('id', 'public_id', 'generation_model', 'edit_model')
@@ -147,7 +160,13 @@ class FalImageModelDefinition(_StrictModel):
     def validate_capabilities(self) -> FalImageModelDefinition:
         fields = [
             field.field
-            for group in (self.option_fields, self.boolean_fields, self.integer_fields, self.text_fields)
+            for group in (
+                self.option_fields,
+                self.boolean_fields,
+                self.integer_fields,
+                self.number_fields,
+                self.text_fields,
+            )
             if group is not None
             for field in group
         ]

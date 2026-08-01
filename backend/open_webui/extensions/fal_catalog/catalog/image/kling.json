@@ -1,0 +1,244 @@
+[
+  {
+    "id": "fal-ai/kling-image/o3/text-to-image",
+    "public_id": "kling-image-o3-text-to-image",
+    "name": "Kling / O3",
+    "provider": "kling",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9"
+    ],
+    "default_aspect_ratio": "16:9",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+    ],
+    "default_resolution": "1K",
+    "resolution_field": "resolution",
+    "option_fields": [
+      {
+        "field": "result_type",
+        "options": [
+          "single",
+          "series"
+        ],
+        "default": "single"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "series_amount",
+        "min": 2,
+        "max": 9
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "edit_model": "fal-ai/kling-image/o3/image-to-image"
+  },
+  {
+    "id": "fal-ai/kling-image/o3/image-to-image",
+    "public_id": "kling-image-o3-image-to-image",
+    "name": "Kling / O3 Edit",
+    "provider": "kling",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9",
+      "auto"
+    ],
+    "default_aspect_ratio": "auto",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolutions": [
+      "1K",
+      "2K",
+      "4K"
+    ],
+    "default_resolution": "1K",
+    "resolution_field": "resolution",
+    "option_fields": [
+      {
+        "field": "result_type",
+        "options": [
+          "single",
+          "series"
+        ],
+        "default": "single"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "series_amount",
+        "min": 2,
+        "max": 9
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "image_input_field": "image_urls",
+    "image_input_max_count": 10,
+    "generation_model": "fal-ai/kling-image/o3/text-to-image"
+  },
+  {
+    "id": "fal-ai/kling-image/v3/text-to-image",
+    "public_id": "kling-image-v3-text-to-image",
+    "name": "Kling / V3",
+    "provider": "kling",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9"
+    ],
+    "default_aspect_ratio": "16:9",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolutions": [
+      "1K",
+      "2K"
+    ],
+    "default_resolution": "1K",
+    "resolution_field": "resolution",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "edit_model": "fal-ai/kling-image/v3/image-to-image"
+  },
+  {
+    "id": "fal-ai/kling-image/v3/image-to-image",
+    "public_id": "kling-image-v3-image-to-image",
+    "name": "Kling / V3 Edit",
+    "provider": "kling",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3",
+      "21:9"
+    ],
+    "default_aspect_ratio": "16:9",
+    "aspect_ratio_field": "aspect_ratio",
+    "resolutions": [
+      "1K",
+      "2K"
+    ],
+    "default_resolution": "1K",
+    "resolution_field": "resolution",
+    "boolean_fields": [
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "fal-ai/kling-image/v3/text-to-image"
+  }
+]

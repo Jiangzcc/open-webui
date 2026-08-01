@@ -505,6 +505,9 @@ class CreateImageForm(BaseModel):
     output_format: str | None = None
     system_prompt: str | None = None
     seed: int | None = None
+    guidance_scale: float | None = None
+    medium: str | None = None
+    strength: float | None = None
     sync_mode: bool | None = None
     safety_tolerance: str | None = None
     limit_generations: bool | None = None
@@ -1046,6 +1049,9 @@ class EditImageForm(BaseModel):
     output_format: str | None = None
     system_prompt: str | None = None
     seed: int | None = None
+    guidance_scale: float | None = None
+    medium: str | None = None
+    strength: float | None = None
     sync_mode: bool | None = None
     safety_tolerance: str | None = None
     limit_generations: bool | None = None

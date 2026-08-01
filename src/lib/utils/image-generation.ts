@@ -9,6 +9,7 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = [
 	'4:3',
 	'3:2',
 	'2:3',
+	'2.35:1',
 	'21:9',
 	'2:1',
 	'1:2',
