@@ -1,0 +1,36 @@
+# AGENTS.md
+
+- 使用中文沟通。
+- 我是这个项目的新手；请多解释背景、相关路径和关键取舍，不要只给结论。
+
+## 二次开发与协作约束
+
+- 本项目基于 Open WebUI 进行二次开发：`main` 分支用于保留和跟踪原始上游代码，`test` 分支承载本项目的二次开发改动。分析差异、设计功能和修改代码时，应明确区分上游实现与二开实现。
+- 为降低后续同步和升级 Open WebUI 的成本，优先采用独立模块、扩展目录、薄桥接层和现有公开接口；尽量避免修改上游核心流程、改变既有数据结构或进行与当前需求无关的大范围重构。确需侵入式修改时，应将改动限制在最小范围，并说明原因、影响和升级时需要关注的冲突点。
+- 所有新增或修改的用户界面都必须采用响应式布局，同时支持桌面端和移动端。不得只针对单一固定宽度设计；需要检查窄屏下的内容排列、触控区域、弹窗和浮层边界、滚动行为、文本换行以及是否出现横向溢出。
+- 禁止使用 Git worktree，包括主代理和任何辅助流程。
+
+## 二开变更与验证原则
+
+- 不得直接在 `main` 分支开发或提交二开功能；`main` 仅用于保留和跟踪 Open WebUI 上游代码，二开改动通常在 `test` 分支完成。
+- 新功能优先复用现有公开接口和组件，其次使用独立扩展模块，再通过最小薄桥接点接入上游调用链；不得为局部需求复制、替换或大规模重写上游核心模块。
+- 二开后端能力优先放入 `backend/open_webui/extensions/`。新增表、索引和迁移对象使用明确的 `ext_` 命名空间和独立迁移链；除非经过明确确认，不得修改上游已有表结构或迁移历史。
+- UI 响应式要求适用于所有新增区域和本次修改直接影响的既有布局。完成前至少检查一个移动端窄屏和一个桌面端视口；不得仅凭存在响应式 CSS class 就声称移动端可用。
+- 关键操作不得仅依赖 hover，必须支持触屏，并提供合理的键盘操作、语义化标签、焦点状态和必要的 ARIA 关系。还应检查深浅色主题、国际化文案长度和横向溢出。
+- 用户可见文案使用现有 i18n 机制，并补齐简体中文翻译。
+- 未经用户明确要求，不得 commit、push、创建 PR、合并或变基；不得覆盖、还原或删除无法确认归属的工作区改动。
+- 只修改当前需求所必需的文件和行为，不顺便格式化、重命名或重构无关代码。新增或升级依赖前必须说明必要性和影响。
+- 不得在没有新鲜验证证据时声称任务完成。代码修改后应运行与改动直接相关的测试、格式检查及类型或编译检查，并如实报告命令和结果；全量检查受既有错误阻塞时，应补充目标范围的定向验证。
+- 不得把真实密码、API key、Authorization token、Cookie 或其他秘密写入代码、测试、日志或文档。
+- 不得擅自删除或覆盖无法确认归属的本地 mock、调试开关和开发环境配置；开发 mock 必须与默认生产路径明确隔离。
+
+## 开发环境信息
+
+- 管理员账号：292591116@qq.com 密码：jiangzhichao
+- 普通用户账号：292591117@qq.com 密码：jiangzhichao
+
+## Project shape
+
+- This is a SvelteKit 2 / Svelte 5 / Vite / TypeScript frontend with a FastAPI / SQLAlchemy / Alembic backend.
+- Use npm for the frontend; the repo has `package-lock.json` and `.npmrc` sets `engine-strict=true`.
+- The preferred local development flow is frontend `npm run dev` plus a separately run backend. Do not invent a backend start command; confirm it or read the current docs/scripts first.
