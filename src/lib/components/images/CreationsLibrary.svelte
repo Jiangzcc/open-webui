@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import JSZip from 'jszip';
 	import { toast } from 'svelte-sonner';
 
 	import { deleteCreations, listAdminCreations, listCreations } from '$lib/apis/creations';
@@ -17,6 +16,7 @@
 		type CreationScope,
 		type CreationSummary
 	} from '$lib/utils/creations-library';
+	import { blobExtension, zipAndDownload } from '$lib/utils/download';
 	import type { ImageCreationDraft } from '$lib/utils/image-generation-batches';
 
 	import { onDestroy, onMount } from 'svelte';
@@ -215,24 +215,15 @@
 		if (selectedIds.size === 0 || bulkBusy) return;
 		bulkBusy = true;
 		try {
-			const zip = new JSZip();
 			const selected = state.items.filter((item) => selectedIds.has(item.id) && item.content_url);
-			await Promise.all(
-				selected.map(async (item, index) => {
-					const response = await fetch(item.content_url as string);
-					if (!response.ok) throw new Error('download failed');
-					const blob = await response.blob();
-					const extension = blob.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
-					zip.file(`${String(index + 1).padStart(2, '0')}-${item.id}.${extension}`, blob);
-				})
+			await zipAndDownload(
+				selected.map((item) => ({
+					url: item.content_url as string,
+					filename: (index: number, blob: Blob) =>
+						`${String(index + 1).padStart(2, '0')}-${item.id}.${blobExtension(blob)}`
+				})),
+				`creations-${Date.now()}.zip`
 			);
-			const archive = await zip.generateAsync({ type: 'blob' });
-			const url = URL.createObjectURL(archive);
-			const anchor = document.createElement('a');
-			anchor.href = url;
-			anchor.download = `creations-${Date.now()}.zip`;
-			anchor.click();
-			URL.revokeObjectURL(url);
 		} catch {
 			toast.error($i18n.t('Failed to download selected creations'));
 		} finally {

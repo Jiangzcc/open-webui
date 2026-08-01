@@ -14,8 +14,8 @@ from open_webui.extensions.creations.schemas import (
     CreationListResponse,
     CreationReference,
     CreationSummary,
-    decode_creation_cursor,
-    encode_creation_cursor,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
 )
 from sqlalchemy import and_, asc, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -207,7 +207,7 @@ async def _owners_for_items(items: list[CreationMediaItem]) -> dict[str, AdminOw
 def _apply_cursor(stmt, cursor: str | None, sort: str = 'newest'):
     if not cursor:
         return stmt
-    cursor_created_at, cursor_id = decode_creation_cursor(cursor)
+    cursor_created_at, cursor_id = decode_keyset_cursor(cursor)
     comparator = (
         or_(
             CreationMediaItem.created_at > cursor_created_at,
@@ -271,7 +271,7 @@ async def list_personal_creations(
     if len(items) > limit:
         page = items[:limit]
         boundary = page[-1][0]
-        next_cursor = encode_creation_cursor(boundary.created_at, boundary.id)
+        next_cursor = encode_keyset_cursor(boundary.created_at, boundary.id)
     else:
         page = items
     media_items = [item for item, _status in page]
@@ -302,7 +302,7 @@ async def list_admin_creations(
     if len(items) > limit:
         page = items[:limit]
         boundary = page[-1][0]
-        next_cursor = encode_creation_cursor(boundary.created_at, boundary.id)
+        next_cursor = encode_keyset_cursor(boundary.created_at, boundary.id)
     else:
         page = items
     media_items = [item for item, _status in page]

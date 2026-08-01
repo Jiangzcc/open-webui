@@ -12,8 +12,10 @@ from open_webui.extensions.creations.models import ImageGenerationTask
 from open_webui.extensions.creations.schemas import (
     ImageGenerationTaskListResponse,
     ImageGenerationTaskResponse,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
 )
-from sqlalchemy import desc, select, update
+from sqlalchemy import and_, desc, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -124,17 +126,36 @@ async def get_generation_task(
 
 
 async def list_generation_tasks(
-    session: AsyncSession, user_id: str, limit: int
+    session: AsyncSession, user_id: str, limit: int, cursor: str | None = None
 ) -> ImageGenerationTaskListResponse:
-    tasks = (
-        await session.execute(
-            select(ImageGenerationTask)
-            .where(ImageGenerationTask.user_id == user_id)
-            .order_by(desc(ImageGenerationTask.created_at), desc(ImageGenerationTask.id))
-            .limit(limit)
+    # keyset 分页：cursor 锁定上一页末条 (created_at, id)，取更旧的记录。
+    # 多查 1 条用 hasNext 判断，避免总条数恰为页大小整数倍时多返回一个空页游标
+    # （与 service.list_personal_creations 的 limit+1 模式一致）。
+    stmt = select(ImageGenerationTask).where(ImageGenerationTask.user_id == user_id)
+    if cursor:
+        cursor_created_at, cursor_id = decode_keyset_cursor(cursor)
+        stmt = stmt.where(
+            or_(
+                ImageGenerationTask.created_at < cursor_created_at,
+                and_(
+                    ImageGenerationTask.created_at == cursor_created_at,
+                    ImageGenerationTask.id < cursor_id,
+                ),
+            )
         )
-    ).scalars()
-    return ImageGenerationTaskListResponse(items=tuple(_response(task) for task in tasks))
+    rows = (
+        await session.execute(
+            stmt.order_by(desc(ImageGenerationTask.created_at), desc(ImageGenerationTask.id)).limit(limit + 1)
+        )
+    ).scalars().all()
+
+    page = rows[:limit]
+    next_cursor = (
+        encode_keyset_cursor(page[-1].created_at, page[-1].id) if len(rows) > limit and page else None
+    )
+    return ImageGenerationTaskListResponse(
+        items=tuple(_response(task) for task in page), next_cursor=next_cursor
+    )
 
 
 async def _set_task_state(

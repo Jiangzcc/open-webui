@@ -68,7 +68,7 @@ PersonalScope = Annotated[Literal['mine'], Query(description='Personal creations
 
 
 def _invalid_cursor_response() -> JSONResponse:
-    return JSONResponse(status_code=422, content={'detail': 'invalid creation cursor'})
+    return JSONResponse(status_code=422, content={'detail': 'invalid cursor'})
 
 
 @router.post(
@@ -117,11 +117,15 @@ async def create_image_generation_task(
 
 @router.get('/generation-tasks', response_model=ImageGenerationTaskListResponse)
 async def list_image_generation_tasks(
-    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    cursor: str | None = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
-    return await list_generation_tasks(session, user.id, limit)
+    try:
+        return await list_generation_tasks(session, user.id, limit, cursor)
+    except ValueError:
+        return _invalid_cursor_response()
 
 
 @router.get('/generation-tasks/{task_id}', response_model=ImageGenerationTaskResponse)

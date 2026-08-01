@@ -170,6 +170,7 @@ class ImageGenerationTaskResponse(_StrictModel):
 
 class ImageGenerationTaskListResponse(_StrictModel):
     items: tuple[ImageGenerationTaskResponse, ...]
+    next_cursor: str | None = None
 
 
 class CreationPublication(_StrictModel):
@@ -325,16 +326,16 @@ class AdminCreationListResponse(_StrictModel):
     next_cursor: str | None
 
 
-def encode_creation_cursor(created_at: int, creation_id: str) -> str:
+def encode_keyset_cursor(created_at: int, row_id: str) -> str:
     if not isinstance(created_at, int) or isinstance(created_at, bool):
         raise ValueError('created_at must be an integer')
     if not (_MIN_CREATED_AT <= created_at <= _MAX_CREATED_AT):
         raise ValueError('created_at out of signed 64-bit range')
-    if not isinstance(creation_id, str) or not (_MIN_CREATION_ID_LENGTH <= len(creation_id) <= _MAX_CREATION_ID_LENGTH):
-        raise ValueError('creation id length must be between 1 and 128')
+    if not isinstance(row_id, str) or not (_MIN_CREATION_ID_LENGTH <= len(row_id) <= _MAX_CREATION_ID_LENGTH):
+        raise ValueError('row id length must be between 1 and 128')
 
     payload = json.dumps(
-        {'v': _CURSOR_VERSION, 'created_at': created_at, 'id': creation_id},
+        {'v': _CURSOR_VERSION, 'created_at': created_at, 'id': row_id},
         separators=(',', ':'),
         sort_keys=True,
     )
@@ -344,11 +345,11 @@ def encode_creation_cursor(created_at: int, creation_id: str) -> str:
     return encoded
 
 
-def decode_creation_cursor(cursor: str) -> tuple[int, str]:
+def decode_keyset_cursor(cursor: str) -> tuple[int, str]:
     if not isinstance(cursor, str) or not cursor:
-        raise ValueError('invalid creation cursor')
+        raise ValueError('invalid cursor')
     if len(cursor) > _MAX_ENCODED_CURSOR_LENGTH or re.fullmatch(r'[A-Za-z0-9_-]+', cursor) is None:
-        raise ValueError('invalid creation cursor')
+        raise ValueError('invalid cursor')
 
     padding = '=' * (-len(cursor) % 4)
     try:
@@ -358,21 +359,21 @@ def decode_creation_cursor(cursor: str) -> tuple[int, str]:
             raise ValueError('non-canonical cursor')
         payload = json.loads(decoded.decode('utf-8'))
     except (binascii.Error, ValueError, UnicodeDecodeError):
-        raise ValueError('invalid creation cursor') from None
+        raise ValueError('invalid cursor') from None
 
     if not isinstance(payload, dict):
-        raise ValueError('invalid creation cursor')
+        raise ValueError('invalid cursor')
     if payload.get('v') != _CURSOR_VERSION:
-        raise ValueError('invalid creation cursor')
+        raise ValueError('invalid cursor')
     created_at = payload.get('created_at')
-    creation_id = payload.get('id')
+    row_id = payload.get('id')
     if not isinstance(created_at, int) or isinstance(created_at, bool):
-        raise ValueError('invalid creation cursor')
+        raise ValueError('invalid cursor')
     if not (_MIN_CREATED_AT <= created_at <= _MAX_CREATED_AT):
-        raise ValueError('invalid creation cursor')
-    if not isinstance(creation_id, str) or not (_MIN_CREATION_ID_LENGTH <= len(creation_id) <= _MAX_CREATION_ID_LENGTH):
-        raise ValueError('invalid creation cursor')
-    return created_at, creation_id
+        raise ValueError('invalid cursor')
+    if not isinstance(row_id, str) or not (_MIN_CREATION_ID_LENGTH <= len(row_id) <= _MAX_CREATION_ID_LENGTH):
+        raise ValueError('invalid cursor')
+    return created_at, row_id
 
 
 __all__ = [
@@ -413,6 +414,6 @@ __all__ = [
     'ReactionKind',
     'ReactionState',
     'ReusedImageResult',
-    'decode_creation_cursor',
-    'encode_creation_cursor',
+    'decode_keyset_cursor',
+    'encode_keyset_cursor',
 ]

@@ -3071,5 +3071,11 @@
 	"Published in Discover": "",
 	"Everyone can now see this creation.": "",
 	"This publication was hidden by an administrator.": "",
-	"Publish to Discover": ""
+	"Publish to Discover": "",
+	"Load earlier": "",
+	"Download all ({{count}})": "",
+	"Failed to download images": "",
+	"Failed to load more generations": "",
+	"Remix": "",
+	"Generate from this prompt": ""
 }

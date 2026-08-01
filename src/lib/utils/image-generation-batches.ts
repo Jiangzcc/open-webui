@@ -127,7 +127,19 @@ export const mergeGenerationTask = (
 	const next = taskToGenerationBatch(task);
 	const existingIndex = batches.findIndex((batch) => batch.id === task.id);
 	if (existingIndex === -1) {
-		return [next, ...batches].sort((a, b) => b.createdAt - a.createdAt);
+		// batches 已按 createdAt 降序；新任务按 createdAt 定位一次插入位置即可，
+		// 避免逐条 [next, ...batches].sort() 的 O(N log N) 全数组重排。
+		const createdAt = next.createdAt;
+		let insertAt = batches.length;
+		for (let i = 0; i < batches.length; i += 1) {
+			if (batches[i].createdAt <= createdAt) {
+				insertAt = i;
+				break;
+			}
+		}
+		const result = batches.slice();
+		result.splice(insertAt, 0, next);
+		return result;
 	}
 	return batches.map((batch, index) => (index === existingIndex ? next : batch));
 };

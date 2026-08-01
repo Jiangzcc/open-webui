@@ -11,30 +11,30 @@ from open_webui.extensions.creations.schemas import (
     CreationReference,
     CreationSummary,
     ReusedImageResult,
-    decode_creation_cursor,
-    encode_creation_cursor,
+    decode_keyset_cursor,
+    encode_keyset_cursor,
 )
 
 
 def test_cursor_round_trip_is_versioned_and_opaque() -> None:
-    encoded = encode_creation_cursor(1_784_680_000, 'creation-9')
+    encoded = encode_keyset_cursor(1_784_680_000, 'creation-9')
     assert '=' not in encoded
-    assert decode_creation_cursor(encoded) == (1_784_680_000, 'creation-9')
+    assert decode_keyset_cursor(encoded) == (1_784_680_000, 'creation-9')
 
 
 def test_cursor_rejects_negative_timestamp_and_non_alphabet_characters() -> None:
     with pytest.raises(ValueError):
-        encode_creation_cursor(-1, 'creation-1')
+        encode_keyset_cursor(-1, 'creation-1')
 
-    encoded = encode_creation_cursor(1, 'creation-1')
-    with pytest.raises(ValueError, match='invalid creation cursor'):
-        decode_creation_cursor(f'{encoded}!')
+    encoded = encode_keyset_cursor(1, 'creation-1')
+    with pytest.raises(ValueError, match='invalid cursor'):
+        decode_keyset_cursor(f'{encoded}!')
 
 
 @pytest.mark.parametrize('cursor', ['', 'not-base64', 'e30', 'eyJ2IjoyfQ'])
 def test_invalid_cursor_is_rejected(cursor: str) -> None:
-    with pytest.raises(ValueError, match='invalid creation cursor'):
-        decode_creation_cursor(cursor)
+    with pytest.raises(ValueError, match='invalid cursor'):
+        decode_keyset_cursor(cursor)
 
 
 def test_caption_trims_blank_and_limits_unicode_code_points() -> None:

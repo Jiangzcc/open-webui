@@ -35,12 +35,18 @@ export const createImageGenerationTask = (
 		body: JSON.stringify({ kind, payload })
 	});
 
-export const listImageGenerationTasks = async (token: string, limit = 20) => {
-	const response = await requestJson<{ items: ImageGenerationTask[] }>(
-		`/creations/generation-tasks?limit=${limit}`,
+export const listImageGenerationTasks = async (
+	token: string,
+	limit = 10,
+	cursor?: string
+) => {
+	const params = new URLSearchParams({ limit: String(limit) });
+	if (cursor) params.set('cursor', cursor);
+	const response = await requestJson<{ items: ImageGenerationTask[]; next_cursor: string | null }>(
+		`/creations/generation-tasks?${params.toString()}`,
 		token
 	);
-	return response.items;
+	return response;
 };
 
 export const getImageGenerationTask = (token: string, taskId: string) =>

@@ -51,9 +51,11 @@
 		isProxyModel,
 		stripVendorFromName
 	} from '$lib/utils/images-dropdown';
+	import { blobExtension, downloadBlob, zipAndDownload } from '$lib/utils/download';
 
 	import Image from '$lib/components/common/Image.svelte';
 	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
+	import Loader from '$lib/components/common/Loader.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
@@ -105,6 +107,13 @@
 	let models: ImageGenerationModel[] = [];
 	let referenceImages: ReferenceImage[] = [];
 	let generationBatches: ImageGenerationBatch[] = [];
+	// 最近生成流的 keyset 分页游标。null 表示没有更早的批次可加载。
+	let recentTasksCursor: string | null = null;
+	let loadingMoreTasks = false;
+	// 是否为可悬停指针（鼠标）。触屏设备为 false，浮层按钮需常驻可见，不得仅依赖 hover。
+	let canHover = true;
+	// 批量下载中各 batch 的 id 集合，用 Set 支持多批并发，各批独立显示 loading 态。
+	let batchDownloadingIds: Set<string> = new Set();
 	let elapsedNow = Date.now();
 	let taskPollTimer: ReturnType<typeof setInterval> | null = null;
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
@@ -438,6 +447,30 @@
 			})
 		);
 
+	// 用单张生成的图作为图生图参考：带入原批次的模型与参数，仅把参考图
+	// 从"首图"换成用户指定的这一张，与 reuseBatchEdit 行为对齐。
+	const reuseImageAsReference = (batch: ImageGenerationBatch, image: GeneratedImage) =>
+		applyCreationDraft(
+			buildCreationDraft({
+				prompt: batch.prompt,
+				model_id: batch.modelId,
+				params: batch.params,
+				content_url: image.url,
+				useAsReference: true
+			})
+		);
+
+	// 基于单张图的 prompt 重新生成（text-to-image）：保留原批模型与参数，
+	// 仅用这张图自身的 prompt（缺省回退批次 prompt）。
+	const reuseImageGenerate = (batch: ImageGenerationBatch, image: GeneratedImage) =>
+		applyCreationDraft(
+			buildCreationDraft({
+				prompt: image.prompt?.trim() || batch.prompt,
+				model_id: batch.modelId,
+				params: batch.params
+			})
+		);
+
 	// 重新编辑(i2i)：同样参数，但带入本批首图作为参考图（若有）。
 	const reuseBatchEdit = (batch: ImageGenerationBatch) => {
 		const firstImage = batch.images[0]?.url ?? null;
@@ -645,15 +678,33 @@
 	const downloadImage = async (image: GeneratedImage, index: number) => {
 		try {
 			const response = await fetch(image.url);
+			if (!response.ok) throw new Error('download failed');
 			const blob = await response.blob();
-			const blobUrl = URL.createObjectURL(blob);
-			const anchor = document.createElement('a');
-			anchor.href = blobUrl;
-			anchor.download = `generated-image-${image.createdAt ?? Date.now()}-${index + 1}.png`;
-			anchor.click();
-			URL.revokeObjectURL(blobUrl);
+			downloadBlob(blob, `generated-image-${image.createdAt ?? Date.now()}-${index + 1}.${blobExtension(blob)}`);
 		} catch {
 			toast.error($i18n.t('Failed to download image'));
+		}
+	};
+
+	// 本批批量下载：打包成 ZIP，复用 $lib/utils/download 的共享方案。
+	const downloadBatchImages = async (batch: ImageGenerationBatch) => {
+		if (batch.images.length === 0 || batchDownloadingIds.has(batch.id)) return;
+		batchDownloadingIds = new Set(batchDownloadingIds).add(batch.id);
+		try {
+			await zipAndDownload(
+				batch.images.map((image, index) => ({
+					url: image.url,
+					filename: (i: number, blob: Blob) =>
+						`${String(i + 1).padStart(2, '0')}.${blobExtension(blob)}`
+				})),
+				`generation-${batch.createdAt ?? Date.now()}.zip`
+			);
+		} catch {
+			toast.error($i18n.t('Failed to download images'));
+		} finally {
+			const next = new Set(batchDownloadingIds);
+			next.delete(batch.id);
+			batchDownloadingIds = next;
 		}
 	};
 
@@ -736,12 +787,36 @@
 		toast.success($i18n.t('Creation settings loaded'));
 	};
 
+	const RECENT_TASKS_PAGE_SIZE = 10;
+
 	const loadRecentGenerationTasks = async () => {
 		try {
-			const tasks = await listImageGenerationTasks(localStorage.token, 20);
-			for (const task of tasks) generationBatches = mergeGenerationTask(generationBatches, task);
+			const { items, next_cursor } = await listImageGenerationTasks(
+				localStorage.token,
+				RECENT_TASKS_PAGE_SIZE
+			);
+			for (const task of items) generationBatches = mergeGenerationTask(generationBatches, task);
+			recentTasksCursor = next_cursor ?? null;
 		} catch {
 			toast.error($i18n.t('Failed to restore generation tasks'));
+		}
+	};
+
+	const loadMoreRecentTasks = async () => {
+		if (loadingMoreTasks || !recentTasksCursor) return;
+		loadingMoreTasks = true;
+		try {
+			const { items, next_cursor } = await listImageGenerationTasks(
+				localStorage.token,
+				RECENT_TASKS_PAGE_SIZE,
+				recentTasksCursor
+			);
+			for (const task of items) generationBatches = mergeGenerationTask(generationBatches, task);
+			recentTasksCursor = next_cursor ?? null;
+		} catch {
+			toast.error($i18n.t('Failed to load more generations'));
+		} finally {
+			loadingMoreTasks = false;
 		}
 	};
 
@@ -827,6 +902,8 @@
 	onMount(async () => {
 		pendingCreationDraft = consumePendingCreationDraft(sessionStorage);
 		loaded = true;
+		// 触屏设备无 hover 能力：浮层按钮需常驻可见。桌面端保持 hover 显现。
+		canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 		await loadRecentGenerationTasks();
 		taskPollTimer = setInterval(() => void pollGenerationTasks(), 2_000);
 		elapsedTimer = setInterval(() => (elapsedNow = Date.now()), 1_000);
@@ -1042,13 +1119,16 @@
 																decoding="async"
 															/>
 														</button>
-														<!-- 下载：移动端常驻，桌面 hover 浮层 -->
+														<!-- 单张快捷操作浮层：触屏常驻可见，桌面端 hover 显现 -->
+														<!-- 下载 + 用作参考图；基于此图 prompt 重新生成按钮见下方 -->
 														<div
-															class="pointer-events-none absolute right-1.5 top-1.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
+															class="pointer-events-none absolute right-1.5 top-1.5 flex gap-1 transition {canHover
+																? 'opacity-0 group-hover:opacity-100'
+																: 'opacity-100'}"
 														>
 															<button
 																type="button"
-																class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
+																class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
 																on:click|stopPropagation={() => downloadImage(image, index)}
 																aria-label={$i18n.t('Download')}
 															>
@@ -1064,7 +1144,51 @@
 																	><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
 																>
 															</button>
+															{#if selectedModelSupportsEditing}
+																<button
+																	type="button"
+																	class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
+																	on:click|stopPropagation={() => reuseImageAsReference(batch, image)}
+																	aria-label={$i18n.t('Use as reference')}
+																>
+																	<svg
+																		class="size-3.5"
+																		viewBox="0 0 24 24"
+																		fill="none"
+																		stroke="currentColor"
+																		stroke-width="2"
+																		stroke-linecap="round"
+																		stroke-linejoin="round"
+																		aria-hidden="true"
+																		><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg
+																	>
+																</button>
+															{/if}
 														</div>
+														<!-- 基于此图 prompt 重新生成：触屏常驻可见，桌面端 hover 显现 -->
+														{#if image.prompt}
+															<button
+																type="button"
+																class="pointer-events-auto absolute bottom-1.5 left-1.5 inline-flex h-6 items-center gap-1 rounded-full bg-black/60 px-2 text-[10px] font-medium text-white backdrop-blur transition hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white {canHover
+																	? 'opacity-0 group-hover:opacity-100'
+																	: 'opacity-100'}"
+																on:click|stopPropagation={() => reuseImageGenerate(batch, image)}
+																aria-label={$i18n.t('Generate from this prompt')}
+															>
+																<svg
+																	class="size-3"
+																	viewBox="0 0 24 24"
+																	fill="none"
+																	stroke="currentColor"
+																	stroke-width="2"
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	aria-hidden="true"
+																	><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
+																>
+																{$i18n.t('Remix')}
+															</button>
+														{/if}
 													</div>
 												{/each}
 											</div>
@@ -1111,7 +1235,7 @@
 										{/if}
 									</div>
 
-									<!-- 操作行：重新编辑(i2i) + 重新生成(t2i)，紧凑次级按钮 -->
+									<!-- 操作行：再次编辑(i2i) + 重新生成(t2i) + 下载本批(ZIP)，紧凑次级按钮 -->
 									<div class="flex flex-wrap items-center gap-1.5">
 										<button
 											type="button"
@@ -1149,9 +1273,46 @@
 											>
 											{$i18n.t('Regenerate')}
 										</button>
+										{#if batch.images.length > 1}
+											<!-- 本批批量下载：打包成 ZIP，复用 $lib/utils/download 的共享方案 -->
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => downloadBatchImages(batch)}
+												disabled={batchDownloadingIds.has(batch.id)}
+											>
+												{#if batchDownloadingIds.has(batch.id)}
+													<Spinner className="size-3.5" />
+												{:else}
+													<svg
+														class="size-3.5"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														aria-hidden="true"
+														><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+													>
+												{/if}
+												{$i18n.t('Download all ({{count}})', { count: batch.images.length })}
+											</button>
+										{/if}
 									</div>
 								</article>
 							{/each}
+
+							{#if recentTasksCursor}
+								<!-- 加载更早的批次：无限滚动哨兵 + 加载态 Spinner，与作品库分页保持一致 -->
+								<div class="flex justify-center py-4">
+									{#if loadingMoreTasks}
+										<Spinner className="size-5" />
+									{:else}
+										<Loader on:visible={() => void loadMoreRecentTasks()} />
+									{/if}
+								</div>
+							{/if}
 						</section>
 					{/if}
 				</div>
