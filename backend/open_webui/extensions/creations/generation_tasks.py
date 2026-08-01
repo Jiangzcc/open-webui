@@ -15,7 +15,7 @@ from open_webui.extensions.creations.schemas import (
     decode_keyset_cursor,
     encode_keyset_cursor,
 )
-from sqlalchemy import and_, desc, or_, select, update
+from sqlalchemy import and_, delete, desc, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,6 +123,17 @@ async def get_generation_task(
         )
     ).scalar_one_or_none()
     return _response(task) if task is not None else None
+
+
+async def delete_generation_task(session: AsyncSession, user_id: str, task_id: str) -> bool:
+    result = await session.execute(
+        delete(ImageGenerationTask).where(
+            ImageGenerationTask.id == task_id,
+            ImageGenerationTask.user_id == user_id,
+        )
+    )
+    await session.commit()
+    return bool(result.rowcount)
 
 
 async def list_generation_tasks(
@@ -253,6 +264,7 @@ async def shutdown_generation_tasks(app) -> None:
 
 __all__ = [
     'create_generation_task',
+    'delete_generation_task',
     'fail_incomplete_generation_tasks',
     'get_generation_task',
     'list_generation_tasks',

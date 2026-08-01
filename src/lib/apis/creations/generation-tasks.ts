@@ -23,6 +23,16 @@ const requestJson = async <T>(path: string, token: string, init: RequestInit = {
 	return (await response.json()) as T;
 };
 
+const requestNoContent = async (path: string, token: string, init: RequestInit = {}) => {
+	const response = await fetch(`${WEBUI_API_BASE_URL}${path}`, {
+		...init,
+		headers: { ...headers(token), ...(init.headers ?? {}) }
+	});
+	if (!response.ok) {
+		throw await response.json().catch(() => null);
+	}
+};
+
 export const createImageGenerationTask = (
 	token: string,
 	kind: ImageGenerationTaskKind,
@@ -54,3 +64,8 @@ export const getImageGenerationTask = (token: string, taskId: string) =>
 		`/creations/generation-tasks/${encodeURIComponent(taskId)}`,
 		token
 	);
+
+export const deleteImageGenerationTask = (token: string, taskId: string) =>
+	requestNoContent(`/creations/generation-tasks/${encodeURIComponent(taskId)}`, token, {
+		method: 'DELETE'
+	});

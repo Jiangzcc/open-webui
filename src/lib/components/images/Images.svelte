@@ -7,6 +7,7 @@
 	import { getImageGenerationErrorCode } from '$lib/apis/images/generation';
 	import {
 		createImageGenerationTask,
+		deleteImageGenerationTask,
 		getImageGenerationTask,
 		listImageGenerationTasks
 	} from '$lib/apis/creations/generation-tasks';
@@ -56,6 +57,7 @@
 	import Image from '$lib/components/common/Image.svelte';
 	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
 	import Loader from '$lib/components/common/Loader.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
@@ -114,6 +116,9 @@
 	let canHover = true;
 	// 批量下载中各 batch 的 id 集合，用 Set 支持多批并发，各批独立显示 loading 态。
 	let batchDownloadingIds: Set<string> = new Set();
+	let batchDeletingIds: Set<string> = new Set();
+	let showBatchDeleteConfirm = false;
+	let batchToDelete: ImageGenerationBatch | null = null;
 	let elapsedNow = Date.now();
 	let taskPollTimer: ReturnType<typeof setInterval> | null = null;
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
@@ -378,7 +383,7 @@
 
 	const getGeneratedImageClass = () => 'block h-full w-full object-cover';
 
-	// 骨架/失败块：aspect-square，与完成态同形。
+	// 生成中骨架保持正方形；失败状态使用紧凑提示卡，避免占据大面积空白。
 	const batchSquareStyle = () => 'aspect-ratio: 1 / 1; width: 100%;';
 
 	// 长 prompt 不再折叠：heytop 式全展开，让块自然变高。
@@ -680,7 +685,10 @@
 			const response = await fetch(image.url);
 			if (!response.ok) throw new Error('download failed');
 			const blob = await response.blob();
-			downloadBlob(blob, `generated-image-${image.createdAt ?? Date.now()}-${index + 1}.${blobExtension(blob)}`);
+			downloadBlob(
+				blob,
+				`generated-image-${image.createdAt ?? Date.now()}-${index + 1}.${blobExtension(blob)}`
+			);
 		} catch {
 			toast.error($i18n.t('Failed to download image'));
 		}
@@ -705,6 +713,31 @@
 			const next = new Set(batchDownloadingIds);
 			next.delete(batch.id);
 			batchDownloadingIds = next;
+		}
+	};
+
+	const requestDeleteBatch = (batch: ImageGenerationBatch) => {
+		if (batchDeletingIds.has(batch.id)) return;
+		batchToDelete = batch;
+		showBatchDeleteConfirm = true;
+	};
+
+	const confirmDeleteBatch = async () => {
+		const batch = batchToDelete;
+		batchToDelete = null;
+		if (!batch) return;
+
+		batchDeletingIds = new Set(batchDeletingIds).add(batch.id);
+		try {
+			await deleteImageGenerationTask(localStorage.token, batch.id);
+			generationBatches = generationBatches.filter((item) => item.id !== batch.id);
+			toast.success($i18n.t('Record removed'));
+		} catch {
+			toast.error($i18n.t('Failed to remove record'));
+		} finally {
+			const next = new Set(batchDeletingIds);
+			next.delete(batch.id);
+			batchDeletingIds = next;
 		}
 	};
 
@@ -1148,7 +1181,8 @@
 																<button
 																	type="button"
 																	class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
-																	on:click|stopPropagation={() => reuseImageAsReference(batch, image)}
+																	on:click|stopPropagation={() =>
+																		reuseImageAsReference(batch, image)}
 																	aria-label={$i18n.t('Use as reference')}
 																>
 																	<svg
@@ -1160,7 +1194,11 @@
 																		stroke-linecap="round"
 																		stroke-linejoin="round"
 																		aria-hidden="true"
-																		><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="9" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg
+																		><rect x="3" y="3" width="18" height="18" rx="2" /><circle
+																			cx="8.5"
+																			cy="9"
+																			r="1.5"
+																		/><path d="M21 15l-5-5L5 21" /></svg
 																	>
 																</button>
 															{/if}
@@ -1194,8 +1232,7 @@
 											</div>
 										{:else if batch.status === 'failed'}
 											<div
-												class="flex w-full flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-5 py-10 text-center dark:border-red-900/60 dark:bg-red-950/20"
-												style={batchSquareStyle()}
+												class="flex w-full flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-4 py-5 text-center dark:border-red-900/60 dark:bg-red-950/20 sm:px-5 sm:py-6"
 											>
 												<p class="text-sm font-medium text-red-600 dark:text-red-300">
 													{$i18n.t('Generation failed')}
@@ -1203,12 +1240,6 @@
 												{#if batch.errorCode}<p class="mt-1 text-xs text-red-500/80">
 														{batch.errorCode}
 													</p>{/if}
-												<button
-													type="button"
-													class="mt-3 min-h-11 rounded-full bg-gray-950 px-4 text-sm font-medium text-white dark:bg-white dark:text-gray-950"
-													on:click={() => reuseBatchGenerate(batch)}
-													>{$i18n.t('Load settings')}</button
-												>
 											</div>
 										{:else}
 											<!-- 生成中：正方形骨架占位 + 居中 Spinner -->
@@ -1292,13 +1323,36 @@
 														stroke-width="2"
 														stroke-linecap="round"
 														stroke-linejoin="round"
-														aria-hidden="true"
-														><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+														aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
 													>
 												{/if}
 												{$i18n.t('Download all ({{count}})', { count: batch.images.length })}
 											</button>
 										{/if}
+										<button
+											type="button"
+											class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+											on:click={() => requestDeleteBatch(batch)}
+											disabled={batchDeletingIds.has(batch.id)}
+											aria-label={$i18n.t('Remove record')}
+										>
+											{#if batchDeletingIds.has(batch.id)}
+												<Spinner className="size-3.5" />
+											{:else}
+												<svg
+													class="size-3.5"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"
+													><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
+												>
+											{/if}
+											{$i18n.t('Remove')}
+										</button>
 									</div>
 								</article>
 							{/each}
@@ -1748,6 +1802,14 @@
 				</button>
 			</div>
 		{/if}
+
+		<ConfirmDialog
+			bind:show={showBatchDeleteConfirm}
+			title={$i18n.t('Remove record?')}
+			message={$i18n.t('Remove this record from your history?')}
+			confirmLabel={$i18n.t('Remove')}
+			onConfirm={confirmDeleteBatch}
+		/>
 
 		<ImagePreview bind:show={showImagePreview} src={previewImageUrl} alt={previewImageAlt} />
 	</div>

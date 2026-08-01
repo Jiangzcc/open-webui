@@ -21,6 +21,7 @@ from open_webui.extensions.creations.discovery_service import (
 )
 from open_webui.extensions.creations.generation_tasks import (
     create_generation_task,
+    delete_generation_task,
     get_generation_task,
     list_generation_tasks,
     schedule_generation_task,
@@ -138,6 +139,17 @@ async def get_image_generation_task(
     if task is None:
         raise HTTPException(status_code=404, detail='generation task not found')
     return task
+
+
+@router.delete('/generation-tasks/{task_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_image_generation_task(
+    task_id: str,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    removed = await delete_generation_task(session, user.id, task_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail='generation task not found')
 
 
 @router.get('/media', response_model=CreationListResponse)
