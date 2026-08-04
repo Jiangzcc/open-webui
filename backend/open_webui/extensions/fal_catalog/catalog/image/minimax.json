@@ -1,0 +1,40 @@
+[
+  {
+    "id": "fal-ai/minimax/image-01",
+    "public_id": "minimax-image-01",
+    "name": "Minimax / Image 01",
+    "provider": "minimax",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "1:1",
+      "16:9",
+      "4:3",
+      "3:2",
+      "2:3",
+      "3:4",
+      "9:16",
+      "21:9"
+    ],
+    "default_aspect_ratio": "1:1",
+    "aspect_ratio_field": "aspect_ratio",
+    "boolean_fields": [
+      {
+        "field": "prompt_optimizer",
+        "default": false
+      }
+    ]
+  }
+]

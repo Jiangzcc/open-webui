@@ -81,7 +81,7 @@
   {
     "id": "fal-ai/flux-1/dev/image-to-image",
     "public_id": "flux-1-dev-image-to-image",
-    "name": "Black Forest Labs / Flux-1 Dev Image-To-Image",
+    "name": "Black Forest Labs / Flux-1 Dev Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "generation_model": "fal-ai/flux-1/dev",
@@ -241,7 +241,7 @@
   {
     "id": "fal-ai/flux-1/krea/image-to-image",
     "public_id": "flux-1-krea-image-to-image",
-    "name": "Black Forest Labs / Flux-1 Krea Image-To-Image",
+    "name": "Black Forest Labs / Flux-1 Krea Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "generation_model": "fal-ai/flux-1/krea",
@@ -479,7 +479,7 @@
   {
     "id": "fal-ai/flux-1/srpo/image-to-image",
     "public_id": "flux-1-srpo-image-to-image",
-    "name": "Black Forest Labs / Flux-1 Srpo Image-To-Image",
+    "name": "Black Forest Labs / Flux-1 SRPO Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "generation_model": "fal-ai/flux-1/srpo",
@@ -2099,7 +2099,7 @@
   {
     "id": "fal-ai/flux/dev/image-to-image",
     "public_id": "flux-dev-image-to-image",
-    "name": "Black Forest Labs / Flux Dev Image-To-Image",
+    "name": "Black Forest Labs / Flux Dev Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "generation_model": "fal-ai/flux/dev",
@@ -2259,7 +2259,7 @@
   {
     "id": "fal-ai/flux/krea/image-to-image",
     "public_id": "flux-krea-image-to-image",
-    "name": "Black Forest Labs / Flux Krea Image-To-Image",
+    "name": "Black Forest Labs / Flux Krea Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "generation_model": "fal-ai/flux/krea",
@@ -2340,7 +2340,7 @@
   {
     "id": "fal-ai/flux-pro/kontext",
     "public_id": "flux-pro-kontext",
-    "name": "Black Forest Labs / Flux-Pro Kontext",
+    "name": "Black Forest Labs / Flux-Pro Kontext Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "hosting": "serverless",
@@ -2405,7 +2405,7 @@
   {
     "id": "fal-ai/flux-pro/kontext/max",
     "public_id": "flux-pro-kontext-max",
-    "name": "Black Forest Labs / Flux-Pro Kontext Max",
+    "name": "Black Forest Labs / Flux-Pro Kontext Max Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "hosting": "serverless",
@@ -2470,7 +2470,7 @@
   {
     "id": "fal-ai/flux-pro/kontext/max/text-to-image",
     "public_id": "flux-pro-kontext-max-text-to-image",
-    "name": "Black Forest Labs / Flux-Pro Kontext Max Text-To-Image",
+    "name": "Black Forest Labs / Flux-Pro Kontext Max",
     "provider": "black-forest-labs",
     "task": "text-to-image",
     "hosting": "serverless",
@@ -2532,7 +2532,7 @@
   {
     "id": "fal-ai/flux-pro/kontext/text-to-image",
     "public_id": "flux-pro-kontext-text-to-image",
-    "name": "Black Forest Labs / Flux-Pro Kontext Text-To-Image",
+    "name": "Black Forest Labs / Flux-Pro Kontext",
     "provider": "black-forest-labs",
     "task": "text-to-image",
     "hosting": "serverless",
@@ -2950,7 +2950,7 @@
   {
     "id": "fal-ai/flux/srpo/image-to-image",
     "public_id": "flux-srpo-image-to-image",
-    "name": "Black Forest Labs / Flux Srpo Image-To-Image",
+    "name": "Black Forest Labs / Flux SRPO Edit",
     "provider": "black-forest-labs",
     "task": "image-to-image",
     "generation_model": "fal-ai/flux/srpo",

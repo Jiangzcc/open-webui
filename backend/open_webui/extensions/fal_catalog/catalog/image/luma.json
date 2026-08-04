@@ -1,0 +1,260 @@
+[
+  {
+    "id": "luma/agent/uni-1/v1/edit",
+    "public_id": "luma-agent-uni-1-v1-edit",
+    "name": "Luma AI / V1 Edit",
+    "provider": "luma",
+    "task": "image-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "output_formats": [
+      "png",
+      "jpeg"
+    ],
+    "default_output_format": "png",
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "manga"
+        ],
+        "default": "auto"
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "luma/agent/uni-1/v1/text-to-image"
+  },
+  {
+    "id": "luma/agent/uni-1/v1/max",
+    "public_id": "luma-agent-uni-1-v1-max",
+    "name": "Luma AI / V1 Max",
+    "provider": "luma",
+    "task": "text-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "aspect_ratios": [
+      "3:1",
+      "2:1",
+      "16:9",
+      "3:2",
+      "1:1",
+      "2:3",
+      "9:16",
+      "1:2",
+      "1:3"
+    ],
+    "default_aspect_ratio": "16:9",
+    "aspect_ratio_field": "aspect_ratio",
+    "output_formats": [
+      "png",
+      "jpeg"
+    ],
+    "default_output_format": "png",
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "manga"
+        ],
+        "default": "auto"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_web_search"
+      }
+    ],
+    "edit_model": "luma/agent/uni-1/v1/max/edit"
+  },
+  {
+    "id": "luma/agent/uni-1/v1/max/edit",
+    "public_id": "luma-agent-uni-1-v1-max-edit",
+    "name": "Luma AI / V1 Max Edit",
+    "provider": "luma",
+    "task": "image-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "output_formats": [
+      "png",
+      "jpeg"
+    ],
+    "default_output_format": "png",
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "manga"
+        ],
+        "default": "auto"
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "luma/agent/uni-1/v1/max"
+  },
+  {
+    "id": "luma/agent/uni-1/v1/text-to-image",
+    "public_id": "luma-agent-uni-1-v1-text-to-image",
+    "name": "Luma AI / V1",
+    "provider": "luma",
+    "task": "text-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "aspect_ratios": [
+      "3:1",
+      "2:1",
+      "16:9",
+      "3:2",
+      "1:1",
+      "2:3",
+      "9:16",
+      "1:2",
+      "1:3"
+    ],
+    "default_aspect_ratio": "16:9",
+    "aspect_ratio_field": "aspect_ratio",
+    "output_formats": [
+      "png",
+      "jpeg"
+    ],
+    "default_output_format": "png",
+    "option_fields": [
+      {
+        "field": "style",
+        "options": [
+          "auto",
+          "manga"
+        ],
+        "default": "auto"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_web_search"
+      }
+    ],
+    "edit_model": "luma/agent/uni-1/v1/edit"
+  },
+  {
+    "id": "fal-ai/luma-photon",
+    "public_id": "luma-photon",
+    "name": "Luma AI / Luma Photon",
+    "provider": "luma",
+    "task": "text-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+    ],
+    "default_aspect_ratio": "1:1",
+    "aspect_ratio_field": "aspect_ratio",
+    "edit_model": "fal-ai/luma-photon/modify"
+  },
+  {
+    "id": "fal-ai/luma-photon/modify",
+    "public_id": "luma-photon-modify",
+    "name": "Luma AI / Luma Photon Edit",
+    "provider": "luma",
+    "task": "image-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "aspect_ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+    ],
+    "default_aspect_ratio": "1:1",
+    "aspect_ratio_field": "aspect_ratio",
+    "number_fields": [
+      {
+        "field": "strength",
+        "min": 0,
+        "max": 1
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "fal-ai/luma-photon"
+  },
+  {
+    "id": "fal-ai/luma-photon/flash",
+    "public_id": "luma-photon-flash",
+    "name": "Luma AI / Luma Photon Flash",
+    "provider": "luma",
+    "task": "text-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "aspect_ratios": [
+      "16:9",
+      "9:16",
+      "1:1",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+    ],
+    "default_aspect_ratio": "1:1",
+    "aspect_ratio_field": "aspect_ratio",
+    "edit_model": "fal-ai/luma-photon/flash/modify"
+  },
+  {
+    "id": "fal-ai/luma-photon/flash/modify",
+    "public_id": "luma-photon-flash-modify",
+    "name": "Luma AI / Luma Photon Flash Edit",
+    "provider": "luma",
+    "task": "image-to-image",
+    "image_counts": [
+      1
+    ],
+    "hosting": "serverless",
+    "aspect_ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4",
+      "21:9",
+      "9:21"
+    ],
+    "default_aspect_ratio": "1:1",
+    "aspect_ratio_field": "aspect_ratio",
+    "number_fields": [
+      {
+        "field": "strength",
+        "min": 0,
+        "max": 1
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "fal-ai/luma-photon/flash"
+  }
+]

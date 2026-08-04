@@ -1,0 +1,155 @@
+[
+  {
+    "id": "fal-ai/boogu-image",
+    "public_id": "boogu-image",
+    "name": "Boogu / Boogu Image",
+    "provider": "boogu",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "hosting": "serverless",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 20,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 8
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "edit_model": "fal-ai/boogu-image/edit"
+  },
+  {
+    "id": "fal-ai/boogu-image/edit",
+    "public_id": "boogu-image-edit",
+    "name": "Boogu / Boogu Image Edit",
+    "provider": "boogu",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "hosting": "serverless",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 20,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 8
+      },
+      {
+        "field": "image_guidance_scale",
+        "source": "image_guidance_scale",
+        "min": 1,
+        "max": 8
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "generation_model": "fal-ai/boogu-image"
+  }
+]

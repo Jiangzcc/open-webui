@@ -1,0 +1,308 @@
+[
+  {
+    "id": "fal-ai/bitdance",
+    "public_id": "bitdance",
+    "name": "Other / Bitdance",
+    "provider": "other",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "min": 10,
+        "max": 100
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "min": 1,
+        "max": 15
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg"
+  },
+  {
+    "id": "fal-ai/nucleus-image",
+    "public_id": "nucleus-image",
+    "name": "Other / Nucleus Image",
+    "provider": "other",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4",
+      "3:2",
+      "2:3"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "16:9": "1024x576",
+      "9:16": "576x1024",
+      "4:3": "1024x768",
+      "3:4": "768x1024",
+      "3:2": "1024x683",
+      "2:3": "683x1024"
+    },
+    "default_aspect_ratio": "1:1",
+    "aspect_ratio_field": "aspect_ratio",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "min": 1,
+        "max": 100
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "png",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/ovis-image",
+    "public_id": "ovis-image",
+    "name": "Other / Ovis Image",
+    "provider": "other",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/dreamshaper",
+    "public_id": "dreamshaper",
+    "name": "Other / Dreamshaper",
+    "provider": "other",
+    "task": "text-to-image",
+    "hosting": "serverless",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "format",
+        "options": [
+          "jpeg",
+          "png"
+        ],
+        "default": "jpeg"
+      },
+      {
+        "field": "safety_checker_version",
+        "options": [
+          "v1",
+          "v2"
+        ],
+        "default": "v1"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "expand_prompt"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "min": 1,
+        "max": 70
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  }
+]

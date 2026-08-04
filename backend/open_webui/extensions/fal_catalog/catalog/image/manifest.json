@@ -7,8 +7,29 @@
   },
   "files": [
     "alibaba.json",
+    "baidu.json",
+    "black-forest-labs.json",
+    "boogu.json",
+    "bria.json",
+    "bytedance.json",
+    "other.json",
     "google.json",
+    "hidream.json",
+    "ideogram.json",
+    "kling.json",
+    "krea.json",
+    "luma.json",
+    "meituan.json",
+    "microsoft.json",
+    "minimax.json",
+    "nvidia.json",
     "openai.json",
-    "xai.json"
+    "recraft.json",
+    "reve.json",
+    "rundiffusion.json",
+    "stability.json",
+    "tencent.json",
+    "xai.json",
+    "zhipu.json"
   ]
 }

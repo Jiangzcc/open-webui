@@ -1,0 +1,469 @@
+[
+  {
+    "id": "fal-ai/sana",
+    "public_id": "sana",
+    "name": "NVIDIA / Sana",
+    "provider": "nvidia",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "3840x2160"
+    ],
+    "default_resolution": "3840x2160",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "3840x2160": "3840x2160"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "style_name",
+        "options": [
+          "(No style)",
+          "Cinematic",
+          "Photographic",
+          "Anime",
+          "Manga",
+          "Digital Art",
+          "Pixel art",
+          "Fantasy art",
+          "Neonpunk",
+          "3D Model"
+        ],
+        "default": "(No style)"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/sana/sprint",
+    "public_id": "sana-sprint",
+    "name": "NVIDIA / Sana Sprint",
+    "provider": "nvidia",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "3840x2160"
+    ],
+    "default_resolution": "3840x2160",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "3840x2160": "3840x2160"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "style_name",
+        "options": [
+          "(No style)",
+          "Cinematic",
+          "Photographic",
+          "Anime",
+          "Manga",
+          "Digital Art",
+          "Pixel art",
+          "Fantasy art",
+          "Neonpunk",
+          "3D Model"
+        ],
+        "default": "(No style)"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/sana/v1.5/1.6b",
+    "public_id": "sana-v1.5-1.6b",
+    "name": "NVIDIA / Sana V1.5 1.6B",
+    "provider": "nvidia",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "3840x2160"
+    ],
+    "default_resolution": "3840x2160",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "3840x2160": "3840x2160"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "style_name",
+        "options": [
+          "(No style)",
+          "Cinematic",
+          "Photographic",
+          "Anime",
+          "Manga",
+          "Digital Art",
+          "Pixel art",
+          "Fantasy art",
+          "Neonpunk",
+          "3D Model"
+        ],
+        "default": "(No style)"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/sana/v1.5/4.8b",
+    "public_id": "sana-v1.5-4.8b",
+    "name": "NVIDIA / Sana V1.5 4.8B",
+    "provider": "nvidia",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "3840x2160"
+    ],
+    "default_resolution": "3840x2160",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "3840x2160": "3840x2160"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "style_name",
+        "options": [
+          "(No style)",
+          "Cinematic",
+          "Photographic",
+          "Anime",
+          "Manga",
+          "Digital Art",
+          "Pixel art",
+          "Fantasy art",
+          "Neonpunk",
+          "3D Model"
+        ],
+        "default": "(No style)"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "nvidia/cosmos-3-super/text-to-image",
+    "public_id": "nvidia-cosmos-3-super-text-to-image",
+    "name": "NVIDIA / Cosmos 3 Super",
+    "provider": "nvidia",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      },
+      {
+        "field": "agentic_max_iterations",
+        "min": 1,
+        "max": 3
+      },
+      {
+        "field": "agentic_samples_per_iteration",
+        "min": 1,
+        "max": 3
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_prompt_expansion",
+        "default": false
+      },
+      {
+        "field": "enable_agentic_generation",
+        "default": false
+      },
+      {
+        "field": "agentic_early_stop",
+        "default": true
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  }
+]

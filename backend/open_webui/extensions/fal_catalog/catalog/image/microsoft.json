@@ -1,0 +1,84 @@
+[
+  {
+    "id": "microsoft/mai-image-2.5",
+    "public_id": "microsoft-mai-image-2.5",
+    "name": "Microsoft / Mai Image 2.5",
+    "provider": "microsoft",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "auto",
+      "1:1",
+      "4:3",
+      "3:4",
+      "16:9",
+      "9:16",
+      "3:2",
+      "2:3"
+    ],
+    "default_aspect_ratio": "auto",
+    "aspect_ratio_field": "aspect_ratio",
+    "boolean_fields": [
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "edit_model": "microsoft/mai-image-2.5/edit"
+  },
+  {
+    "id": "microsoft/mai-image-2.5/edit",
+    "public_id": "microsoft-mai-image-2.5-edit",
+    "name": "Microsoft / Mai Image 2.5 Edit",
+    "provider": "microsoft",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "auto",
+      "1:1",
+      "4:3",
+      "3:4",
+      "16:9",
+      "9:16",
+      "3:2",
+      "2:3"
+    ],
+    "default_aspect_ratio": "auto",
+    "aspect_ratio_field": "aspect_ratio",
+    "boolean_fields": [
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "image_input_field": "image_urls",
+    "image_input_max_count": 1,
+    "generation_model": "microsoft/mai-image-2.5"
+  }
+]

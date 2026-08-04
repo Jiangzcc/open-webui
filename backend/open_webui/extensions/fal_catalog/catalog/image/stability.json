@@ -1,0 +1,552 @@
+[
+  {
+    "id": "fal-ai/stable-cascade",
+    "public_id": "stable-cascade",
+    "name": "Stability AI / Stable Cascade",
+    "provider": "stability",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "first_stage_steps",
+        "min": 4,
+        "max": 40
+      },
+      {
+        "field": "second_stage_steps",
+        "min": 4,
+        "max": 24
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      },
+      {
+        "field": "second_stage_guidance_scale",
+        "source": "second_stage_guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/stable-cascade/sote-diffusion",
+    "public_id": "stable-cascade-sote-diffusion",
+    "name": "Stability AI / Stable Cascade Sote Diffusion",
+    "provider": "stability",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576",
+      "1024x1536"
+    ],
+    "default_resolution": "1024x1536",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576",
+      "1024x1536": "1024x1536"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "first_stage_steps",
+        "min": 4,
+        "max": 50
+      },
+      {
+        "field": "second_stage_steps",
+        "min": 4,
+        "max": 24
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      },
+      {
+        "field": "second_stage_guidance_scale",
+        "source": "second_stage_guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/stable-diffusion-v15",
+    "public_id": "stable-diffusion-v15",
+    "name": "Stability AI / Stable Diffusion V1.5",
+    "provider": "stability",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "512x512",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "option_fields": [
+      {
+        "field": "format",
+        "options": [
+          "jpeg",
+          "png"
+        ],
+        "default": "jpeg"
+      },
+      {
+        "field": "safety_checker_version",
+        "options": [
+          "v1",
+          "v2"
+        ],
+        "default": "v1"
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/stable-diffusion-v3-medium",
+    "public_id": "stable-diffusion-v3-medium",
+    "name": "Stability AI / Stable Diffusion V3 Medium",
+    "provider": "stability",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "prompt_expansion",
+        "default": true
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "edit_model": "fal-ai/stable-diffusion-v3-medium/image-to-image"
+  },
+  {
+    "id": "fal-ai/stable-diffusion-v3-medium/image-to-image",
+    "public_id": "stable-diffusion-v3-medium-image-to-image",
+    "name": "Stability AI / Stable Diffusion V3 Medium Edit",
+    "provider": "stability",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      },
+      {
+        "field": "strength",
+        "source": "strength",
+        "min": 0.01,
+        "max": 1
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "prompt_expansion",
+        "default": true
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ],
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "fal-ai/stable-diffusion-v3-medium"
+  },
+  {
+    "id": "fal-ai/stable-diffusion-v35-medium",
+    "public_id": "stable-diffusion-v35-medium",
+    "name": "Stability AI / Stable Diffusion V3.5 Medium",
+    "provider": "stability",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "auto_fix",
+        "default": true
+      },
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/stable-diffusion-v35-large",
+    "public_id": "stable-diffusion-v35-large",
+    "name": "Stability AI / Stable Diffusion V3.5 Large",
+    "provider": "stability",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 0,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  }
+]

@@ -1,0 +1,104 @@
+[
+  {
+    "id": "reve/2.1/text-to-image",
+    "public_id": "reve-2.1-text-to-image",
+    "name": "Reve / 2.1",
+    "provider": "reve",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "4:1",
+      "3:1",
+      "21:9",
+      "2:1",
+      "17:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16",
+      "1:2",
+      "1:3",
+      "1:4",
+      "auto"
+    ],
+    "default_aspect_ratio": "auto",
+    "aspect_ratio_field": "aspect_ratio",
+    "boolean_fields": [
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "edit_model": "reve/2.1/edit"
+  },
+  {
+    "id": "reve/2.1/edit",
+    "public_id": "reve-2.1-edit",
+    "name": "Reve / 2.1 Edit",
+    "provider": "reve",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "aspect_ratios": [
+      "4:1",
+      "3:1",
+      "21:9",
+      "2:1",
+      "17:9",
+      "16:9",
+      "3:2",
+      "4:3",
+      "5:4",
+      "1:1",
+      "4:5",
+      "3:4",
+      "2:3",
+      "9:16",
+      "1:2",
+      "1:3",
+      "1:4",
+      "auto"
+    ],
+    "default_aspect_ratio": "auto",
+    "aspect_ratio_field": "aspect_ratio",
+    "boolean_fields": [
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "png",
+      "jpeg",
+      "webp"
+    ],
+    "default_output_format": "png",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "reve/2.1/text-to-image"
+  }
+]

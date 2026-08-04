@@ -1,0 +1,316 @@
+[
+  {
+    "id": "rundiffusion-fal/juggernaut-flux/base",
+    "public_id": "rundiffusion-fal-juggernaut-flux-base",
+    "name": "Rundiffusion / Juggernaut Flux Base",
+    "provider": "rundiffusion",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "png",
+    "edit_model": "rundiffusion-fal/juggernaut-flux/base/image-to-image"
+  },
+  {
+    "id": "rundiffusion-fal/juggernaut-flux/base/image-to-image",
+    "public_id": "rundiffusion-fal-juggernaut-flux-base-image-to-image",
+    "name": "Rundiffusion / Juggernaut Flux Base Edit",
+    "provider": "rundiffusion",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 10,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      },
+      {
+        "field": "strength",
+        "source": "strength",
+        "min": 0.01,
+        "max": 1
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "png",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "rundiffusion-fal/juggernaut-flux/base"
+  },
+  {
+    "id": "rundiffusion-fal/juggernaut-flux/lightning",
+    "public_id": "rundiffusion-fal-juggernaut-flux-lightning",
+    "name": "Rundiffusion / Juggernaut Flux Lightning",
+    "provider": "rundiffusion",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 12
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "png"
+  },
+  {
+    "id": "rundiffusion-fal/juggernaut-flux/pro",
+    "public_id": "rundiffusion-fal-juggernaut-flux-pro",
+    "name": "Rundiffusion / Juggernaut Flux Pro",
+    "provider": "rundiffusion",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x768",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "png",
+    "edit_model": "rundiffusion-fal/juggernaut-flux/pro/image-to-image"
+  },
+  {
+    "id": "rundiffusion-fal/juggernaut-flux/pro/image-to-image",
+    "public_id": "rundiffusion-fal-juggernaut-flux-pro-image-to-image",
+    "name": "Rundiffusion / Juggernaut Flux Pro Edit",
+    "provider": "rundiffusion",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "hosting": "serverless",
+    "count_field": "num_images",
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 10,
+        "max": 50
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      },
+      {
+        "field": "strength",
+        "source": "strength",
+        "min": 0.01,
+        "max": 1
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "png",
+    "image_input_field": "image_url",
+    "image_input_max_count": 1,
+    "generation_model": "rundiffusion-fal/juggernaut-flux/pro"
+  }
+]

@@ -58,7 +58,7 @@
   {
     "id": "fal-ai/ideogram/v2/edit",
     "public_id": "ideogram-v2-edit",
-    "name": "Ideogram / V2 edit",
+    "name": "Ideogram / V2 Edit",
     "provider": "ideogram",
     "task": "image-to-image",
     "count_field": null,
@@ -104,7 +104,7 @@
   {
     "id": "fal-ai/ideogram/v2/turbo",
     "public_id": "ideogram-v2-turbo",
-    "name": "Ideogram / V2 turbo",
+    "name": "Ideogram / V2 Turbo",
     "provider": "ideogram",
     "task": "text-to-image",
     "count_field": null,
@@ -160,7 +160,7 @@
   {
     "id": "fal-ai/ideogram/v2/turbo/edit",
     "public_id": "ideogram-v2-turbo-edit",
-    "name": "Ideogram / Turbo edit",
+    "name": "Ideogram / Turbo Edit",
     "provider": "ideogram",
     "task": "image-to-image",
     "count_field": null,
@@ -256,7 +256,7 @@
   {
     "id": "fal-ai/ideogram/v2a/turbo",
     "public_id": "ideogram-v2a-turbo",
-    "name": "Ideogram / v2a turbo",
+    "name": "Ideogram / V2a Turbo",
     "provider": "ideogram",
     "task": "text-to-image",
     "count_field": null,
@@ -385,7 +385,7 @@
   {
     "id": "fal-ai/ideogram/v3/edit",
     "public_id": "ideogram-v3-edit",
-    "name": "Ideogram / V3 edit",
+    "name": "Ideogram / V3 Edit",
     "provider": "ideogram",
     "task": "image-to-image",
     "image_counts": [
@@ -521,7 +521,7 @@
   {
     "id": "ideogram/v4/image-to-image",
     "public_id": "ideogram-v4-image-to-image",
-    "name": "Ideogram / V4 image To Image",
+    "name": "Ideogram / V4 Edit",
     "provider": "ideogram",
     "task": "image-to-image",
     "image_counts": [
@@ -615,7 +615,7 @@
   {
     "id": "ideogram/v4/fast",
     "public_id": "ideogram-v4-fast",
-    "name": "Ideogram / V4 fast",
+    "name": "Ideogram / V4 Fast",
     "provider": "ideogram",
     "task": "text-to-image",
     "image_counts": [
@@ -686,7 +686,7 @@
   {
     "id": "ideogram/v4/instant",
     "public_id": "ideogram-v4-instant",
-    "name": "Ideogram / V4 instant",
+    "name": "Ideogram / V4 Instant",
     "provider": "ideogram",
     "task": "text-to-image",
     "image_counts": [

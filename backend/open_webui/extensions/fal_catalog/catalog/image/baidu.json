@@ -1,0 +1,176 @@
+[
+  {
+    "id": "fal-ai/ernie-image",
+    "public_id": "ernie-image",
+    "name": "Baidu / Ernie Image",
+    "provider": "baidu",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "hosting": "serverless",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 100
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  },
+  {
+    "id": "fal-ai/ernie-image/turbo",
+    "public_id": "ernie-image-turbo",
+    "name": "Baidu / Ernie Image Turbo",
+    "provider": "baidu",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "hosting": "serverless",
+    "resolutions": [
+      "512x512",
+      "1024x1024",
+      "768x1024",
+      "576x1024",
+      "1024x768",
+      "1024x576"
+    ],
+    "default_resolution": "1024x1024",
+    "resolution_field": "image_size",
+    "custom_size_field": "image_size",
+    "image_size_whitelist": {
+      "512x512": "512x512",
+      "1024x1024": "1024x1024",
+      "768x1024": "768x1024",
+      "576x1024": "576x1024",
+      "1024x768": "1024x768",
+      "1024x576": "1024x576"
+    },
+    "option_fields": [
+      {
+        "field": "acceleration",
+        "options": [
+          "none",
+          "regular",
+          "high"
+        ],
+        "default": "regular"
+      }
+    ],
+    "integer_fields": [
+      {
+        "field": "seed"
+      },
+      {
+        "field": "num_inference_steps",
+        "source": "steps",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "number_fields": [
+      {
+        "field": "guidance_scale",
+        "source": "guidance_scale",
+        "min": 1,
+        "max": 20
+      }
+    ],
+    "boolean_fields": [
+      {
+        "field": "enable_safety_checker",
+        "default": false
+      },
+      {
+        "field": "sync_mode"
+      },
+      {
+        "field": "enable_prompt_expansion",
+        "default": true
+      }
+    ],
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "text_fields": [
+      {
+        "field": "negative_prompt"
+      }
+    ]
+  }
+]
