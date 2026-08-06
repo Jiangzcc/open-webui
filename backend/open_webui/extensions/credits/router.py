@@ -32,13 +32,22 @@ from open_webui.extensions.credits.repository import get_balance_if_exists, get_
 from open_webui.extensions.credits.schemas import (
     AdjustmentRequest,
     AdminLedgerQuery,
+    CompensationRequest,
     PositivePrice,
     PriceRuleSet,
+    ReconciliationQuery,
     RequestAuditContext,
     UserLedgerQuery,
     UserSnapshot,
 )
-from open_webui.extensions.credits.service import adjust_balance, get_balance, list_admin_ledger, list_user_ledger
+from open_webui.extensions.credits.service import (
+    adjust_balance,
+    compensate_reconciliation_case,
+    get_balance,
+    list_admin_ledger,
+    list_reconciliation_cases,
+    list_user_ledger,
+)
 from open_webui.internal.db import get_async_session
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.rate_limit import RateLimiter
@@ -489,6 +498,46 @@ async def get_admin_credit_ledger(
     except Exception as error:
         return _unexpected_error_response(error)
     return page.model_dump()
+
+
+@router.get('/admin/reconciliation')
+async def get_credit_reconciliation_cases(
+    query: ReconciliationQuery = Depends(),
+    user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict[str, object]:
+    _enforce_rate_limit(_ledger_limiter, f'credits:reconciliation:{_user_snapshot(user).id}')
+    try:
+        return (await list_reconciliation_cases(session, query)).model_dump()
+    except CreditError as error:
+        return _public_error_response(error)
+    except Exception as error:
+        return _unexpected_error_response(error)
+
+
+@router.post('/admin/reconciliation/{usage_id}/compensate')
+async def compensate_credit_reconciliation_case(
+    usage_id: Annotated[str, Field(min_length=1, max_length=128)],
+    body: CompensationRequest,
+    request: Request,
+    user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict[str, object]:
+    _enforce_rate_limit(_adjustment_limiter, f'credits:reconciliation-adjust:{_user_snapshot(user).id}')
+    try:
+        audit = _audit_context(request)
+        ledger, created = await compensate_reconciliation_case(
+            session,
+            usage_id,
+            _user_snapshot(user),
+            body,
+            audit,
+        )
+        return {'ledger_id': ledger.id, 'created': created, 'amount': ledger.amount}
+    except CreditError as error:
+        return _public_error_response(error)
+    except Exception as error:
+        return _unexpected_error_response(error)
 
 
 @router.post('/admin/accounts/{user_id}/adjustments')

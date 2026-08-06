@@ -427,7 +427,13 @@ async def get_models(
                 else [{**model, 'is_default': model['id'] == default_model} for model in get_fal_image_models()]
             )
             prices = await get_enabled_prices(db, 'image')
-            return attach_model_base_prices(models, prices)
+            from open_webui.extensions.model_ops.service import apply_model_operations
+
+            return await apply_model_operations(
+                db,
+                attach_model_base_prices(models, prices),
+                admin=user.role == 'admin',
+            )
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             # TODO - get models from comfyui
             headers = {'Authorization': f'Bearer {image_config.COMFYUI_API_KEY}'}
@@ -701,6 +707,22 @@ async def image_generations(
     metadata: dict | None = None,
     user=None,
 ):
+    image_config = await get_image_config()
+    if image_config.IMAGE_GENERATION_ENGINE == 'fal':
+        from open_webui.extensions.model_ops.db import model_ops_session
+        from open_webui.extensions.model_ops.service import ensure_model_enabled
+
+        candidate = form_data.model or await get_image_model(request)
+        try:
+            async with model_ops_session() as model_session:
+                await ensure_model_enabled(model_session, candidate)
+        except HTTPException as error:
+            detail = getattr(error, 'detail', None)
+            message = detail.get('message') if isinstance(detail, dict) else None
+            raise CreditError(
+                code='provider_failed',
+                context={'reason': 'model_disabled', 'message': message or 'Image model is unavailable'},
+            ) from error
     return await bill_image_call(
         request=request,
         raw_form_data=form_data,
@@ -1095,6 +1117,22 @@ async def image_edits(
     metadata: dict | None = None,
     user=None,
 ):
+    image_config = await get_image_config()
+    if image_config.IMAGE_EDIT_ENGINE == 'fal':
+        from open_webui.extensions.model_ops.db import model_ops_session
+        from open_webui.extensions.model_ops.service import ensure_model_enabled
+
+        candidate = form_data.model if form_data.model else image_config.IMAGE_EDIT_MODEL
+        try:
+            async with model_ops_session() as model_session:
+                await ensure_model_enabled(model_session, candidate)
+        except HTTPException as error:
+            detail = getattr(error, 'detail', None)
+            message = detail.get('message') if isinstance(detail, dict) else None
+            raise CreditError(
+                code='provider_failed',
+                context={'reason': 'model_disabled', 'message': message or 'Image model is unavailable'},
+            ) from error
     return await bill_image_call(
         request=request,
         raw_form_data=form_data,

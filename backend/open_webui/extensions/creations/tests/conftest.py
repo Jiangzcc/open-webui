@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 from open_webui.extensions.creations.db import CreationBase
+from open_webui.extensions.creations.models import DiscoveryCategorySetting
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -26,6 +27,18 @@ async def creation_sessions(tmp_path: Path):
     engine = create_async_engine(f'sqlite+aiosqlite:///{database_path}')
     async with engine.begin() as connection:
         await connection.run_sync(CreationBase.metadata.create_all)
+        await connection.execute(
+            DiscoveryCategorySetting.__table__.insert(),
+            [
+                {'id': 'portrait', 'display_name': '人像', 'enabled': True, 'sort_order': 10, 'updated_at': 0},
+                {'id': 'product', 'display_name': '商品', 'enabled': True, 'sort_order': 20, 'updated_at': 0},
+                {'id': 'poster', 'display_name': '海报', 'enabled': True, 'sort_order': 30, 'updated_at': 0},
+                {'id': 'illustration', 'display_name': '插画', 'enabled': True, 'sort_order': 40, 'updated_at': 0},
+                {'id': 'anime', 'display_name': '动漫', 'enabled': True, 'sort_order': 50, 'updated_at': 0},
+                {'id': 'landscape', 'display_name': '风景', 'enabled': True, 'sort_order': 60, 'updated_at': 0},
+                {'id': 'other', 'display_name': '其他', 'enabled': True, 'sort_order': 999, 'updated_at': 0},
+            ],
+        )
     sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
         yield sessions

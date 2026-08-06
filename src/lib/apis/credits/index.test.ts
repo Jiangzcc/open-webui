@@ -2,12 +2,14 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
 	adjustCreditAccount,
+	compensateCreditReconciliationCase,
 	createCreditPrice,
 	deleteCreditPrice,
 	getAdminCreditAccounts,
 	getAdminCreditDimensions,
 	getAdminCreditLedger,
 	getCreditPrices,
+	getCreditReconciliationCases,
 	getMyCreditLedger,
 	getMyCredits,
 	quoteImageCredits,
@@ -179,5 +181,31 @@ describe('credit API client', () => {
 			message: 'Credit service is unavailable',
 			context: {}
 		});
+	});
+
+	test('sends paginated reconciliation queries and returns compensation details', async () => {
+		fetchMock
+			.mockResolvedValueOnce(success({ items: [], total: 125 }))
+			.mockResolvedValueOnce(success({ ledger_id: 'refund-1', created: true, amount: 12 }));
+
+		await expect(
+			getCreditReconciliationCases('token', {
+				status: 'failed',
+				user_id: 'user-1',
+				skip: 25,
+				limit: 25
+			})
+		).resolves.toEqual({ items: [], total: 125 });
+		await expect(
+			compensateCreditReconciliationCase('token', 'usage-1', ' manual refund ')
+		).resolves.toEqual({ ledger_id: 'refund-1', created: true, amount: 12 });
+
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			'/api/v1/credits/admin/reconciliation?status=failed&user_id=user-1&skip=25&limit=25'
+		);
+		expect(fetchMock.mock.calls[1][0]).toBe(
+			'/api/v1/credits/admin/reconciliation/usage-1/compensate'
+		);
+		expect(fetchMock.mock.calls[1][1].body).toBe(JSON.stringify({ note: 'manual refund' }));
 	});
 });

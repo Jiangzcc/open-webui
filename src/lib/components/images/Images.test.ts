@@ -37,10 +37,17 @@ describe('images page controls', () => {
 		expect(source).toContain('getImageModelDisplayName');
 		expect(source).toContain('getImageModelDisplayName(selectedModelConfig)');
 		// popup 选项剥掉厂商前缀只留模型短名(trigger 仍走 getImageModelDisplayName)
-		expect(source).toMatch(
-			/<span class="min-w-0 flex-1 truncate text-left"[^>]*>\s*\{stripVendorFromName\(model\)\}<\/span/
-		);
+		expect(source).toContain('{stripVendorFromName(model)}');
 		expect(source).not.toContain('getImageModelDisplayName(model)');
+	});
+
+	test('shows operation metadata only while choosing a model', () => {
+		expect(source).toContain('{#if model.recommended}');
+		expect(source).toContain('{#if model.tags?.length}');
+		expect(source).toContain('{#if model.maintenanceMessage}');
+		expect(source).not.toContain('selectedModelConfig?.recommended');
+		expect(source).not.toContain('selectedModelConfig?.tags');
+		expect(source).not.toContain('selectedModelConfig?.maintenanceMessage');
 	});
 
 	test('keeps only the mobile sidebar toggle in the page header', () => {
@@ -59,7 +66,7 @@ describe('images page controls', () => {
 		expect(source).not.toContain('quotePrompt: string');
 		expect(source).toContain('$: selectedModelConfig =');
 		expect(source).toContain(
-			'primaryModels.find((model) => model.isDefault) ?? primaryModels[0] ?? null'
+			'primaryModels.find((model) => model.isDefault && model.enabled !== false)'
 		);
 		expect(source).toContain('buildImageQuoteInput(\n\t\tselectedAspectRatio,');
 		expect(source).toContain('\n\t\treferenceImages\n\t)');
@@ -235,7 +242,7 @@ describe('images page controls', () => {
 	test('left-aligns model names in the dropdown options', () => {
 		// 名称占据剩余空间并左对齐,右侧留给价格/慢启动/不支持等徽标;
 		// 按钮不再用 justify-between,否则名称会被挤到中间而不是贴着 Logo。
-		expect(source).toContain('class="min-w-0 flex-1 truncate text-left"');
+		expect(source).toContain('class="min-w-0 flex-1 text-left"');
 		expect(source).not.toContain('flex w-full items-center justify-between gap-2 rounded-xl');
 	});
 

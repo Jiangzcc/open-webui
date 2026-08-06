@@ -4,6 +4,7 @@ import base64
 import json
 import time
 from collections.abc import Iterable
+from typing import Literal
 from uuid import uuid4
 
 from open_webui.extensions.creations.models import (
@@ -11,9 +12,15 @@ from open_webui.extensions.creations.models import (
     CreationPost,
     CreationPostMedia,
     CreationPostReaction,
+    DiscoveryCategorySetting,
 )
 from open_webui.extensions.creations.schemas import (
     CreationPublication,
+    DiscoveryCategory,
+    DiscoveryCategoryCreateForm,
+    DiscoveryCategoryItem,
+    DiscoveryCategoryUpdateForm,
+    DiscoveryOperationForm,
     DiscoveryPostDetail,
     DiscoveryPostListResponse,
     DiscoveryPostSummary,
@@ -62,8 +69,23 @@ def _publication(post: CreationPost) -> CreationPublication:
         title=post.title,
         description=post.description,
         show_prompt=post.show_prompt,
+        category=post.category or 'other',
+        featured=post.featured_at is not None,
+        featured_rank=post.featured_rank if post.featured_rank is not None else 1000,
         published_at=post.published_at,
     )
+
+
+async def _category_exists(
+    session: AsyncSession,
+    category_id: DiscoveryCategory,
+    *,
+    include_disabled: bool,
+) -> bool:
+    stmt = select(DiscoveryCategorySetting.id).where(DiscoveryCategorySetting.id == category_id)
+    if not include_disabled:
+        stmt = stmt.where(DiscoveryCategorySetting.enabled.is_(True))
+    return (await session.scalar(stmt.limit(1))) is not None
 
 
 async def get_creation_publication(session: AsyncSession, user_id: str, creation_id: str) -> CreationPublication | None:
@@ -142,6 +164,9 @@ async def publish_creation(
     ).scalar_one_or_none()
     now = _now()
     if post is None:
+        category = form.category or 'other'
+        if not await _category_exists(session, category, include_disabled=allow_hidden):
+            raise ValueError('invalid discovery category')
         post = CreationPost(
             id=str(uuid4()),
             user_id=user_id,
@@ -149,6 +174,9 @@ async def publish_creation(
             title=form.title,
             description=form.description,
             show_prompt=form.show_prompt,
+            category=category,
+            featured_at=None,
+            featured_rank=1000,
             like_count=0,
             favorite_count=0,
             published_at=now,
@@ -167,6 +195,10 @@ async def publish_creation(
     else:
         if post.user_id != user_id or (post.status == 'hidden' and not allow_hidden):
             return None
+        if form.category is not None:
+            if not await _category_exists(session, form.category, include_disabled=allow_hidden):
+                raise ValueError('invalid discovery category')
+            post.category = form.category
         post.status = 'published'
         post.title = form.title
         post.description = form.description
@@ -193,6 +225,7 @@ async def withdraw_creation(session: AsyncSession, user_id: str, creation_id: st
         return False
     if post.status != 'hidden':
         post.status = 'withdrawn'
+        post.featured_at = None
         post.updated_at = _now()
         await session.commit()
     return True
@@ -265,6 +298,9 @@ async def _summaries(
                 mime_type=meta.get('content_type') if available and isinstance(meta, dict) else None,
                 prompt_preview=_prompt_preview(item, post.show_prompt),
                 model_name=item.model_name_snapshot or item.model_id,
+                category=post.category or 'other',
+                featured=post.featured_at is not None,
+                featured_rank=post.featured_rank if post.featured_rank is not None else 1000,
                 owner=owners[item.user_id],
                 like_count=post.like_count,
                 favorite_count=post.favorite_count,
@@ -288,18 +324,52 @@ def _visible_posts_stmt():
     )
 
 
+async def _disabled_category_ids(session: AsyncSession) -> tuple[str, ...]:
+    """Return the ids of disabled discovery categories (public feed excludes them)."""
+    rows = (
+        await session.execute(
+            select(DiscoveryCategorySetting.id).where(DiscoveryCategorySetting.enabled.is_(False))
+        )
+    ).scalars()
+    return tuple(rows)
+
+
 async def list_discovery_posts(
     session: AsyncSession,
     user_id: str,
     limit: int,
     cursor: str | None,
     sort: DiscoverySort,
+    category: DiscoveryCategory | None = None,
 ) -> DiscoveryPostListResponse:
     stmt = _visible_posts_stmt()
+    # 公开动态排除已禁用分类的帖子：分类选择器隐藏已禁用分类，动态亦不应泄露其内容。
+    disabled_categories = await _disabled_category_ids(session)
+    if disabled_categories:
+        stmt = stmt.where(CreationPost.category.notin_(disabled_categories))
+    if category is not None:
+        stmt = stmt.where(CreationPost.category == category)
+    if sort == 'featured':
+        stmt = stmt.where(CreationPost.featured_at.is_not(None))
     popularity = CreationPost.favorite_count * 2 + CreationPost.like_count
     if cursor:
         primary, published_at, post_id = _decode_cursor(cursor)
-        if sort == 'popular':
+        if sort == 'featured':
+            stmt = stmt.where(
+                or_(
+                    CreationPost.featured_rank > primary,
+                    and_(
+                        CreationPost.featured_rank == primary,
+                        CreationPost.featured_at < published_at,
+                    ),
+                    and_(
+                        CreationPost.featured_rank == primary,
+                        CreationPost.featured_at == published_at,
+                        CreationPost.id < post_id,
+                    ),
+                )
+            )
+        elif sort == 'popular':
             stmt = stmt.where(
                 or_(
                     popularity < primary,
@@ -318,7 +388,13 @@ async def list_discovery_posts(
                     and_(CreationPost.published_at == published_at, CreationPost.id < post_id),
                 )
             )
-    if sort == 'popular':
+    if sort == 'featured':
+        stmt = stmt.order_by(
+            CreationPost.featured_rank.asc(),
+            desc(CreationPost.featured_at),
+            desc(CreationPost.id),
+        )
+    elif sort == 'popular':
         stmt = stmt.order_by(desc(popularity), desc(CreationPost.published_at), desc(CreationPost.id))
     else:
         stmt = stmt.order_by(desc(CreationPost.published_at), desc(CreationPost.id))
@@ -327,8 +403,15 @@ async def list_discovery_posts(
     next_cursor = None
     if len(rows) > limit:
         post = page[-1][0]
-        primary = post.favorite_count * 2 + post.like_count if sort == 'popular' else post.published_at
-        next_cursor = _encode_cursor(primary, post.published_at, post.id)
+        primary = (
+            post.featured_rank
+            if sort == 'featured'
+            else post.favorite_count * 2 + post.like_count
+            if sort == 'popular'
+            else post.published_at
+        )
+        cursor_time = post.featured_at if sort == 'featured' else post.published_at
+        next_cursor = _encode_cursor(primary, cursor_time or 0, post.id)
     return DiscoveryPostListResponse(items=await _summaries(session, user_id, page), next_cursor=next_cursor)
 
 
@@ -337,6 +420,7 @@ async def list_favorite_posts(
     user_id: str,
     limit: int,
     cursor: str | None,
+    category: DiscoveryCategory | None = None,
 ) -> DiscoveryPostListResponse:
     stmt = _visible_posts_stmt().join(
         CreationPostReaction,
@@ -346,6 +430,11 @@ async def list_favorite_posts(
             CreationPostReaction.kind == 'favorite',
         ),
     )
+    disabled_categories = await _disabled_category_ids(session)
+    if disabled_categories:
+        stmt = stmt.where(CreationPost.category.notin_(disabled_categories))
+    if category is not None:
+        stmt = stmt.where(CreationPost.category == category)
     if cursor:
         _, published_at, post_id = _decode_cursor(cursor)
         stmt = stmt.where(
@@ -367,6 +456,127 @@ async def list_favorite_posts(
         post = page[-1][0]
         next_cursor = _encode_cursor(post.published_at, post.published_at, post.id)
     return DiscoveryPostListResponse(items=await _summaries(session, user_id, page), next_cursor=next_cursor)
+
+
+async def update_discovery_operation(
+    session: AsyncSession,
+    post_id: str,
+    form: DiscoveryOperationForm,
+) -> CreationPublication | None:
+    post = await session.get(CreationPost, post_id)
+    if post is None:
+        return None
+    now = _now()
+    if form.category is not None:
+        if not await _category_exists(session, form.category, include_disabled=True):
+            raise ValueError('invalid discovery category')
+        post.category = form.category
+    if form.featured is True:
+        if post.status != 'published':
+            raise ValueError('only published creations can be featured')
+        post.featured_at = post.featured_at or now
+    elif form.featured is False:
+        post.featured_at = None
+    # 排名变更只在作品已进入精选流（featured_at 已设置）时生效，避免
+    # featured_rank 被静默更新但 featured_at=None 的不一致状态。
+    if form.featured_rank is not None:
+        if post.featured_at is not None:
+            post.featured_rank = form.featured_rank
+        elif form.featured is not True:
+            raise ValueError('featured rank can only be set for featured creations')
+    post.updated_at = now
+    await session.commit()
+    return _publication(post)
+
+
+async def list_discovery_categories(
+    session: AsyncSession,
+    *,
+    include_disabled: bool = False,
+) -> tuple[DiscoveryCategoryItem, ...]:
+    stmt = select(DiscoveryCategorySetting)
+    if not include_disabled:
+        stmt = stmt.where(DiscoveryCategorySetting.enabled.is_(True))
+    rows = (
+        await session.execute(
+            stmt.order_by(DiscoveryCategorySetting.sort_order, DiscoveryCategorySetting.id)
+        )
+    ).scalars()
+    return tuple(
+        DiscoveryCategoryItem(
+            id=row.id,
+            display_name=row.display_name,
+            enabled=row.enabled,
+            sort_order=row.sort_order,
+        )
+        for row in rows
+    )
+
+
+async def update_discovery_category(
+    session: AsyncSession,
+    category_id: DiscoveryCategory,
+    form: DiscoveryCategoryUpdateForm,
+) -> DiscoveryCategoryItem | None:
+    category = await session.get(DiscoveryCategorySetting, category_id)
+    if category is None:
+        return None
+    if form.display_name is not None:
+        category.display_name = form.display_name
+    if form.enabled is not None:
+        if category.id == 'other' and form.enabled is False:
+            raise ValueError('default category cannot be disabled')
+        category.enabled = form.enabled
+    if form.sort_order is not None:
+        category.sort_order = form.sort_order
+    category.updated_at = _now()
+    await session.commit()
+    return DiscoveryCategoryItem(
+        id=category.id,
+        display_name=category.display_name,
+        enabled=category.enabled,
+        sort_order=category.sort_order,
+    )
+
+
+async def create_discovery_category(
+    session: AsyncSession,
+    form: DiscoveryCategoryCreateForm,
+) -> DiscoveryCategoryItem:
+    category = DiscoveryCategorySetting(
+        id=f'category_{uuid4().hex[:12]}',
+        display_name=form.display_name,
+        enabled=form.enabled,
+        sort_order=form.sort_order,
+        updated_at=_now(),
+    )
+    session.add(category)
+    await session.commit()
+    return DiscoveryCategoryItem(
+        id=category.id,
+        display_name=category.display_name,
+        enabled=category.enabled,
+        sort_order=category.sort_order,
+    )
+
+
+async def delete_discovery_category(
+    session: AsyncSession,
+    category_id: DiscoveryCategory,
+) -> Literal['deleted', 'not_found', 'protected', 'in_use']:
+    category = await session.get(DiscoveryCategorySetting, category_id)
+    if category is None:
+        return 'not_found'
+    if category.id == 'other':
+        return 'protected'
+    usage_count = await session.scalar(
+        select(func.count()).select_from(CreationPost).where(CreationPost.category == category_id)
+    )
+    if usage_count:
+        return 'in_use'
+    await session.delete(category)
+    await session.commit()
+    return 'deleted'
 
 
 async def get_discovery_post(session: AsyncSession, user_id: str, post_id: str) -> DiscoveryPostDetail | None:

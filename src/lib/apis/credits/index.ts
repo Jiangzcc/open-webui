@@ -178,6 +178,42 @@ export type CreditDimensions = {
 	dimensions: Record<string, Array<{ key: string; rule_types: string[] }>>;
 };
 
+export type ReconciliationStatus = 'failed' | 'unknown';
+
+export type ReconciliationItem = {
+	usage_id: string;
+	user_id: string;
+	user_name_snapshot: string | null;
+	user_email_snapshot: string | null;
+	status: ReconciliationStatus;
+	charged_credits: number;
+	resource_id: string;
+	action: string;
+	channel: string;
+	error_code: string | null;
+	error_summary: string | null;
+	consumption_ledger_id: string | null;
+	compensation_ledger_id: string | null;
+	created_at: number;
+	completed_at: number | null;
+};
+
+export type ReconciliationQuery = {
+	status?: ReconciliationStatus;
+	compensated?: boolean;
+	user_id?: string;
+	skip?: number;
+	limit?: number;
+};
+
+export type ReconciliationPage = { items: ReconciliationItem[]; total: number };
+
+export type CompensationResult = {
+	ledger_id: string;
+	created: boolean;
+	amount: number;
+};
+
 type QueryValue = string | number | boolean | null | undefined;
 type Query = Record<string, QueryValue>;
 
@@ -364,5 +400,32 @@ export const getAdminCreditDimensions = (
 		method: 'GET',
 		path: `/admin/dimensions/${encodeURIComponent(serviceType)}`,
 		token,
+		signal
+	});
+
+export const getCreditReconciliationCases = (
+	token: string,
+	query: ReconciliationQuery = {},
+	signal?: AbortSignal
+) =>
+	requestCredits<ReconciliationPage>({
+		method: 'GET',
+		path: '/admin/reconciliation',
+		token,
+		query,
+		signal
+	});
+
+export const compensateCreditReconciliationCase = (
+	token: string,
+	usageId: string,
+	note?: string,
+	signal?: AbortSignal
+) =>
+	requestCredits<CompensationResult>({
+		method: 'POST',
+		path: `/admin/reconciliation/${encodeURIComponent(usageId)}/compensate`,
+		token,
+		body: { note: note?.trim() || null },
 		signal
 	});

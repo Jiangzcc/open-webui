@@ -4,16 +4,18 @@
 	import CreditLedgerTab from '$lib/components/credits/admin/CreditLedgerTab.svelte';
 	import CreditPricingTab from '$lib/components/credits/admin/CreditPricingTab.svelte';
 	import CreditDimensionsTab from '$lib/components/credits/admin/CreditDimensionsTab.svelte';
+	import CreditReconciliationTab from '$lib/components/credits/admin/CreditReconciliationTab.svelte';
 	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
 
 	const i18n = getContext('i18n');
 	registerCreditTranslations(i18n);
 
-	type CreditTab = 'accounts' | 'ledger' | 'pricing' | 'dimensions';
+	type CreditTab = 'accounts' | 'ledger' | 'reconciliation' | 'pricing' | 'dimensions';
 
 	const tabs: Array<{ id: CreditTab; label: string }> = [
 		{ id: 'accounts', label: 'credits.admin.accounts' },
 		{ id: 'ledger', label: 'credits.ledger' },
+		{ id: 'reconciliation', label: 'credits.admin.reconciliation' },
 		{ id: 'pricing', label: 'credits.prices' },
 		{ id: 'dimensions', label: 'credits.dimensions' }
 	];
@@ -55,6 +57,8 @@
 			<CreditAccountsTab />
 		{:else if selectedTab === 'ledger'}
 			<CreditLedgerTab />
+		{:else if selectedTab === 'reconciliation'}
+			<CreditReconciliationTab />
 		{:else if selectedTab === 'pricing'}
 			<CreditPricingTab />
 		{:else if selectedTab === 'dimensions'}

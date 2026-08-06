@@ -112,6 +112,7 @@ class CreditLedger(CreditBase):
         Index('ix_ext_credit_ledger_user_created', 'user_id', 'created_at'),
         Index('ix_ext_credit_ledger_created', 'created_at'),
         Index('ix_ext_credit_ledger_usage', 'usage_id'),
+        Index('ux_ext_credit_ledger_related_refund', 'related_ledger_id', unique=True),
     )
 
     id = Column(String(128), primary_key=True)

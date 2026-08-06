@@ -9,8 +9,9 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from open_webui.models.users import User
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from .compat import ImageBillingContext
 from .constants import (
@@ -37,7 +38,11 @@ from .repository import (
 from .schemas import (
     AdjustmentRequest,
     AdminLedgerQuery,
+    CompensationRequest,
     Page,
+    ReconciliationItem,
+    ReconciliationPage,
+    ReconciliationQuery,
     RequestAuditContext,
     UserLedgerQuery,
     UserSnapshot,
@@ -460,6 +465,143 @@ async def list_admin_ledger(session: AsyncSession, query: AdminLedgerQuery) -> P
     return Page(items=items, next_cursor=next_cursor)
 
 
+async def list_reconciliation_cases(
+    session: AsyncSession,
+    query: ReconciliationQuery,
+) -> ReconciliationPage:
+    refund = aliased(CreditLedger)
+    conditions = [
+        CreditUsage.status.in_(('failed', 'unknown')),
+        CreditUsage.exempt.is_(False),
+        CreditUsage.charged_credits > 0,
+        CreditUsage.ledger_id.is_not(None),
+    ]
+    if query.status is not None:
+        conditions.append(CreditUsage.status == query.status)
+    # compensated 过滤依赖 outerjoin 的 refund 别名：refund.id 非空表示已存在
+    # manual_refund 补偿账本，为空则尚未补偿。True=只看已补偿，False=只看待补偿。
+    if query.compensated is True:
+        conditions.append(refund.id.is_not(None))
+    elif query.compensated is False:
+        conditions.append(refund.id.is_(None))
+    if query.user_id is not None:
+        conditions.append(CreditUsage.user_id == query.user_id)
+
+    # compensated 过滤引用了 refund 别名；计数查询必须带上与行查询相同的 outerjoin，
+    # 否则 WHERE 中的 refund.id 会引用未连接的表。未筛选补偿状态时不加 join，
+    # 保持原有计数计划不变。
+    refund_join = and_(
+        refund.related_ledger_id == CreditUsage.ledger_id,
+        refund.reason_code == 'manual_refund',
+    )
+    count_select = select(func.count()).select_from(CreditUsage)
+    if query.compensated is not None:
+        count_select = count_select.outerjoin(refund, refund_join)
+    total = int(await session.scalar(count_select.where(*conditions)) or 0)
+    rows = (
+        await session.execute(
+            select(CreditUsage, refund.id)
+            .outerjoin(refund, refund_join)
+            .where(*conditions)
+            .order_by(CreditUsage.updated_at.desc(), CreditUsage.id.desc())
+            .offset(query.skip)
+            .limit(query.limit)
+        )
+    ).all()
+    items = []
+    for usage, refund_id in rows:
+        error = usage.error_snapshot if isinstance(usage.error_snapshot, dict) else {}
+        items.append(
+            ReconciliationItem(
+                usage_id=usage.id,
+                user_id=usage.user_id,
+                user_name_snapshot=usage.user_name_snapshot,
+                user_email_snapshot=usage.user_email_snapshot,
+                status=usage.status,
+                charged_credits=usage.charged_credits,
+                resource_id=usage.resource_id,
+                action=usage.action,
+                channel=usage.channel,
+                error_code=error.get('code') if isinstance(error.get('code'), str) else None,
+                error_summary=error.get('summary') if isinstance(error.get('summary'), str) else None,
+                consumption_ledger_id=usage.ledger_id,
+                compensation_ledger_id=refund_id,
+                created_at=usage.created_at,
+                completed_at=usage.completed_at,
+            )
+        )
+    return ReconciliationPage(items=tuple(items), total=total)
+
+
+async def compensate_reconciliation_case(
+    session: AsyncSession,
+    usage_id: str,
+    operator: UserSnapshot,
+    request: CompensationRequest,
+    audit: RequestAuditContext,
+) -> tuple[CreditLedger, bool]:
+    now = _now()
+    async with session.begin():
+        usage = await session.scalar(
+            select(CreditUsage).where(CreditUsage.id == usage_id).with_for_update()
+        )
+        if usage is None:
+            raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_found'})
+        if usage.status not in {'failed', 'unknown'}:
+            raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_reconcilable'})
+        if usage.exempt or usage.charged_credits <= 0 or not usage.ledger_id:
+            raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_charged'})
+        existing = await session.scalar(
+            select(CreditLedger).where(CreditLedger.related_ledger_id == usage.ledger_id)
+        )
+        if existing is not None:
+            return existing, False
+
+        target = UserSnapshot(
+            id=usage.user_id,
+            name=usage.user_name_snapshot,
+            email=usage.user_email_snapshot,
+        )
+        account = await get_or_create_account(session, target, now=now)
+        account = await _lock_and_verify_account_matches_ledger(session, account.id)
+        balance = await update_account_balance(session, account, usage.charged_credits, now=now)
+        if balance is None:
+            raise CreditError(code='invalid_adjustment', context={'reason': 'balance_limit_exceeded'})
+        balance_before, balance_after = balance
+        ledger = await insert_ledger(
+            session,
+            {
+                'id': str(uuid4()),
+                'account_id': account.id,
+                'usage_id': usage.id,
+                'user_id': usage.user_id,
+                'user_name_snapshot': usage.user_name_snapshot,
+                'user_email_snapshot': usage.user_email_snapshot,
+                'amount': usage.charged_credits,
+                'balance_before': balance_before,
+                'balance_after': balance_after,
+                'entry_type': 'admin_adjustment',
+                'reason_code': 'manual_refund',
+                'note': request.note,
+                'operator_id': operator.id,
+                'operator_name_snapshot': operator.name,
+                'operator_email_snapshot': operator.email,
+                'request_source': audit.source,
+                'request_id': audit.request_id,
+                'idempotency_key': f'reconciliation:{usage.id}',
+                'service_type': usage.service_type,
+                'resource_id': usage.resource_id,
+                'action': usage.action,
+                'pricing_snapshot': usage.pricing_snapshot,
+                'metadata_snapshot': {'reconciliation_usage_id': usage.id},
+                'related_ledger_id': usage.ledger_id,
+                'created_at': now,
+            },
+        )
+    credit_metrics.admin_adjustment(amount=usage.charged_credits)
+    return ledger, True
+
+
 __all__ = [
     'BeginUsageResult',
     'SafeProviderError',
@@ -467,6 +609,8 @@ __all__ = [
     'begin_image_usage',
     'get_balance',
     'list_admin_ledger',
+    'list_reconciliation_cases',
+    'compensate_reconciliation_case',
     'list_user_ledger',
     'mark_stale_usage_unknown',
     'mark_usage_failed',

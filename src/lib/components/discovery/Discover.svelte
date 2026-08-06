@@ -3,7 +3,12 @@
 	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import { listDiscoveryPosts, listFavoritePosts, setDiscoveryReaction } from '$lib/apis/discovery';
+	import {
+		listDiscoveryCategories,
+		listDiscoveryPosts,
+		listFavoritePosts,
+		setDiscoveryReaction
+	} from '$lib/apis/discovery';
 	import { mobile, showSidebar, WEBUI_NAME } from '$lib/stores';
 	import {
 		storePendingCreationDraft,
@@ -15,6 +20,8 @@
 		beginDiscoveryRequest,
 		createDiscoveryFeedState,
 		type DiscoveryFeed,
+		type DiscoveryCategory,
+		type DiscoveryCategoryItem,
 		type DiscoveryPostSummary,
 		type ReactionKind,
 		type ReactionState
@@ -33,7 +40,9 @@
 	const PAGE_SIZE = 24;
 
 	let activeFeed: DiscoveryFeed = 'latest';
+	let activeCategory: DiscoveryCategory | null = null;
 	let feeds = {
+		featured: createDiscoveryFeedState(),
 		latest: createDiscoveryFeedState(),
 		popular: createDiscoveryFeedState(),
 		favorites: createDiscoveryFeedState()
@@ -41,6 +50,9 @@
 	let detailsShow = false;
 	let detailsPostId: string | null = null;
 	let pendingReactions = new Set<string>();
+	let categories: DiscoveryCategoryItem[] = [
+		{ id: 'other', display_name: $i18n.t('Other'), enabled: true, sort_order: 999 }
+	];
 
 	$: state = feeds[activeFeed];
 
@@ -51,12 +63,18 @@
 		try {
 			const page =
 				feed === 'favorites'
-					? await listFavoritePosts(localStorage.token, PAGE_SIZE, first ? null : target.nextCursor)
+					? await listFavoritePosts(
+							localStorage.token,
+							PAGE_SIZE,
+							first ? null : target.nextCursor,
+							activeCategory ?? undefined
+						)
 					: await listDiscoveryPosts(
 							localStorage.token,
 							feed,
 							PAGE_SIZE,
-							first ? null : target.nextCursor
+							first ? null : target.nextCursor,
+							activeCategory ?? undefined
 						);
 			applyDiscoveryPage(target, generation, page, first);
 		} catch {
@@ -66,12 +84,37 @@
 		}
 	};
 
+	const selectCategory = (category: DiscoveryCategory | null) => {
+		if (activeCategory === category) return;
+		activeCategory = category;
+		feeds = {
+			featured: createDiscoveryFeedState(),
+			latest: createDiscoveryFeedState(),
+			popular: createDiscoveryFeedState(),
+			favorites: createDiscoveryFeedState()
+		};
+		void loadPage(activeFeed, true);
+	};
+
 	const selectFeed = (feed: DiscoveryFeed) => {
 		activeFeed = feed;
 		if (!feeds[feed].loaded && !feeds[feed].loading) void loadPage(feed, true);
 	};
 
-	onMount(() => void loadPage('latest', true));
+	onMount(() => {
+		// 分类元数据与首屏信息流相互独立：并行加载，避免 categories 端点慢/挂起
+		// 时阻塞 feed 首屏；categories 失败时回退到内置「Other」分类即可。
+		void (async () => {
+			const categoryPromise = listDiscoveryCategories(localStorage.token)
+				.then((result) => {
+					categories = result;
+				})
+				.catch(() => {
+					// feed 仍可用内置回退分类。
+				});
+			await Promise.all([categoryPromise, loadPage('latest', true)]);
+		})();
+	});
 
 	const openDetails = (item: DiscoveryPostSummary) => {
 		detailsPostId = item.id;
@@ -165,11 +208,11 @@
 				</div>
 
 				<div
-					class="grid min-h-11 grid-cols-3 rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-900/80"
+					class="grid min-h-11 grid-cols-4 rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-900/80"
 					role="tablist"
 					aria-label={$i18n.t('Discovery feed')}
 				>
-					{#each [['latest', $i18n.t('Latest')], ['popular', $i18n.t('Popular')], ['favorites', $i18n.t('My favorites')]] as tab}
+					{#each [['featured', $i18n.t('Featured')], ['latest', $i18n.t('Latest')], ['popular', $i18n.t('Popular')], ['favorites', $i18n.t('My favorites')]] as tab}
 						<button
 							type="button"
 							class="min-h-9 rounded-full px-3 text-xs font-medium transition sm:px-4 {activeFeed ===
@@ -185,6 +228,36 @@
 					{/each}
 				</div>
 			</header>
+
+			<div
+				class="mb-5 flex gap-2 overflow-x-auto pb-1 scrollbar-none"
+				aria-label={$i18n.t('Creation categories')}
+			>
+				<button
+					type="button"
+					class="min-h-8 shrink-0 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition {activeCategory ===
+					null
+						? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950'
+						: 'border-gray-200 bg-white text-gray-600 hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'}"
+					aria-pressed={activeCategory === null}
+					on:click={() => selectCategory(null)}
+				>
+					{$i18n.t('All')}
+				</button>
+				{#each categories as category (category.id)}
+					<button
+						type="button"
+						class="min-h-8 shrink-0 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition {activeCategory ===
+						category.id
+							? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950'
+							: 'border-gray-200 bg-white text-gray-600 hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'}"
+						aria-pressed={activeCategory === category.id}
+						on:click={() => selectCategory(category.id)}
+					>
+						{$i18n.t(category.display_name)}
+					</button>
+				{/each}
+			</div>
 
 			<div role="tabpanel" aria-label={$i18n.t('Discovery feed')}>
 				{#if state.loading && !state.loaded}
@@ -241,6 +314,19 @@
 								</button>
 
 								<div class="p-2.5 sm:p-3">
+									<div class="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium">
+										{#if item.featured}
+											<span
+												class="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+												>{$i18n.t('Featured')}</span
+											>
+										{/if}
+										<span class="text-gray-400">
+											{$i18n.t(
+												categories.find((category) => category.id === item.category)?.display_name ?? 'Other'
+											)}
+										</span>
+									</div>
 									{#if item.title}
 										<h2 class="line-clamp-2 text-sm font-medium text-gray-900 dark:text-gray-100">
 											{item.title}

@@ -496,6 +496,8 @@ def test_router_exposes_exactly_the_documented_credit_routes() -> None:
         ('/api/v1/credits/admin/accounts', 'GET'),
         ('/api/v1/credits/admin/accounts/{user_id}/adjustments', 'POST'),
         ('/api/v1/credits/admin/ledger', 'GET'),
+        ('/api/v1/credits/admin/reconciliation', 'GET'),
+        ('/api/v1/credits/admin/reconciliation/{usage_id}/compensate', 'POST'),
         ('/api/v1/credits/admin/prices', 'GET'),
         ('/api/v1/credits/admin/prices', 'POST'),
         ('/api/v1/credits/admin/prices/{price_id}', 'PUT'),

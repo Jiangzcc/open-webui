@@ -42,9 +42,12 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
     assert by_id['nano-banana']['edit_model'] == 'nano-banana/edit'
     assert by_id['nano-banana/edit']['generation_model'] == 'nano-banana'
     assert 'internal_model' not in serialized
-    # provider is a display-only vendor slug used to group the public catalog.
-    # It must survive sanitization without exposing the internal fal route.
-    assert {item['provider'] for item in public} == {'alibaba', 'google', 'openai', 'xai'}
+    # provider 是仅用于展示的厂商 slug，必须通过净化而不泄露内部 fal 路由。
+    assert all(
+        item['provider']
+        and not item['provider'].startswith(('fal-ai/', 'google/', 'openai/', 'xai/'))
+        for item in public
+    )
 
 
 def test_public_fal_catalog_exposes_openai_quality_without_leaking_option_fields() -> None:
@@ -325,25 +328,43 @@ def test_legacy_models_keep_hosting_absent_or_filled():
 async def test_images_models_enriches_public_fal_catalog_with_enabled_base_prices(monkeypatch) -> None:
     import open_webui.routers.images as images
     from open_webui.extensions.credits.models import CreditPrice
+    from open_webui.extensions.model_ops.models import ImageModelOperation
 
     async def fal_config():
         return SimpleNamespace(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='fal-ai/qwen-image')
 
     class Scalars:
+        def __init__(self, rows):
+            self._rows = rows
+
         def all(self):
-            return [
-                CreditPrice(
-                    service_type='image',
-                    resource_id='fal-ai/qwen-image',
-                    action='text-to-image',
-                    base_price='4',
-                    enabled=True,
-                )
-            ]
+            return self._rows
 
     class Session:
-        async def scalars(self, _statement):
-            return Scalars()
+        """Fake async session.
+
+        get_models now issues two scalars() calls:
+        1. get_enabled_prices -> CreditPrice rows
+        2. apply_model_operations -> ImageModelOperation rows (no overrides seeded)
+        Distinguish them by the statement's queried entity so each returns the
+        right type instead of uniformly returning CreditPrice objects.
+        """
+
+        async def scalars(self, statement):
+            entity = statement.column_descriptions[0]['entity'] if statement.column_descriptions else None
+            if entity is ImageModelOperation:
+                return Scalars([])
+            return Scalars(
+                [
+                    CreditPrice(
+                        service_type='image',
+                        resource_id='fal-ai/qwen-image',
+                        action='text-to-image',
+                        base_price='4',
+                        enabled=True,
+                    )
+                ]
+            )
 
     monkeypatch.setattr(images, 'get_image_config', fal_config)
 

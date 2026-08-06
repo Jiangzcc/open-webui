@@ -79,6 +79,12 @@ export type ImageGenerationModel = {
 	hosting?: string;
 	basePrice?: string;
 	editBasePrice?: string;
+	visible?: boolean;
+	enabled?: boolean;
+	recommended?: boolean;
+	sortOrder?: number;
+	tags?: string[];
+	maintenanceMessage?: string;
 	/**
 	 * Cap on how many reference images a single image-to-image request accepts.
 	 * Backend declares `image_input_max_count` (1 for single-image families);
@@ -652,6 +658,20 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 					? model.default_quality
 					: undefined
 		);
+		const hasEnabled = hasOwn(model, 'enabled');
+		const hasVisible = hasOwn(model, 'visible');
+		const enabled = model.enabled !== false;
+		const visible = model.visible !== false;
+		const recommended = model.recommended === true;
+		const sortOrderValue = Number(model.sortOrder ?? model.sort_order);
+		const tags = normalizeStringList(model.tags);
+		const maintenanceMessage = trimOptional(
+			typeof model.maintenanceMessage === 'string'
+				? model.maintenanceMessage
+				: typeof model.maintenance_message === 'string'
+					? model.maintenance_message
+					: undefined
+		);
 
 		return [
 			{
@@ -661,6 +681,15 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 				...(task && { task }),
 				...(basePrice && { basePrice }),
 				...(editBasePrice && { editBasePrice }),
+				...(hasVisible && { visible }),
+				...(hasEnabled && { enabled }),
+				...(recommended && { recommended: true }),
+				...(Number.isInteger(sortOrderValue) &&
+					sortOrderValue >= 0 && {
+						sortOrder: sortOrderValue
+					}),
+				...(tags.length && { tags }),
+				...(maintenanceMessage && { maintenanceMessage }),
 				...(generationModel && { generationModel }),
 				...(editModel && { editModel }),
 				...(isDefault && { isDefault: true }),

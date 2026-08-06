@@ -158,6 +158,29 @@ describe('image generation utils', () => {
 		expect(model).toMatchObject({ basePrice: '4', editBasePrice: '7' });
 	});
 
+	test('preserves image model operation metadata for the user selector', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'public-image-model',
+				visible: true,
+				enabled: false,
+				recommended: true,
+				sort_order: 20,
+				tags: ['Fast', 'Portrait'],
+				maintenance_message: 'Capacity recovery in progress'
+			}
+		]);
+
+		expect(model).toMatchObject({
+			visible: true,
+			enabled: false,
+			recommended: true,
+			sortOrder: 20,
+			tags: ['Fast', 'Portrait'],
+			maintenanceMessage: 'Capacity recovery in progress'
+		});
+	});
+
 	test('keeps explicit auto model metadata', () => {
 		expect(
 			normalizeImageGenerationModels([

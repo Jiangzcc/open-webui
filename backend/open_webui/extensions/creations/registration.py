@@ -38,6 +38,7 @@ _REQUIRED_CHECKS = {
             'ck_ext_creation_post_status',
             'ck_ext_creation_post_like_count',
             'ck_ext_creation_post_favorite_count',
+            'ck_ext_creation_post_featured_rank',
         }
     ),
     'ext_creation_post_reaction': frozenset({'ck_ext_creation_post_reaction_kind'}),
@@ -48,6 +49,7 @@ _REQUIRED_CHECKS = {
             'ck_ext_image_task_expected_count',
         }
     ),
+    'ext_creation_category': frozenset({'ck_ext_creation_category_sort_order'}),
 }
 _REQUIRED_INDEXES = {
     'ext_creation_media_item': frozenset(
@@ -62,13 +64,19 @@ _REQUIRED_INDEXES = {
             'ix_ext_creation_post_status_published',
             'ix_ext_creation_post_status_popular',
             'ix_ext_creation_post_user_status',
+            'ix_ext_creation_post_status_category',
+            'ix_ext_creation_post_status_featured',
         }
     ),
     'ext_creation_post_media': frozenset({'ix_ext_creation_post_media_creation'}),
     'ext_creation_post_reaction': frozenset({'ix_ext_creation_post_reaction_user_kind'}),
     'ext_image_generation_task': frozenset(
-        {'ix_ext_image_task_user_created', 'ix_ext_image_task_status_updated'}
+        {
+            'ix_ext_image_task_user_created',
+            'ix_ext_image_task_status_updated',
+        }
     ),
+    'ext_creation_category': frozenset({'ix_ext_creation_category_enabled_order'}),
 }
 
 

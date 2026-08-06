@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import pytest
 from open_webui.extensions.creations import discovery_service
-from open_webui.extensions.creations.models import CreationMediaItem
-from open_webui.extensions.creations.schemas import PublishCreationForm
+from open_webui.extensions.creations.models import (
+    CreationMediaItem,
+    CreationPost,
+    DiscoveryCategorySetting,
+)
+from open_webui.extensions.creations.schemas import (
+    DiscoveryCategoryCreateForm,
+    DiscoveryCategoryUpdateForm,
+    DiscoveryOperationForm,
+    PublishCreationForm,
+)
 from open_webui.extensions.creations.tests.conftest import make_file, make_user
 
 
@@ -53,6 +62,72 @@ def _bind_repositories(monkeypatch, *, files, users) -> None:
 
 
 @pytest.mark.asyncio
+async def test_category_settings_are_ordered_filtered_and_updatable(creation_sessions) -> None:
+    async with creation_sessions() as session:
+        other = await session.get(DiscoveryCategorySetting, 'other')
+        assert other is not None
+        other.enabled = False
+        await session.commit()
+
+        public_items = await discovery_service.list_discovery_categories(session)
+        admin_items = await discovery_service.list_discovery_categories(session, include_disabled=True)
+        updated = await discovery_service.update_discovery_category(
+            session,
+            'other',
+            DiscoveryCategoryUpdateForm(display_name='综合', enabled=True, sort_order=5),
+        )
+        with pytest.raises(ValueError, match='default category cannot be disabled'):
+            await discovery_service.update_discovery_category(
+                session,
+                'other',
+                DiscoveryCategoryUpdateForm(enabled=False),
+            )
+        created = await discovery_service.create_discovery_category(
+            session,
+            DiscoveryCategoryCreateForm(display_name='摄影', enabled=True, sort_order=15),
+        )
+        deleted = await discovery_service.delete_discovery_category(session, created.id)
+        protected = await discovery_service.delete_discovery_category(session, 'other')
+
+        session.add(
+            CreationPost(
+                id='post-portrait',
+                user_id='author-1',
+                status='published',
+                title=None,
+                description=None,
+                show_prompt=True,
+                category='portrait',
+                featured_at=None,
+                featured_rank=1000,
+                like_count=0,
+                favorite_count=0,
+                published_at=1,
+                created_at=1,
+                updated_at=1,
+            )
+        )
+        await session.commit()
+        in_use = await discovery_service.delete_discovery_category(session, 'portrait')
+        with pytest.raises(ValueError, match='invalid discovery category'):
+            await discovery_service.update_discovery_operation(
+                session,
+                'post-portrait',
+                DiscoveryOperationForm(category='missing-category'),
+            )
+
+    assert public_items[0].id == 'portrait'
+    assert all(item.id != 'other' for item in public_items)
+    assert admin_items[-1].id == 'other'
+    assert updated is not None
+    assert (updated.display_name, updated.enabled, updated.sort_order) == ('综合', True, 5)
+    assert created.id.startswith('category_')
+    assert deleted == 'deleted'
+    assert protected == 'protected'
+    assert in_use == 'in_use'
+
+
+@pytest.mark.asyncio
 async def test_owner_can_publish_and_republish_same_creation(creation_sessions, monkeypatch) -> None:
     await _seed_creation(creation_sessions)
     _bind_repositories(
@@ -66,7 +141,7 @@ async def test_owner_can_publish_and_republish_same_creation(creation_sessions, 
             session,
             'author-1',
             'creation-1',
-            PublishCreationForm(title='First title', show_prompt=False),
+            PublishCreationForm(title='First title', show_prompt=False, category='portrait'),
         )
         second = await discovery_service.publish_creation(
             session,
@@ -80,6 +155,8 @@ async def test_owner_can_publish_and_republish_same_creation(creation_sessions, 
     assert second.post_id == first.post_id
     assert second.title == 'Updated title'
     assert second.status == 'published'
+    assert first.category == 'portrait'
+    assert second.category == 'portrait'
 
 
 @pytest.mark.asyncio

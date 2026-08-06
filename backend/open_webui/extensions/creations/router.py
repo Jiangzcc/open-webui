@@ -11,12 +11,17 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse
 from open_webui.extensions.creations.db import get_creation_session
 from open_webui.extensions.creations.discovery_service import (
+    create_discovery_category,
+    delete_discovery_category,
     get_discovery_post,
     get_published_content_file,
+    list_discovery_categories,
     list_discovery_posts,
     list_favorite_posts,
     publish_creation,
     set_reaction,
+    update_discovery_category,
+    update_discovery_operation,
     withdraw_creation,
 )
 from open_webui.extensions.creations.generation_tasks import (
@@ -38,6 +43,11 @@ from open_webui.extensions.creations.schemas import (
     CreationPublication,
     CreationPublicationFilter,
     CreationTask,
+    DiscoveryCategory,
+    DiscoveryCategoryCreateForm,
+    DiscoveryCategoryItem,
+    DiscoveryCategoryUpdateForm,
+    DiscoveryOperationForm,
     DiscoveryPostDetail,
     DiscoveryPostListResponse,
     DiscoverySort,
@@ -241,7 +251,10 @@ async def publish_media(
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
-    publication = await publish_creation(session, user.id, creation_id, form)
+    try:
+        publication = await publish_creation(session, user.id, creation_id, form)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     if publication is None:
         raise HTTPException(status_code=404, detail='creation not found')
     return publication
@@ -262,26 +275,28 @@ async def withdraw_media(
 @router.get('/discover/posts', response_model=DiscoveryPostListResponse)
 async def list_discover_posts(
     sort: DiscoverySort = 'latest',
+    category: DiscoveryCategory | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_discovery_posts(session, user.id, limit, cursor, sort)
+        return await list_discovery_posts(session, user.id, limit, cursor, sort, category)
     except ValueError:
         return _invalid_cursor_response()
 
 
 @router.get('/discover/favorites', response_model=DiscoveryPostListResponse)
 async def list_discover_favorites(
+    category: DiscoveryCategory | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_favorite_posts(session, user.id, limit, cursor)
+        return await list_favorite_posts(session, user.id, limit, cursor, category)
     except ValueError:
         return _invalid_cursor_response()
 
@@ -360,6 +375,83 @@ async def list_admin_media(
         return _invalid_cursor_response()
 
 
+@router.get('/discover/categories', response_model=tuple[DiscoveryCategoryItem, ...])
+async def list_discover_categories(
+    _user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    return await list_discovery_categories(session)
+
+
+@router.patch('/admin/discover/posts/{post_id}', response_model=CreationPublication)
+async def update_admin_discovery_post(
+    post_id: str,
+    form: DiscoveryOperationForm,
+    _user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    try:
+        publication = await update_discovery_operation(session, post_id, form)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if publication is None:
+        raise HTTPException(status_code=404, detail='post not found')
+    return publication
+
+
+@router.get('/admin/discover/categories', response_model=tuple[DiscoveryCategoryItem, ...])
+async def list_admin_discover_categories(
+    _user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    return await list_discovery_categories(session, include_disabled=True)
+
+
+@router.post(
+    '/admin/discover/categories',
+    response_model=DiscoveryCategoryItem,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_admin_discover_category(
+    form: DiscoveryCategoryCreateForm,
+    _user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    return await create_discovery_category(session, form)
+
+
+@router.patch('/admin/discover/categories/{category_id}', response_model=DiscoveryCategoryItem)
+async def update_admin_discover_category(
+    category_id: DiscoveryCategory,
+    form: DiscoveryCategoryUpdateForm,
+    _user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    try:
+        category = await update_discovery_category(session, category_id, form)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if category is None:
+        raise HTTPException(status_code=404, detail='category not found')
+    return category
+
+
+@router.delete('/admin/discover/categories/{category_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_admin_discover_category(
+    category_id: DiscoveryCategory,
+    _user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    result = await delete_discovery_category(session, category_id)
+    if result == 'not_found':
+        raise HTTPException(status_code=404, detail='category not found')
+    if result == 'protected':
+        raise HTTPException(status_code=409, detail='default category cannot be deleted')
+    if result == 'in_use':
+        raise HTTPException(status_code=409, detail='category is in use')
+    return None
+
+
 @router.get('/admin/media/{creation_id}', response_model=AdminCreationDetail)
 async def get_admin_media(
     creation_id: str,
@@ -382,13 +474,16 @@ async def publish_admin_media(
     detail = await get_admin_detail(session, creation_id)
     if detail is None:
         raise HTTPException(status_code=404, detail='creation not found')
-    publication = await publish_creation(
-        session,
-        detail.owner.user_id,
-        creation_id,
-        form,
-        allow_hidden=True,
-    )
+    try:
+        publication = await publish_creation(
+            session,
+            detail.owner.user_id,
+            creation_id,
+            form,
+            allow_hidden=True,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     if publication is None:
         raise HTTPException(status_code=404, detail='creation not found')
     return publication

@@ -78,6 +78,7 @@ class CreationPost(CreationBase):
         ),
         CheckConstraint('like_count >= 0', name='ck_ext_creation_post_like_count'),
         CheckConstraint('favorite_count >= 0', name='ck_ext_creation_post_favorite_count'),
+        CheckConstraint('featured_rank >= 0', name='ck_ext_creation_post_featured_rank'),
         Index(
             'ix_ext_creation_post_status_published',
             'status',
@@ -93,6 +94,14 @@ class CreationPost(CreationBase):
             'id',
         ),
         Index('ix_ext_creation_post_user_status', 'user_id', 'status', 'updated_at', 'id'),
+        Index('ix_ext_creation_post_status_category', 'status', 'category', 'published_at', 'id'),
+        Index(
+            'ix_ext_creation_post_status_featured',
+            'status',
+            'featured_rank',
+            'featured_at',
+            'id',
+        ),
     )
 
     id = Column(String(128), primary_key=True)
@@ -101,10 +110,27 @@ class CreationPost(CreationBase):
     title = Column(String(200), nullable=True)
     description = Column(String(1000), nullable=True)
     show_prompt = Column(Boolean, nullable=False, server_default='true')
+    category = Column(String(32), nullable=False, server_default='other')
+    featured_at = Column(BigInteger, nullable=True)
+    featured_rank = Column(Integer, nullable=False, server_default='1000')
     like_count = Column(Integer, nullable=False, server_default='0')
     favorite_count = Column(Integer, nullable=False, server_default='0')
     published_at = Column(BigInteger, nullable=False)
     created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=False)
+
+
+class DiscoveryCategorySetting(CreationBase):
+    __tablename__ = 'ext_creation_category'
+    __table_args__ = (
+        CheckConstraint('sort_order >= 0', name='ck_ext_creation_category_sort_order'),
+        Index('ix_ext_creation_category_enabled_order', 'enabled', 'sort_order', 'id'),
+    )
+
+    id = Column(String(32), primary_key=True)
+    display_name = Column(String(64), nullable=False)
+    enabled = Column(Boolean, nullable=False, server_default='true')
+    sort_order = Column(Integer, nullable=False, server_default='1000')
     updated_at = Column(BigInteger, nullable=False)
 
 
@@ -180,5 +206,6 @@ __all__ = [
     'CreationPost',
     'CreationPostMedia',
     'CreationPostReaction',
+    'DiscoveryCategorySetting',
     'ImageGenerationTask',
 ]

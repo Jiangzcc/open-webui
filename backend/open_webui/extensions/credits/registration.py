@@ -42,6 +42,9 @@ _REQUIRED_CONSTRAINTS = {
     ),
     'ext_credit_price': frozenset({'ck_ext_credit_price_base_nonempty'}),
 }
+_REQUIRED_INDEXES = {
+    'ext_credit_ledger': frozenset({'ux_ext_credit_ledger_related_refund'}),
+}
 _recovery_counter = metrics.get_meter(__name__).create_counter(
     'webui.credits.usage.recovered_unknown',
     description='Counts stale unfinished credit usages transitioned to unknown.',
@@ -89,6 +92,14 @@ def _validate_credit_schema() -> None:
             if missing:
                 raise RuntimeError(
                     f'credit migration validation failed: {table_name} missing constraints {sorted(missing)}'
+                )
+
+        for table_name, required in _REQUIRED_INDEXES.items():
+            existing = {index['name'] for index in inspector.get_indexes(table_name, schema=DATABASE_SCHEMA)}
+            missing = required - existing
+            if missing:
+                raise RuntimeError(
+                    f'credit migration validation failed: {table_name} missing indexes {sorted(missing)}'
                 )
 
 

@@ -7,16 +7,20 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AuthorizationScope = Literal['direct', 'chat', 'tool']
 CreationTask = Literal['text-to-image', 'image-to-image']
 CreationSource = Literal['web', 'api', 'chat', 'tool']
 CreationKind = Literal['image']
 CreationAvailability = Literal['available', 'missing']
-DiscoverySort = Literal['latest', 'popular']
+DiscoverySort = Literal['featured', 'latest', 'popular']
+DiscoveryCategory = Annotated[
+    str,
+    Field(min_length=1, max_length=32, pattern=r'^[a-z0-9][a-z0-9_-]*$'),
+]
 ReactionKind = Literal['like', 'favorite']
 ImageGenerationTaskStatus = Literal['queued', 'running', 'succeeded', 'failed']
 CreationPublicationFilter = Literal['published', 'unpublished']
@@ -136,6 +140,7 @@ class PublishCreationForm(_StrictModel):
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
     show_prompt: bool = True
+    category: DiscoveryCategory | None = None
 
     @field_validator('title', 'description', mode='before')
     @classmethod
@@ -173,12 +178,62 @@ class ImageGenerationTaskListResponse(_StrictModel):
     next_cursor: str | None = None
 
 
+class DiscoveryOperationForm(_StrictModel):
+    category: DiscoveryCategory | None = None
+    featured: bool | None = None
+    featured_rank: int | None = Field(default=None, ge=0, le=10000)
+
+    @model_validator(mode='after')
+    def require_change(self) -> DiscoveryOperationForm:
+        if self.category is None and self.featured is None and self.featured_rank is None:
+            raise ValueError('at least one discovery operation field is required')
+        return self
+
+
+class DiscoveryCategoryItem(_StrictModel):
+    id: DiscoveryCategory
+    display_name: str = Field(min_length=1, max_length=64)
+    enabled: bool
+    sort_order: int = Field(ge=0, le=10000)
+
+
+class DiscoveryCategoryUpdateForm(_StrictModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    enabled: bool | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=10000)
+
+    @field_validator('display_name', mode='before')
+    @classmethod
+    def _normalize_display_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode='after')
+    def require_change(self) -> DiscoveryCategoryUpdateForm:
+        if self.display_name is None and self.enabled is None and self.sort_order is None:
+            raise ValueError('at least one category field is required')
+        return self
+
+
+class DiscoveryCategoryCreateForm(_StrictModel):
+    display_name: str = Field(min_length=1, max_length=64)
+    enabled: bool = True
+    sort_order: int = Field(default=1000, ge=0, le=10000)
+
+    @field_validator('display_name', mode='before')
+    @classmethod
+    def _normalize_display_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
 class CreationPublication(_StrictModel):
     post_id: str
     status: Literal['published', 'withdrawn', 'hidden']
     title: str | None
     description: str | None
     show_prompt: bool
+    category: DiscoveryCategory
+    featured: bool = False
+    featured_rank: int = Field(ge=0)
     published_at: int = Field(ge=_MIN_CREATED_AT, le=_MAX_CREATED_AT)
 
 
@@ -198,6 +253,9 @@ class DiscoveryPostSummary(_StrictModel):
     mime_type: str | None
     prompt_preview: str | None
     model_name: str | None
+    category: DiscoveryCategory
+    featured: bool
+    featured_rank: int = Field(ge=0)
     owner: PublicOwner
     like_count: int = Field(ge=0)
     favorite_count: int = Field(ge=0)
@@ -403,6 +461,10 @@ __all__ = [
     'DiscoveryPostDetail',
     'DiscoveryPostListResponse',
     'DiscoveryPostSummary',
+    'DiscoveryCategory',
+    'DiscoveryCategoryCreateForm',
+    'DiscoveryCategoryItem',
+    'DiscoveryCategoryUpdateForm',
     'DiscoverySort',
     'ImageGenerationTaskListResponse',
     'ImageGenerationTaskResponse',

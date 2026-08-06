@@ -137,6 +137,8 @@ from open_webui.extensions.creations.registration import (
     shutdown_creations_extension,
 )
 from open_webui.extensions.creations.router import router as creations_router
+from open_webui.extensions.model_ops.registration import initialize_model_ops_extension
+from open_webui.extensions.model_ops.router import router as model_ops_router
 from open_webui.internal.db import engine, get_async_session
 from open_webui.models.access_grants import AccessGrants
 from open_webui.models.channels import Channels
@@ -440,6 +442,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             log.warning(f'Failed to initialize terminal servers at startup: {e}')
 
+    await initialize_model_ops_extension(app)
     await initialize_credit_extension(app)
     await initialize_creations_extension(app)
 
@@ -806,6 +809,7 @@ app.include_router(tasks.router, prefix='/api/v1/tasks', tags=['tasks'])
 app.include_router(images.router, prefix='/api/v1/images', tags=['images'])
 app.include_router(credits_router)
 app.include_router(creations_router)
+app.include_router(model_ops_router)
 
 app.include_router(audio.router, prefix='/api/v1/audio', tags=['audio'])
 app.include_router(retrieval.router, prefix='/api/v1/retrieval', tags=['retrieval'])

@@ -274,6 +274,45 @@ class AdminLedgerQuery(LedgerQuery):
     action: str | None = Field(default=None, min_length=1, max_length=64)
 
 
+class ReconciliationQuery(PaginationParams):
+    status: Literal['failed', 'unknown'] | None = None
+    compensated: bool | None = None
+    user_id: str | None = Field(default=None, min_length=1, max_length=128)
+    skip: int = Field(default=0, ge=0)
+
+
+class ReconciliationItem(StrictModel):
+    usage_id: str
+    user_id: str
+    user_name_snapshot: str | None
+    user_email_snapshot: str | None
+    status: Literal['failed', 'unknown']
+    charged_credits: int = Field(ge=0)
+    resource_id: str
+    action: str
+    channel: str
+    error_code: str | None
+    error_summary: str | None
+    consumption_ledger_id: str | None
+    compensation_ledger_id: str | None
+    created_at: int = Field(ge=0)
+    completed_at: int | None = Field(default=None, ge=0)
+
+
+class ReconciliationPage(StrictModel):
+    items: tuple[ReconciliationItem, ...]
+    total: int = Field(ge=0)
+
+
+class CompensationRequest(StrictModel):
+    note: str | None = Field(default=None, max_length=MAX_NOTE_LENGTH)
+
+    @field_validator('note')
+    @classmethod
+    def normalize_compensation_note(cls, note: str | None) -> str | None:
+        return note.strip() or None if note is not None else None
+
+
 T = TypeVar('T')
 
 

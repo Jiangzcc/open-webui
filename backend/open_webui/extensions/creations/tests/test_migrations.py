@@ -35,6 +35,7 @@ TABLE_NAMES = {
     'ext_creation_post_media',
     'ext_creation_post_reaction',
     'ext_image_generation_task',
+    'ext_creation_category',
 }
 EXPECTED_INDEXES = {
     'ext_creation_media_item': {
@@ -46,6 +47,8 @@ EXPECTED_INDEXES = {
         'ix_ext_creation_post_status_published',
         'ix_ext_creation_post_status_popular',
         'ix_ext_creation_post_user_status',
+        'ix_ext_creation_post_status_category',
+        'ix_ext_creation_post_status_featured',
     },
     'ext_creation_post_media': {'ix_ext_creation_post_media_creation'},
     'ext_creation_post_reaction': {'ix_ext_creation_post_reaction_user_kind'},
@@ -53,6 +56,7 @@ EXPECTED_INDEXES = {
         'ix_ext_image_task_user_created',
         'ix_ext_image_task_status_updated',
     },
+    'ext_creation_category': {'ix_ext_creation_category_enabled_order'},
 }
 EXPECTED_CHECKS = {
     'ck_ext_creation_media_kind',
@@ -61,17 +65,20 @@ EXPECTED_CHECKS = {
     'ck_ext_creation_post_status',
     'ck_ext_creation_post_like_count',
     'ck_ext_creation_post_favorite_count',
+    'ck_ext_creation_post_featured_rank',
     'ck_ext_creation_post_reaction_kind',
     'ck_ext_image_task_status',
     'ck_ext_image_task_kind',
     'ck_ext_image_task_expected_count',
+    'ck_ext_creation_category_sort_order',
 }
 BIGINT_COLUMNS = {
     'ext_creation_media_item': {'created_at', 'updated_at'},
-    'ext_creation_post': {'published_at', 'created_at', 'updated_at'},
+    'ext_creation_post': {'published_at', 'featured_at', 'created_at', 'updated_at'},
     'ext_creation_post_media': {'created_at'},
     'ext_creation_post_reaction': {'created_at'},
     'ext_image_generation_task': {'created_at', 'started_at', 'completed_at', 'updated_at'},
+    'ext_creation_category': {'updated_at'},
 }
 TEXT_COLUMNS = {'ext_creation_media_item': {'prompt', 'negative_prompt'}}
 
@@ -114,8 +121,19 @@ def test_upgrade_creates_only_creation_objects_and_preserves_upstream_sentinel(s
         assert names == {'user', *TABLE_NAMES, 'ext_creation_schema_version'}
         assert 'alembic_version' not in names
         assert connection.execute(text('SELECT version_num FROM ext_creation_schema_version')).scalar_one() == (
-            '0003_create_image_generation_tasks'
+            '0006_create_discovery_categories'
         )
+        assert connection.execute(
+            text('SELECT id, display_name, enabled, sort_order FROM ext_creation_category ORDER BY sort_order')
+        ).fetchall() == [
+            ('portrait', 'Portrait', 1, 10),
+            ('product', 'Product', 1, 20),
+            ('poster', 'Poster', 1, 30),
+            ('illustration', 'Illustration', 1, 40),
+            ('anime', 'Anime', 1, 50),
+            ('landscape', 'Landscape', 1, 60),
+            ('other', 'Other', 1, 999),
+        ]
     assert not Path(f'{database_path}.creation-migrations.lock').exists()
 
 
@@ -158,15 +176,14 @@ def test_revision_has_required_constraints_and_indexes(sqlite_database):
         constraint['name'] for constraint in inspector.get_unique_constraints('ext_creation_post_reaction')
     }
     assert reaction_unique >= {'uq_ext_creation_post_reaction_actor_kind'}
-    task_unique = {
-        constraint['name'] for constraint in inspector.get_unique_constraints('ext_image_generation_task')
-    }
+    task_unique = {constraint['name'] for constraint in inspector.get_unique_constraints('ext_image_generation_task')}
     assert task_unique >= {'uq_ext_image_task_user_key'}
 
     existing_checks = set()
     for table_name in TABLE_NAMES:
         existing_checks.update(constraint['name'] for constraint in inspector.get_check_constraints(table_name))
     assert existing_checks >= EXPECTED_CHECKS
+    assert 'ck_ext_creation_post_category' not in existing_checks
 
     for table_name, expected in EXPECTED_INDEXES.items():
         assert {index['name'] for index in inspector.get_indexes(table_name)} >= expected

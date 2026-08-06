@@ -48,7 +48,6 @@
 
 	import {
 		groupByVendor,
-		vendorLogoUrl,
 		isProxyModel,
 		stripVendorFromName
 	} from '$lib/utils/images-dropdown';
@@ -60,6 +59,7 @@
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
@@ -137,7 +137,12 @@
 	$: selectedModelConfig =
 		primaryModels.find((model) => model.id === selectedModel) ??
 		(selectedModel === ''
-			? (primaryModels.find((model) => model.isDefault) ?? primaryModels[0] ?? null)
+			? (primaryModels.find((model) => model.isDefault && model.enabled !== false) ??
+				primaryModels.find((model) => model.enabled !== false) ??
+				// 全部模型维护中时回退到第一个模型，保留 UI 预填能力；提交时由
+				// ensure_model_enabled 在后端拦截并提示维护信息，而非让选择器空白。
+				primaryModels[0] ??
+				null)
 			: null);
 	$: activeModelConfig = resolveActiveImageModel(
 		selectedModelConfig,
@@ -515,7 +520,10 @@
 
 		models = normalizeImageGenerationModels(result);
 		if (!selectedModel) {
-			const defaultModel = models.find((model) => model.isDefault) ?? models[0];
+			const defaultModel =
+				models.find((model) => model.isDefault && model.enabled !== false) ??
+				models.find((model) => model.enabled !== false) ??
+				models[0];
 			if (defaultModel) {
 				selectedAspectRatio = getImageModelCapability(defaultModel).defaultAspectRatio;
 				selectedResolution = getImageModelCapability(defaultModel).defaultResolution ?? '';
@@ -655,6 +663,10 @@
 	};
 
 	const selectModelIfEnabled = (model: ImageGenerationModel) => {
+		if (model.enabled === false) {
+			toast.info(model.maintenanceMessage || $i18n.t('This model is temporarily unavailable.'));
+			return;
+		}
 		selectModel(model.id);
 	};
 
@@ -938,9 +950,22 @@
 		// 触屏设备无 hover 能力：浮层按钮需常驻可见。桌面端保持 hover 显现。
 		canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 		await loadRecentGenerationTasks();
+		const linkedTaskId = new URL(window.location.href).searchParams.get('task');
+		if (linkedTaskId && !generationBatches.some((batch) => batch.id === linkedTaskId)) {
+			const linkedTask = await getImageGenerationTask(localStorage.token, linkedTaskId).catch(
+				() => null
+			);
+			if (linkedTask) generationBatches = mergeGenerationTask(generationBatches, linkedTask);
+		}
 		taskPollTimer = setInterval(() => void pollGenerationTasks(), 2_000);
 		elapsedTimer = setInterval(() => (elapsedNow = Date.now()), 1_000);
 		await tick();
+		if (linkedTaskId) {
+			document.getElementById(`image-task-${linkedTaskId}`)?.scrollIntoView({
+				behavior: 'smooth',
+				block: 'start'
+			});
+		}
 		resizePromptTextarea();
 	});
 
@@ -1079,16 +1104,13 @@
 						<!-- 连续流：每批一块极淡背景卡片。块内消息头→prompt→pill→图网格→操作行，space-y-3 统一间距。 -->
 						<section class="space-y-4 pb-6 pt-18 sm:pt-18" aria-live="polite">
 							{#each generationBatches as batch (batch.id)}
-								<article class={BATCH_ARTICLE_CLASS}>
+								<article id={`image-task-${batch.id}`} class={BATCH_ARTICLE_CLASS}>
 									<!-- 消息头：厂商图标 + 模型短名 + 时间 -->
 									<div class="flex items-center gap-2">
 										{#if getBatchModel(batch, primaryModels)?.provider}
-											<img
-												src={vendorLogoUrl(getBatchModel(batch, primaryModels).provider)}
-												alt=""
-												class="size-5 shrink-0 rounded-full object-cover"
-												loading="lazy"
-												decoding="async"
+											<VendorLogo
+												provider={getBatchModel(batch, primaryModels).provider}
+												className="size-5 shrink-0 rounded-full object-cover"
 											/>
 										{:else}
 											<span
@@ -1419,12 +1441,9 @@
 										aria-haspopup="listbox"
 									>
 										{#if selectedModelConfig?.provider}
-											<img
-												src={vendorLogoUrl(selectedModelConfig.provider)}
-												alt=""
-												class="size-4 shrink-0 rounded-sm"
-												loading="lazy"
-												decoding="async"
+											<VendorLogo
+												provider={selectedModelConfig.provider}
+												className="size-4 shrink-0 rounded-sm"
 											/>
 										{:else}
 											<Photo className="size-4 shrink-0" strokeWidth="2" />
@@ -1434,15 +1453,15 @@
 									</button>
 
 									{#if showModelSelector}
-											<div
+										<div
 											class="fixed inset-x-3 bottom-14 z-50 h-[min(60dvh,28rem)] min-w-0 overflow-hidden overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:h-80 sm:w-[30rem] sm:p-2 dark:border-gray-800 dark:bg-gray-900"
 											role="listbox"
 											aria-label={$i18n.t('Select image model')}
 										>
 											<div class="flex h-full min-h-0 min-w-0 flex-row gap-2 sm:min-w-[22rem]">
 												<!-- Brand level (left/top) -->
-													<ul
-														class="flex min-h-0 w-28 shrink-0 flex-col gap-1 overflow-y-auto overflow-x-hidden overscroll-contain border-r border-gray-100 pr-1 dark:border-gray-800 sm:w-40 sm:pr-1"
+												<ul
+													class="flex min-h-0 w-28 shrink-0 flex-col gap-1 overflow-y-auto overflow-x-hidden overscroll-contain border-r border-gray-100 pr-1 dark:border-gray-800 sm:w-40 sm:pr-1"
 													role="group"
 													aria-label={$i18n.t('Brands')}
 												>
@@ -1457,12 +1476,10 @@
 																on:click={() => (selectedVendor = vendor)}
 																aria-pressed={selectedVendor === vendor}
 															>
-																<img
-																	src={vendorLogoUrl(vendor)}
+																<VendorLogo
+																	provider={vendor}
 																	alt={vendor}
-																	class="size-4 shrink-0 rounded-sm"
-																	loading="lazy"
-																	decoding="async"
+																	className="size-4 shrink-0 rounded-sm"
 																/>
 																<span class="min-w-0 truncate capitalize">{vendor}</span>
 															</button>
@@ -1470,8 +1487,8 @@
 													{/each}
 												</ul>
 												<!-- Model level (right/bottom) -->
-													<ul
-														class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain sm:h-full"
+												<ul
+													class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain sm:h-full"
 													role="group"
 													aria-label={$i18n.t('Models')}
 												>
@@ -1482,23 +1499,37 @@
 																class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedModel ===
 																model.id
 																	? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-																	: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																	: model.enabled === false
+																		? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
+																		: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
 																on:click={() => selectModelIfEnabled(model)}
 																role="option"
 																aria-selected={selectedModel === model.id}
+																aria-disabled={model.enabled === false}
 															>
 																{#if model.provider}
-																	<img
-																		src={vendorLogoUrl(model.provider)}
-																		alt=""
-																		class="size-4 shrink-0 rounded-sm"
-																		loading="lazy"
-																		decoding="async"
+																	<VendorLogo
+																		provider={model.provider}
+																		className="size-4 shrink-0 rounded-sm"
 																	/>
 																{/if}
-																<span class="min-w-0 flex-1 truncate text-left"
-																	>{stripVendorFromName(model)}</span
-																>
+																<span class="min-w-0 flex-1 text-left">
+																	<span class="flex min-w-0 items-center gap-1.5">
+																		<span class="truncate">{stripVendorFromName(model)}</span>
+																		{#if model.recommended}<span
+																				class="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+																				>{$i18n.t('Recommended')}</span
+																			>{/if}
+																	</span>
+																	{#if model.tags?.length}<span
+																			class="mt-0.5 block truncate text-[11px] text-gray-400"
+																			>{model.tags.join(' · ')}</span
+																		>{/if}
+																	{#if model.maintenanceMessage}<span
+																			class="mt-0.5 block line-clamp-2 text-[11px] text-orange-600 dark:text-orange-400"
+																			>{model.maintenanceMessage}</span
+																		>{/if}
+																</span>
 																{#if supportsImageEditing(model, models)}
 																	<Tooltip content={$i18n.t('Supports reference images')}>
 																		<span

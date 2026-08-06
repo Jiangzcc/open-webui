@@ -1,5 +1,22 @@
-export type DiscoverySort = 'latest' | 'popular';
+export type DiscoverySort = 'featured' | 'latest' | 'popular';
 export type DiscoveryFeed = DiscoverySort | 'favorites';
+export type DiscoveryCategory = string;
+
+export type DiscoveryCategoryItem = {
+	id: DiscoveryCategory;
+	display_name: string;
+	enabled: boolean;
+	sort_order: number;
+};
+
+export type DiscoveryCategoryUpdateInput = Partial<
+	Pick<DiscoveryCategoryItem, 'display_name' | 'enabled' | 'sort_order'>
+>;
+
+export type DiscoveryCategoryCreateInput = Pick<
+	DiscoveryCategoryItem,
+	'display_name' | 'enabled' | 'sort_order'
+>;
 
 export type PublicOwner = {
 	user_id: string;
@@ -22,6 +39,27 @@ export type DiscoveryPostSummary = {
 	favorite_count: number;
 	liked: boolean;
 	favorited: boolean;
+	published_at: number;
+	category: DiscoveryCategory;
+	featured: boolean;
+	featured_rank: number;
+};
+
+export type DiscoveryOperationInput = {
+	category?: DiscoveryCategory;
+	featured?: boolean;
+	featured_rank?: number;
+};
+
+export type CreationPublication = {
+	post_id: string;
+	status: 'published' | 'withdrawn' | 'hidden';
+	title: string | null;
+	description: string | null;
+	show_prompt: boolean;
+	category: DiscoveryCategory;
+	featured: boolean;
+	featured_rank: number;
 	published_at: number;
 };
 
