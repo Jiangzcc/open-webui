@@ -38,6 +38,7 @@ Users = None
 
 _PROMPT_PREVIEW_CHARS = 200
 _DISCOVERY_CONTENT_URL = '/api/v1/creations/discover/posts/{}/content'
+_DISCOVERY_POSTER_URL = '/api/v1/creations/discover/posts/{}/poster'
 
 
 def _bind_files() -> object:
@@ -279,14 +280,18 @@ async def _summaries(
     user_id: str,
     rows: list[tuple[CreationPost, CreationMediaItem]],
 ) -> tuple[DiscoveryPostSummary, ...]:
-    files = await _load_files(item.file_id for _, item in rows)
+    files = await _load_files(
+        file_id for _, item in rows for file_id in (item.file_id, item.poster_file_id) if isinstance(file_id, str)
+    )
     owners = await _public_owners(item.user_id for _, item in rows)
     post_ids = [post.id for post, _ in rows]
     liked, favorited = await _reaction_sets(session, user_id, post_ids)
     summaries: list[DiscoveryPostSummary] = []
     for post, item in rows:
         file = files.get(item.file_id)
+        poster_file = files.get(item.poster_file_id) if item.poster_file_id else None
         available = file is not None and getattr(file, 'user_id', None) == item.user_id
+        poster_available = poster_file is not None and getattr(poster_file, 'user_id', None) == item.user_id
         meta = getattr(file, 'meta', None) or {}
         summaries.append(
             DiscoveryPostSummary(
@@ -294,6 +299,9 @@ async def _summaries(
                 title=post.title,
                 description=post.description,
                 content_url=_DISCOVERY_CONTENT_URL.format(post.id) if available else None,
+                poster_url=(_DISCOVERY_POSTER_URL.format(post.id) if poster_available else None),
+                kind=item.kind,
+                duration_seconds=item.duration_seconds,
                 availability='available' if available else 'missing',
                 mime_type=meta.get('content_type') if available and isinstance(meta, dict) else None,
                 prompt_preview=_prompt_preview(item, post.show_prompt),
@@ -327,11 +335,19 @@ def _visible_posts_stmt():
 async def _disabled_category_ids(session: AsyncSession) -> tuple[str, ...]:
     """Return the ids of disabled discovery categories (public feed excludes them)."""
     rows = (
-        await session.execute(
-            select(DiscoveryCategorySetting.id).where(DiscoveryCategorySetting.enabled.is_(False))
-        )
+        await session.execute(select(DiscoveryCategorySetting.id).where(DiscoveryCategorySetting.enabled.is_(False)))
     ).scalars()
     return tuple(rows)
+
+
+def _apply_feed_filters(stmt, disabled_categories, category, media_kind):
+    if disabled_categories:
+        stmt = stmt.where(CreationPost.category.notin_(disabled_categories))
+    if category is not None:
+        stmt = stmt.where(CreationPost.category == category)
+    if media_kind is not None:
+        stmt = stmt.where(CreationMediaItem.kind == media_kind)
+    return stmt
 
 
 async def list_discovery_posts(
@@ -341,14 +357,12 @@ async def list_discovery_posts(
     cursor: str | None,
     sort: DiscoverySort,
     category: DiscoveryCategory | None = None,
+    media_kind: str | None = None,
 ) -> DiscoveryPostListResponse:
     stmt = _visible_posts_stmt()
     # 公开动态排除已禁用分类的帖子：分类选择器隐藏已禁用分类，动态亦不应泄露其内容。
     disabled_categories = await _disabled_category_ids(session)
-    if disabled_categories:
-        stmt = stmt.where(CreationPost.category.notin_(disabled_categories))
-    if category is not None:
-        stmt = stmt.where(CreationPost.category == category)
+    stmt = _apply_feed_filters(stmt, disabled_categories, category, media_kind)
     if sort == 'featured':
         stmt = stmt.where(CreationPost.featured_at.is_not(None))
     popularity = CreationPost.favorite_count * 2 + CreationPost.like_count
@@ -421,6 +435,7 @@ async def list_favorite_posts(
     limit: int,
     cursor: str | None,
     category: DiscoveryCategory | None = None,
+    media_kind: str | None = None,
 ) -> DiscoveryPostListResponse:
     stmt = _visible_posts_stmt().join(
         CreationPostReaction,
@@ -431,10 +446,7 @@ async def list_favorite_posts(
         ),
     )
     disabled_categories = await _disabled_category_ids(session)
-    if disabled_categories:
-        stmt = stmt.where(CreationPost.category.notin_(disabled_categories))
-    if category is not None:
-        stmt = stmt.where(CreationPost.category == category)
+    stmt = _apply_feed_filters(stmt, disabled_categories, category, media_kind)
     if cursor:
         _, published_at, post_id = _decode_cursor(cursor)
         stmt = stmt.where(
@@ -498,9 +510,7 @@ async def list_discovery_categories(
     if not include_disabled:
         stmt = stmt.where(DiscoveryCategorySetting.enabled.is_(True))
     rows = (
-        await session.execute(
-            stmt.order_by(DiscoveryCategorySetting.sort_order, DiscoveryCategorySetting.id)
-        )
+        await session.execute(stmt.order_by(DiscoveryCategorySetting.sort_order, DiscoveryCategorySetting.id))
     ).scalars()
     return tuple(
         DiscoveryCategoryItem(
@@ -670,10 +680,24 @@ async def get_published_content_file(session: AsyncSession, post_id: str) -> obj
     return file
 
 
+async def get_published_poster_file(session: AsyncSession, post_id: str) -> object | None:
+    row = (await session.execute(_visible_posts_stmt().where(CreationPost.id == post_id).limit(1))).first()
+    if row is None:
+        return None
+    _, item = row
+    if not isinstance(item.poster_file_id, str):
+        return None
+    file = (await _load_files([item.poster_file_id])).get(item.poster_file_id)
+    if file is None or getattr(file, 'user_id', None) != item.user_id:
+        return None
+    return file
+
+
 __all__ = [
     'get_creation_publication',
     'get_discovery_post',
     'get_published_content_file',
+    'get_published_poster_file',
     'list_discovery_posts',
     'list_favorite_posts',
     'publish_creation',

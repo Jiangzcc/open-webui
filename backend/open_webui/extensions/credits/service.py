@@ -173,7 +173,7 @@ async def begin_image_usage(
     created_at = _now()
 
     async with session.begin():
-        current_user, role = await _current_user_for_usage(session, user.id)
+        current_user, _role = await _current_user_for_usage(session, user.id)
         usage_values = {
             'id': str(uuid4()),
             'user_id': current_user.id,
@@ -186,7 +186,7 @@ async def begin_image_usage(
             'action': context.action,
             'channel': context.channel,
             'status': 'debited',
-            'exempt': role == 'admin',
+            'exempt': False,
             'charged_credits': 0,
             'request_snapshot': _request_snapshot(context),
             'created_at': created_at,
@@ -198,10 +198,6 @@ async def begin_image_usage(
             if existing is None:
                 raise RuntimeError('credit usage was not persisted after idempotency conflict')
             return _existing_usage_result(existing, context.request_hash)
-
-        if usage_values['exempt']:
-            credit_metrics.usage_status(status='debited', **_usage_metric_attributes(context))
-            return BeginUsageResult(usage=usage, outcome='new')
 
         try:
             quote = compute_price(
@@ -542,18 +538,14 @@ async def compensate_reconciliation_case(
 ) -> tuple[CreditLedger, bool]:
     now = _now()
     async with session.begin():
-        usage = await session.scalar(
-            select(CreditUsage).where(CreditUsage.id == usage_id).with_for_update()
-        )
+        usage = await session.scalar(select(CreditUsage).where(CreditUsage.id == usage_id).with_for_update())
         if usage is None:
             raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_found'})
         if usage.status not in {'failed', 'unknown'}:
             raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_reconcilable'})
         if usage.exempt or usage.charged_credits <= 0 or not usage.ledger_id:
             raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_charged'})
-        existing = await session.scalar(
-            select(CreditLedger).where(CreditLedger.related_ledger_id == usage.ledger_id)
-        )
+        existing = await session.scalar(select(CreditLedger).where(CreditLedger.related_ledger_id == usage.ledger_id))
         if existing is not None:
             return existing, False
 

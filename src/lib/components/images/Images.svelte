@@ -12,6 +12,8 @@
 		listImageGenerationTasks
 	} from '$lib/apis/creations/generation-tasks';
 	import ImageCreditQuoteBadge from '$lib/components/credits/ImageCreditQuoteBadge.svelte';
+	import Dropdown from '$lib/components/common/Dropdown.svelte';
+	import GenerationSubmitButton from '$lib/components/common/GenerationSubmitButton.svelte';
 	import {
 		createImageQuoteState,
 		isImageQuoteSubmittable,
@@ -47,11 +49,7 @@
 		type ImageGenerationBatch
 	} from '$lib/utils/image-generation-batches';
 
-	import {
-		groupByVendor,
-		isProxyModel,
-		stripVendorFromName
-	} from '$lib/utils/images-dropdown';
+	import { groupByVendor, isProxyModel, stripVendorFromName } from '$lib/utils/images-dropdown';
 	import { blobExtension, downloadBlob, zipAndDownload } from '$lib/utils/download';
 
 	import Image from '$lib/components/common/Image.svelte';
@@ -134,7 +132,6 @@
 
 	let promptTextareaElement: HTMLTextAreaElement;
 	let fileInputElement: HTMLInputElement;
-	let modelSelectorElement: HTMLDivElement;
 	let imageOptionsElement: HTMLDivElement;
 	let generationPanelElement: HTMLDivElement;
 
@@ -719,11 +716,6 @@
 		showModelSelector = false;
 	};
 
-	const toggleModelSelector = () => {
-		showModelSelector = !showModelSelector;
-		showAspectRatioPicker = false;
-	};
-
 	const openImagePreview = (image: GeneratedImage) => {
 		previewImageUrl = image.url;
 		previewImageAlt = image.prompt ?? $i18n.t('Generated image');
@@ -795,10 +787,6 @@
 
 	const handleWindowPointerDown = (event: PointerEvent) => {
 		const target = event.target as Node;
-
-		if (showModelSelector && modelSelectorElement && !modelSelectorElement.contains(target)) {
-			showModelSelector = false;
-		}
 
 		if (showAspectRatioPicker && imageOptionsElement && !imageOptionsElement.contains(target)) {
 			showAspectRatioPicker = false;
@@ -1471,134 +1459,138 @@
 
 							<div class="p-4">
 								<div
-									class="relative mb-3 inline-flex min-w-0 max-w-[12rem] shrink"
-									bind:this={modelSelectorElement}
+									class="absolute bottom-full left-1 z-20 mb-2 inline-flex min-w-0 max-w-[12rem] shrink"
 								>
-									<button
-										type="button"
-										class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
-										on:click={toggleModelSelector}
-										aria-expanded={showModelSelector}
-										aria-haspopup="listbox"
+									<Dropdown
+										bind:show={showModelSelector}
+										side="top"
+										align="start"
+										visualViewportAware={$mobile}
+										maxHeight="min(60dvh, 28rem)"
+										contentClass="z-50 w-[min(30rem,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-900/98"
 									>
-										{#if selectedModelConfig?.provider}
-											<VendorLogo
-												provider={selectedModelConfig.provider}
-												className="size-4 shrink-0 rounded-sm"
-											/>
-										{:else}
-											<Photo className="size-4 shrink-0" strokeWidth="2" />
-										{/if}
-										<span class="truncate">{selectedModelLabel}</span>
-										<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
-									</button>
+										<button
+											type="button"
+											class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[10px] border border-gray-200/90 bg-white/95 px-2 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-xl transition hover:bg-white dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-200 dark:hover:bg-gray-900"
+											aria-expanded={showModelSelector}
+											aria-haspopup="listbox"
+										>
+											{#if selectedModelConfig?.provider}
+												<VendorLogo
+													provider={selectedModelConfig.provider}
+													className="size-4 shrink-0 rounded-sm"
+												/>
+											{:else}
+												<Photo className="size-4 shrink-0" strokeWidth="2" />
+											{/if}
+											<span class="truncate">{selectedModelLabel}</span>
+											<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
+										</button>
 
-									{#if showModelSelector}
 										<div
-											class="fixed inset-x-3 bottom-14 z-50 h-[min(60dvh,28rem)] min-w-0 overflow-hidden overscroll-contain rounded-2xl border border-gray-100 bg-white p-2 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:h-80 sm:w-[30rem] sm:p-2 dark:border-gray-800 dark:bg-gray-900"
+											slot="content"
+											class="flex h-[min(60dvh,28rem)] min-h-0 min-w-0 flex-row gap-2 sm:h-80 sm:min-w-[22rem]"
 											role="listbox"
 											aria-label={$i18n.t('Select image model')}
 										>
-											<div class="flex h-full min-h-0 min-w-0 flex-row gap-2 sm:min-w-[22rem]">
-												<!-- Brand level (left/top) -->
-												<ul
-													class="flex min-h-0 w-28 shrink-0 flex-col gap-1 overflow-y-auto overflow-x-hidden overscroll-contain border-r border-gray-100 pr-1 dark:border-gray-800 sm:w-40 sm:pr-1"
-													role="group"
-													aria-label={$i18n.t('Brands')}
-												>
-													{#each vendorList as vendor}
-														<li class="snap-start">
-															<button
-																type="button"
-																class="flex min-w-0 w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor ===
-																vendor
-																	? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+											<!-- Brand level (left/top) -->
+											<ul
+												class="flex min-h-0 w-28 shrink-0 flex-col gap-1 overflow-y-auto overflow-x-hidden overscroll-contain border-r border-gray-100 pr-1 dark:border-gray-800 sm:w-40 sm:pr-1"
+												role="group"
+												aria-label={$i18n.t('Brands')}
+											>
+												{#each vendorList as vendor}
+													<li class="snap-start">
+														<button
+															type="button"
+															class="flex min-w-0 w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor ===
+															vendor
+																? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+																: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+															on:click={() => (selectedVendor = vendor)}
+															aria-pressed={selectedVendor === vendor}
+														>
+															<VendorLogo
+																provider={vendor}
+																alt={vendor}
+																className="size-4 shrink-0 rounded-sm"
+															/>
+															<span class="min-w-0 truncate capitalize">{vendor}</span>
+														</button>
+													</li>
+												{/each}
+											</ul>
+											<!-- Model level (right/bottom) -->
+											<ul
+												class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain sm:h-full"
+												role="group"
+												aria-label={$i18n.t('Models')}
+											>
+												{#each vendorModels as model}
+													<li>
+														<button
+															type="button"
+															class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedModel ===
+															model.id
+																? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+																: model.enabled === false
+																	? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
 																	: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																on:click={() => (selectedVendor = vendor)}
-																aria-pressed={selectedVendor === vendor}
-															>
+															on:click={() => selectModelIfEnabled(model)}
+															role="option"
+															aria-selected={selectedModel === model.id}
+															aria-disabled={model.enabled === false}
+														>
+															{#if model.provider}
 																<VendorLogo
-																	provider={vendor}
-																	alt={vendor}
+																	provider={model.provider}
 																	className="size-4 shrink-0 rounded-sm"
 																/>
-																<span class="min-w-0 truncate capitalize">{vendor}</span>
-															</button>
-														</li>
-													{/each}
-												</ul>
-												<!-- Model level (right/bottom) -->
-												<ul
-													class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain sm:h-full"
-													role="group"
-													aria-label={$i18n.t('Models')}
-												>
-													{#each vendorModels as model}
-														<li>
-															<button
-																type="button"
-																class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedModel ===
-																model.id
-																	? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-																	: model.enabled === false
-																		? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
-																		: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																on:click={() => selectModelIfEnabled(model)}
-																role="option"
-																aria-selected={selectedModel === model.id}
-																aria-disabled={model.enabled === false}
-															>
-																{#if model.provider}
-																	<VendorLogo
-																		provider={model.provider}
-																		className="size-4 shrink-0 rounded-sm"
-																	/>
-																{/if}
-																<span class="min-w-0 flex-1 text-left">
-																	<span class="flex min-w-0 items-center gap-1.5">
-																		<span class="truncate">{stripVendorFromName(model)}</span>
-																		{#if model.recommended}<span
-																				class="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
-																				>{$i18n.t('Recommended')}</span
-																			>{/if}
-																	</span>
-																	{#if model.tags?.length}<span
-																			class="mt-0.5 block truncate text-[11px] text-gray-400"
-																			>{model.tags.join(' · ')}</span
-																		>{/if}
-																	{#if model.maintenanceMessage}<span
-																			class="mt-0.5 block line-clamp-2 text-[11px] text-orange-600 dark:text-orange-400"
-																			>{model.maintenanceMessage}</span
+															{/if}
+															<span class="min-w-0 flex-1 text-left">
+																<span class="flex min-w-0 items-center gap-1.5">
+																	<span class="truncate">{stripVendorFromName(model)}</span>
+																	{#if model.recommended}<span
+																			class="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+																			>{$i18n.t('Recommended')}</span
 																		>{/if}
 																</span>
-																{#if supportsImageEditing(model, models)}
-																	<Tooltip content={$i18n.t('Supports reference images')}>
-																		<span
-																			class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300"
-																			aria-label={$i18n.t('Supports reference images')}
-																		>
-																			<Photo className="size-3.5" strokeWidth="2" />
-																		</span>
-																	</Tooltip>
-																{/if}
-																{#if modelBasePrice(model)}
-																	<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-																		{modelBasePrice(model)}
-																		{$i18n.t('credits.common.unit')}
+																{#if model.tags?.length}<span
+																		class="mt-0.5 block truncate text-[11px] text-gray-400"
+																		>{model.tags.join(' · ')}</span
+																	>{/if}
+																{#if model.maintenanceMessage}<span
+																		class="mt-0.5 block line-clamp-2 text-[11px] text-orange-600 dark:text-orange-400"
+																		>{model.maintenanceMessage}</span
+																	>{/if}
+															</span>
+															{#if supportsImageEditing(model, models)}
+																<Tooltip content={$i18n.t('Supports reference images')}>
+																	<span
+																		class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300"
+																		aria-label={$i18n.t('Supports reference images')}
+																	>
+																		<Photo className="size-3.5" strokeWidth="2" />
 																	</span>
-																{/if}
-																{#if isProxyModel(model)}
-																	<span class="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-																		{$i18n.t('First image may be slower')}
-																	</span>
-																{/if}
-															</button>
-														</li>
-													{/each}
-												</ul>
-											</div>
+																</Tooltip>
+															{/if}
+															{#if modelBasePrice(model)}
+																<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+																	{modelBasePrice(model)}
+																	{$i18n.t('credits.common.unit')}
+																</span>
+															{/if}
+															{#if isProxyModel(model)}
+																<span class="shrink-0 text-xs text-amber-600 dark:text-amber-400">
+																	{$i18n.t('First image may be slower')}
+																</span>
+															{/if}
+														</button>
+													</li>
+												{/each}
+											</ul>
 										</div>
-									{/if}
+									</Dropdown>
 								</div>
 
 								{#if referenceImages.length > 0}
@@ -1743,9 +1735,7 @@
 													{#if supportsCustomSize}
 														<section class="mt-5">
 															<div class="flex items-center justify-between px-1 pb-2">
-																<h3
-																	class="text-sm font-medium text-gray-900 dark:text-gray-100"
-																>
+																<h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">
 																	{$i18n.t('Custom Size')}
 																</h3>
 																<label
@@ -1782,15 +1772,11 @@
 																	/>
 																</div>
 																{#if customSizeError}
-																	<p
-																		class="mt-2 px-1 text-xs text-red-600 dark:text-red-400"
-																	>
+																	<p class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">
 																		{customSizeError.message}
 																	</p>
 																{:else if customWidth && customHeight}
-																	<p
-																		class="mt-2 px-1 text-xs text-gray-400 dark:text-gray-500"
-																	>
+																	<p class="mt-2 px-1 text-xs text-gray-400 dark:text-gray-500">
 																		{customWidthNum * customHeightNum >= 0
 																			? (customWidthNum * customHeightNum).toLocaleString()
 																			: ''} px · {customWidthNum || 0}:{customHeightNum || 0}
@@ -1861,26 +1847,16 @@
 
 									<div class="flex min-w-0 items-center justify-between gap-2 sm:justify-end">
 										<ImageCreditQuoteBadge quoteState={imageQuoteState} />
-										<button
-											type="submit"
-											class="flex size-8 items-center justify-center rounded-full transition {prompt.trim() &&
-											!loading
-												? 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100'
-												: 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}"
+										<GenerationSubmitButton
+											{loading}
 											disabled={!prompt.trim() ||
 												!isImageQuoteSubmittable(imageQuoteState) ||
 												(useCustomSize && Boolean(customSizeError)) ||
 												loading}
-											aria-label={referenceImages.length > 0
+											label={referenceImages.length > 0
 												? $i18n.t('Edit Image')
 												: $i18n.t('Generate')}
-										>
-											{#if loading}
-												<Spinner className="size-4" />
-											{:else}
-												<Sparkles className="size-4" strokeWidth="2" />
-											{/if}
-										</button>
+										/>
 									</div>
 								</div>
 							</div>
@@ -1911,6 +1887,7 @@
 					scope={libraryScope}
 					revision={libraryRevision}
 					onReuse={applyCreationDraft}
+					mediaKind="image"
 				/>
 			</div>
 		</div>

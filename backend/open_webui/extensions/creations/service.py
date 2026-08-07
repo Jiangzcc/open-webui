@@ -100,13 +100,19 @@ def _index_files_by_id(files: Iterable[object]) -> dict[str, object]:
 
 
 def _summary_from_item(
-    item: CreationMediaItem, file: object | None, publication_status: str | None = None
+    item: CreationMediaItem,
+    file: object | None,
+    poster_file: object | None = None,
+    publication_status: str | None = None,
 ) -> CreationSummary:
     content_url, mime_type, availability = _file_content_url_and_mime(file, item.user_id)
+    poster_url, _poster_mime, _poster_availability = _file_content_url_and_mime(poster_file, item.user_id)
     return CreationSummary(
         id=item.id,
         kind=item.kind,
         content_url=content_url,
+        poster_url=poster_url,
+        duration_seconds=item.duration_seconds,
         availability=availability,
         mime_type=mime_type,
         caption=item.caption,
@@ -141,10 +147,15 @@ def _references_for_item(item: CreationMediaItem, files_by_id: dict[str, object]
 def _detail_from_item(item: CreationMediaItem, files_by_id: dict[str, object]) -> CreationDetail:
     result_file = files_by_id.get(item.file_id)
     content_url, mime_type, availability = _file_content_url_and_mime(result_file, item.user_id)
+    poster_url, _poster_mime, _poster_availability = _file_content_url_and_mime(
+        files_by_id.get(item.poster_file_id), item.user_id
+    )
     return CreationDetail(
         id=item.id,
         kind=item.kind,
         content_url=content_url,
+        poster_url=poster_url,
+        duration_seconds=item.duration_seconds,
         availability=availability,
         mime_type=mime_type,
         caption=item.caption,
@@ -166,6 +177,8 @@ def _collect_file_ids(items: list[CreationMediaItem]) -> list[str]:
     file_ids: list[str] = []
     for item in items:
         file_ids.append(item.file_id)
+        if isinstance(item.poster_file_id, str):
+            file_ids.append(item.poster_file_id)
         raw_refs = item.reference_file_ids_json or []
         if isinstance(raw_refs, list):
             for ref_id in raw_refs:
@@ -231,6 +244,7 @@ async def list_personal_creations(
     task: str | None = None,
     publication_status: str | None = None,
     sort: str = 'newest',
+    kind: str | None = None,
 ) -> CreationListResponse:
     stmt = (
         select(CreationMediaItem, CreationPost.status)
@@ -242,6 +256,8 @@ async def list_personal_creations(
         )
     )
     normalized_search = (search or '').strip()
+    if kind is not None:
+        stmt = stmt.where(CreationMediaItem.kind == kind)
     if normalized_search:
         pattern = f'%{normalized_search}%'
         stmt = stmt.where(
@@ -277,7 +293,13 @@ async def list_personal_creations(
     media_items = [item for item, _status in page]
     files_by_id = await _bulk_load_files(_collect_file_ids(media_items))
     summaries = tuple(
-        _summary_from_item(item, files_by_id.get(item.file_id), status) for item, status in page
+        _summary_from_item(
+            item,
+            files_by_id.get(item.file_id),
+            files_by_id.get(item.poster_file_id),
+            status,
+        )
+        for item, status in page
     )
     return CreationListResponse(items=summaries, next_cursor=next_cursor)
 
@@ -286,6 +308,7 @@ async def list_admin_creations(
     session: AsyncSession,
     limit: int,
     cursor: str | None,
+    kind: str | None = None,
 ) -> AdminCreationListResponse:
     stmt = (
         select(CreationMediaItem, CreationPost.status)
@@ -295,6 +318,8 @@ async def list_admin_creations(
         .order_by(desc(CreationMediaItem.created_at), desc(CreationMediaItem.id))
         .limit(limit + 1)
     )
+    if kind is not None:
+        stmt = stmt.where(CreationMediaItem.kind == kind)
     stmt = _apply_cursor(stmt, cursor)
     rows = (await session.execute(stmt)).all()
     items = list(rows)
@@ -316,6 +341,12 @@ async def list_admin_creations(
                 id=item.id,
                 kind=item.kind,
                 content_url=content_url,
+                poster_url=(
+                    _file_content_url_and_mime(files_by_id.get(item.poster_file_id), item.user_id)[0]
+                    if item.poster_file_id
+                    else None
+                ),
+                duration_seconds=item.duration_seconds,
                 availability=availability,
                 mime_type=mime_type,
                 caption=item.caption,
@@ -345,7 +376,9 @@ async def get_personal_detail(session: AsyncSession, user_id: str, creation_id: 
     item = await _load_owned_item(session, user_id, creation_id)
     if item is None:
         return None
-    files_by_id = await _bulk_load_files([item.file_id, *_flatten_reference_ids(item)])
+    files_by_id = await _bulk_load_files(
+        [item.file_id, *([item.poster_file_id] if item.poster_file_id else []), *_flatten_reference_ids(item)]
+    )
     detail = _detail_from_item(item, files_by_id)
     from open_webui.extensions.creations.discovery_service import get_creation_publication
 
@@ -356,7 +389,9 @@ async def get_admin_detail(session: AsyncSession, creation_id: str) -> AdminCrea
     item = await _load_owned_item(session, None, creation_id)
     if item is None:
         return None
-    files_by_id = await _bulk_load_files([item.file_id, *_flatten_reference_ids(item)])
+    files_by_id = await _bulk_load_files(
+        [item.file_id, *([item.poster_file_id] if item.poster_file_id else []), *_flatten_reference_ids(item)]
+    )
     owners = await _owners_for_items([item])
     detail = _detail_from_item(item, files_by_id)
     from open_webui.extensions.creations.discovery_service import get_creation_publication
@@ -390,7 +425,13 @@ async def update_caption(
     await session.commit()
     refreshed = await _load_owned_item(session, user_id, creation_id)
     assert refreshed is not None
-    files_by_id = await _bulk_load_files([refreshed.file_id, *_flatten_reference_ids(refreshed)])
+    files_by_id = await _bulk_load_files(
+        [
+            refreshed.file_id,
+            *([refreshed.poster_file_id] if refreshed.poster_file_id else []),
+            *_flatten_reference_ids(refreshed),
+        ]
+    )
     detail = _detail_from_item(refreshed, files_by_id)
     from open_webui.extensions.creations.discovery_service import get_creation_publication
 
@@ -427,9 +468,7 @@ async def soft_delete(
     return True
 
 
-async def soft_delete_many(
-    session: AsyncSession, user_id: str, creation_ids: tuple[str, ...]
-) -> tuple[str, ...]:
+async def soft_delete_many(session: AsyncSession, user_id: str, creation_ids: tuple[str, ...]) -> tuple[str, ...]:
     owned = tuple(
         (
             await session.execute(

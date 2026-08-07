@@ -23,20 +23,22 @@ async def _seed_creation(
     user_id: str = 'author-1',
     file_id: str = 'file-1',
     created_at: int = 10,
+    kind: str = 'image',
 ) -> None:
     async with sessions() as session:
         session.add(
             CreationMediaItem(
                 id=creation_id,
                 user_id=user_id,
-                kind='image',
+                kind=kind,
                 file_id=file_id,
+                duration_seconds=5 if kind == 'video' else None,
                 caption='A caption',
                 prompt='a cinematic quiet lake at dusk',
                 negative_prompt='noise',
                 model_id='public/model',
                 model_name_snapshot='Public Model',
-                task='text-to-image',
+                task='text-to-video' if kind == 'video' else 'text-to-image',
                 params_json={'size': '1024x1024'},
                 source='web',
                 batch_id='batch-1',
@@ -198,6 +200,36 @@ async def test_feed_hides_withdrawn_posts_and_prompt_when_disabled(creation_sess
     assert detail.prompt is None
     assert detail.negative_prompt is None
     assert detail.params == {'size': '1024x1024'}
+
+
+@pytest.mark.asyncio
+async def test_discovery_feed_filters_image_and_video(creation_sessions, monkeypatch) -> None:
+    await _seed_creation(creation_sessions, creation_id='image', file_id='fi', created_at=10)
+    await _seed_creation(
+        creation_sessions,
+        creation_id='video',
+        file_id='fv',
+        created_at=20,
+        kind='video',
+    )
+    _bind_repositories(
+        monkeypatch,
+        files=[make_file('fi', 'author-1'), make_file('fv', 'author-1', 'video/mp4')],
+        users=[make_user('author-1')],
+    )
+    async with creation_sessions() as session:
+        image_post = await discovery_service.publish_creation(session, 'author-1', 'image', PublishCreationForm())
+        video_post = await discovery_service.publish_creation(session, 'author-1', 'video', PublishCreationForm())
+        image_feed = await discovery_service.list_discovery_posts(
+            session, 'viewer', 20, None, 'latest', media_kind='image'
+        )
+        video_feed = await discovery_service.list_discovery_posts(
+            session, 'viewer', 20, None, 'latest', media_kind='video'
+        )
+
+    assert image_post and video_post
+    assert [item.id for item in image_feed.items] == [image_post.post_id]
+    assert [item.id for item in video_feed.items] == [video_post.post_id]
 
 
 @pytest.mark.asyncio

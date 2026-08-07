@@ -9,6 +9,7 @@ from open_webui.extensions.creations.migrations.config import migration_context_
 from open_webui.extensions.creations.models import (  # noqa: F401
     CreationMediaItem,
     ImageGenerationTask,
+    VideoGenerationTask,
 )
 from sqlalchemy import engine_from_config, pool
 

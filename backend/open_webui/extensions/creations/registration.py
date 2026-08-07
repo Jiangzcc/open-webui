@@ -24,6 +24,7 @@ _REQUIRED_UNIQUE = {
     ),
     'ext_creation_post_reaction': frozenset({'uq_ext_creation_post_reaction_actor_kind'}),
     'ext_image_generation_task': frozenset({'uq_ext_image_task_user_key'}),
+    'ext_video_generation_task': frozenset({'uq_ext_video_task_user_key'}),
 }
 _REQUIRED_CHECKS = {
     'ext_creation_media_item': frozenset(
@@ -31,6 +32,7 @@ _REQUIRED_CHECKS = {
             'ck_ext_creation_media_kind',
             'ck_ext_creation_media_task',
             'ck_ext_creation_media_source',
+            'ck_ext_creation_media_duration',
         }
     ),
     'ext_creation_post': frozenset(
@@ -47,6 +49,12 @@ _REQUIRED_CHECKS = {
             'ck_ext_image_task_status',
             'ck_ext_image_task_kind',
             'ck_ext_image_task_expected_count',
+        }
+    ),
+    'ext_video_generation_task': frozenset(
+        {
+            'ck_ext_video_task_status',
+            'ck_ext_video_task_kind',
         }
     ),
     'ext_creation_category': frozenset({'ck_ext_creation_category_sort_order'}),
@@ -74,6 +82,12 @@ _REQUIRED_INDEXES = {
         {
             'ix_ext_image_task_user_created',
             'ix_ext_image_task_status_updated',
+        }
+    ),
+    'ext_video_generation_task': frozenset(
+        {
+            'ix_ext_video_task_user_created',
+            'ix_ext_video_task_status_updated',
         }
     ),
     'ext_creation_category': frozenset({'ix_ext_creation_category_enabled_order'}),

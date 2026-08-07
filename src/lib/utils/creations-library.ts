@@ -11,22 +11,31 @@ export type CreationReference = {
 
 export type CreationSummary = {
 	id: string;
-	kind: 'image';
+	kind: 'image' | 'video';
 	content_url: string | null;
+	poster_url: string | null;
+	duration_seconds: number | null;
 	availability: CreationAvailability;
 	mime_type: string | null;
 	caption: string | null;
 	prompt_preview: string | null;
 	model_name: string | null;
-	task: 'text-to-image' | 'image-to-image';
+	task: 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'video-to-video';
 	publication_status?: 'published' | 'withdrawn' | 'hidden' | null;
 	created_at: number;
 	updated_at: number;
 };
 
 export type CreationListFilters = {
+	kind?: '' | 'image' | 'video';
 	search?: string;
-	task?: '' | 'text-to-image' | 'image-to-image';
+	task?:
+		| ''
+		| 'text-to-image'
+		| 'image-to-image'
+		| 'text-to-video'
+		| 'image-to-video'
+		| 'video-to-video';
 	publicationStatus?: '' | 'published' | 'unpublished';
 	sort?: 'newest' | 'oldest';
 };
@@ -218,7 +227,9 @@ const PARAM_TAG_ORDER = [
 	'background',
 	'acceleration',
 	'input_fidelity',
-	'thinking_level'
+	'thinking_level',
+	'duration',
+	'audio_mode'
 ] as const;
 
 export type ParamTag = {

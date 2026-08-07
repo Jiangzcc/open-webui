@@ -30,6 +30,7 @@
 	export let active = false;
 	export let scope: CreationScope = 'mine';
 	export let revision = 0;
+	export let mediaKind: '' | 'image' | 'video' = '';
 	export let onReuse: (draft: ImageCreationDraft) => void = () => {};
 
 	const i18n = getContext('i18n');
@@ -100,6 +101,7 @@
 	let appliedRevision = 0;
 	let searchDraft = '';
 	let filters: CreationListFilters = {
+		kind: mediaKind,
 		search: '',
 		task: '',
 		publicationStatus: '',
@@ -123,7 +125,9 @@
 		try {
 			const page =
 				targetScope === 'all'
-					? await listAdminCreations(localStorage.token, PAGE_SIZE, targetState.nextCursor)
+					? await listAdminCreations(localStorage.token, PAGE_SIZE, targetState.nextCursor, {
+							kind: mediaKind
+						})
 					: await listCreations(localStorage.token, PAGE_SIZE, targetState.nextCursor, filters);
 			applyCreationPage(targetState, generation, page, isFirst);
 		} catch {
@@ -329,8 +333,19 @@
 						value={filters.task}
 						items={[
 							{ value: '', label: $i18n.t('All types') },
-							{ value: 'text-to-image', label: $i18n.t('Text to Image') },
-							{ value: 'image-to-image', label: $i18n.t('Image to Image') }
+							...(mediaKind !== 'video'
+								? [
+										{ value: 'text-to-image', label: $i18n.t('Text to Image') },
+										{ value: 'image-to-image', label: $i18n.t('Image to Image') }
+									]
+								: []),
+							...(mediaKind !== 'image'
+								? [
+										{ value: 'text-to-video', label: $i18n.t('Text to Video') },
+										{ value: 'image-to-video', label: $i18n.t('Image to Video') },
+										{ value: 'video-to-video', label: $i18n.t('Video to Video') }
+									]
+								: [])
 						]}
 						placeholder={$i18n.t('All types')}
 						triggerClass="flex min-h-11 w-full min-w-0 items-center rounded-xl border border-gray-200 bg-white px-3 text-left text-sm text-gray-700 outline-none transition focus-visible:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:w-auto sm:min-w-32"
@@ -395,7 +410,13 @@
 				class="flex flex-col items-center justify-center gap-3 py-16 text-center text-gray-500 dark:text-gray-400"
 			>
 				<Photo className="size-8" strokeWidth="1.5" />
-				<p class="text-sm">{$i18n.t('Newly generated images will appear here.')}</p>
+				<p class="text-sm">
+					{$i18n.t(
+						mediaKind === 'video'
+							? 'Newly generated videos will appear here.'
+							: 'Newly generated images will appear here.'
+					)}
+				</p>
 				<p class="text-xs">
 					{$i18n.t('Creations recorded before this feature was enabled are not included.')}
 				</p>
@@ -422,12 +443,26 @@
 									<div class="relative w-full overflow-hidden bg-gray-50 dark:bg-gray-800">
 										{#if item.content_url}
 											<img
-												src={item.content_url}
+												src={item.kind === 'video'
+													? (item.poster_url ?? item.content_url)
+													: item.content_url}
 												alt={item.caption ?? $i18n.t('Artwork')}
 												loading="lazy"
 												decoding="async"
 												class="h-auto w-full transition duration-300 group-hover:scale-[1.01]"
 											/>
+											{#if item.kind === 'video'}
+												<span class="absolute inset-0 flex items-center justify-center bg-black/10"
+													><span
+														class="flex size-10 items-center justify-center rounded-full bg-black/65 text-sm text-white"
+														>▶</span
+													></span
+												>
+												{#if item.duration_seconds}<span
+														class="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white"
+														>{item.duration_seconds}s</span
+													>{/if}
+											{/if}
 										{:else}
 											<div
 												class="flex min-h-32 w-full items-center justify-center px-3 text-center text-xs text-gray-400 dark:text-gray-500"

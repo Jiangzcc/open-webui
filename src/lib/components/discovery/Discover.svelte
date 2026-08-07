@@ -41,6 +41,7 @@
 
 	let activeFeed: DiscoveryFeed = 'latest';
 	let activeCategory: DiscoveryCategory | null = null;
+	let activeMediaKind: 'all' | 'image' | 'video' = 'all';
 	let feeds = {
 		featured: createDiscoveryFeedState(),
 		latest: createDiscoveryFeedState(),
@@ -67,14 +68,16 @@
 							localStorage.token,
 							PAGE_SIZE,
 							first ? null : target.nextCursor,
-							activeCategory ?? undefined
+							activeCategory ?? undefined,
+							activeMediaKind === 'all' ? undefined : activeMediaKind
 						)
 					: await listDiscoveryPosts(
 							localStorage.token,
 							feed,
 							PAGE_SIZE,
 							first ? null : target.nextCursor,
-							activeCategory ?? undefined
+							activeCategory ?? undefined,
+							activeMediaKind === 'all' ? undefined : activeMediaKind
 						);
 			applyDiscoveryPage(target, generation, page, first);
 		} catch {
@@ -87,6 +90,18 @@
 	const selectCategory = (category: DiscoveryCategory | null) => {
 		if (activeCategory === category) return;
 		activeCategory = category;
+		feeds = {
+			featured: createDiscoveryFeedState(),
+			latest: createDiscoveryFeedState(),
+			popular: createDiscoveryFeedState(),
+			favorites: createDiscoveryFeedState()
+		};
+		void loadPage(activeFeed, true);
+	};
+
+	const selectMediaKind = (mediaKind: 'all' | 'image' | 'video') => {
+		if (activeMediaKind === mediaKind) return;
+		activeMediaKind = mediaKind;
 		feeds = {
 			featured: createDiscoveryFeedState(),
 			latest: createDiscoveryFeedState(),
@@ -203,7 +218,7 @@
 						{$i18n.t('Discover')}
 					</h1>
 					<p class="mt-2 max-w-xl text-sm leading-6 text-gray-500 dark:text-gray-400">
-						{$i18n.t('Find inspiration in images shared by the community.')}
+						{$i18n.t('Find inspiration in images and videos shared by the community.')}
 					</p>
 				</div>
 
@@ -228,6 +243,25 @@
 					{/each}
 				</div>
 			</header>
+
+			<div
+				class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none"
+				aria-label={$i18n.t('Media type')}
+			>
+				{#each [['all', 'All'], ['image', 'Images'], ['video', 'Videos']] as option}
+					<button
+						type="button"
+						class="min-h-8 shrink-0 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition {activeMediaKind ===
+						option[0]
+							? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950'
+							: 'border-gray-200 bg-white text-gray-600 hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'}"
+						aria-pressed={activeMediaKind === option[0]}
+						on:click={() => selectMediaKind(option[0] as 'all' | 'image' | 'video')}
+					>
+						{$i18n.t(option[1])}
+					</button>
+				{/each}
+			</div>
 
 			<div
 				class="mb-5 flex gap-2 overflow-x-auto pb-1 scrollbar-none"
@@ -297,13 +331,29 @@
 									aria-label={item.title ?? $i18n.t('View creation')}
 								>
 									{#if item.content_url}
-										<img
-											src={item.content_url}
-											alt={item.title ?? item.prompt_preview ?? $i18n.t('Artwork')}
-											loading="lazy"
-											decoding="async"
-											class="h-auto w-full transition duration-500 group-hover:scale-[1.015]"
-										/>
+										<div class="relative">
+											<img
+												src={item.kind === 'video'
+													? (item.poster_url ?? item.content_url)
+													: item.content_url}
+												alt={item.title ?? item.prompt_preview ?? $i18n.t('Artwork')}
+												loading="lazy"
+												decoding="async"
+												class="h-auto w-full transition duration-500 group-hover:scale-[1.015]"
+											/>
+											{#if item.kind === 'video'}
+												<span class="absolute inset-0 flex items-center justify-center bg-black/10"
+													><span
+														class="flex size-10 items-center justify-center rounded-full bg-black/65 text-sm text-white shadow"
+														>▶</span
+													></span
+												>
+												{#if item.duration_seconds}<span
+														class="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white"
+														>{item.duration_seconds}s</span
+													>{/if}
+											{/if}
+										</div>
 									{:else}
 										<div
 											class="flex min-h-36 items-center justify-center p-4 text-xs text-gray-400"
@@ -323,7 +373,8 @@
 										{/if}
 										<span class="text-gray-400">
 											{$i18n.t(
-												categories.find((category) => category.id === item.category)?.display_name ?? 'Other'
+												categories.find((category) => category.id === item.category)
+													?.display_name ?? 'Other'
 											)}
 										</span>
 									</div>

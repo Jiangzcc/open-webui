@@ -1,6 +1,7 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
 
 export type ImageModelOperation = {
+	media_kind: 'image' | 'video';
 	model_id: string;
 	public_id: string;
 	name: string;
@@ -48,3 +49,18 @@ export const updateImageModelOperation = (
 		method: 'PATCH',
 		body: JSON.stringify(input)
 	});
+
+export const updateMediaModelOperation = (
+	token: string,
+	mediaKind: 'image' | 'video',
+	modelId: string,
+	input: ImageModelOperationUpdate
+) =>
+	request<ImageModelOperation>(
+		`/admin/media-models/${mediaKind}/${encodeURIComponent(modelId)}`,
+		token,
+		{
+			method: 'PATCH',
+			body: JSON.stringify(input)
+		}
+	);

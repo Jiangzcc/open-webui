@@ -1,0 +1,10 @@
+{
+	"schema_version": 1,
+	"modality": "video",
+	"defaults": {
+		"text-to-video": "bytedance/seedance-2.0/text-to-video",
+		"image-to-video": "bytedance/seedance-2.0/image-to-video",
+		"video-to-video": "fal-ai/wan/v2.7/edit-video"
+	},
+	"files": ["kling.json", "ltx.json", "bytedance.json", "alibaba.json"]
+}

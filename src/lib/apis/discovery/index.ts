@@ -45,19 +45,26 @@ export const listDiscoveryPosts = (
 	sort: DiscoverySort,
 	limit = 20,
 	cursor: string | null = null,
-	category?: DiscoveryCategory
+	category?: DiscoveryCategory,
+	mediaKind?: 'image' | 'video'
 ) =>
 	list('/creations/discover/posts', token, limit, cursor, {
 		sort,
-		...(category ? { category } : {})
+		...(category ? { category } : {}),
+		...(mediaKind ? { media_kind: mediaKind } : {})
 	});
 
 export const listFavoritePosts = (
 	token: string,
 	limit = 20,
 	cursor: string | null = null,
-	category?: DiscoveryCategory
-) => list('/creations/discover/favorites', token, limit, cursor, category ? { category } : {});
+	category?: DiscoveryCategory,
+	mediaKind?: 'image' | 'video'
+) =>
+	list('/creations/discover/favorites', token, limit, cursor, {
+		...(category ? { category } : {}),
+		...(mediaKind ? { media_kind: mediaKind } : {})
+	});
 
 export const getDiscoveryPost = (token: string, postId: string) =>
 	request<DiscoveryPostDetail>(`/creations/discover/posts/${encodeURIComponent(postId)}`, token);

@@ -1,5 +1,5 @@
-export const DEFAULT_PINNED_MENU_ITEMS = ['notes', 'workspace', 'discover', 'images'];
-export const PINNED_MEDIA_MENU_VERSION = 2;
+export const DEFAULT_PINNED_MENU_ITEMS = ['notes', 'workspace', 'discover', 'images', 'videos'];
+export const PINNED_MEDIA_MENU_VERSION = 3;
 
 type SidebarMenuSettings = {
 	pinnedMenuItems?: string[];
@@ -16,6 +16,7 @@ export const getPinnedMediaMenuMigration = (settings: SidebarMenuSettings) => {
 
 	const items = [...settings.pinnedMenuItems];
 	if (!items.includes('images')) items.push('images');
+	if (!items.includes('videos')) items.push('videos');
 	if (!items.includes('discover')) {
 		const imagesIndex = items.indexOf('images');
 		items.splice(imagesIndex < 0 ? items.length : imagesIndex, 0, 'discover');

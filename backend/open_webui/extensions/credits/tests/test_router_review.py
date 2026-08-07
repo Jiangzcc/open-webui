@@ -1,5 +1,6 @@
 import asyncio
 from hashlib import sha256
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -46,7 +47,7 @@ def test_credit_error_response_is_the_direct_public_envelope(monkeypatch) -> Non
     }
 
 
-def test_admin_quote_is_exempt_even_without_a_configured_price(monkeypatch) -> None:
+def test_admin_quote_requires_a_configured_price(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
     async def prepare(_request, _image_input, _metadata, _user):
@@ -88,16 +89,16 @@ def test_admin_quote_is_exempt_even_without_a_configured_price(monkeypatch) -> N
 
     assert result == {
         'balance': 0,
-        'sufficient': True,
-        'exempt': True,
+        'sufficient': False,
+        'exempt': False,
         'configured': False,
         'factors': [],
-        'charged_credits': 0,
-        'error': None,
+        'charged_credits': None,
+        'error': 'price_not_configured',
     }
 
 
-def test_admin_quote_reports_configured_price_without_computing_rules(monkeypatch) -> None:
+def test_admin_quote_computes_configured_price_like_an_ordinary_user(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
     async def prepare(*_args):
@@ -120,15 +121,19 @@ def test_admin_quote_reports_configured_price_without_computing_rules(monkeypatc
         )()
 
     async def balance(*_args):
-        return 0
+        return 10
 
     async def price(*_args):
-        return type('Price', (), {'updated_at': 1, 'enabled': True})()
+        return type('Price', (), {'id': 'price-admin', 'updated_at': 1, 'enabled': True})()
 
     monkeypatch.setattr(credits_router, 'prepare_generation_call', prepare)
     monkeypatch.setattr(credits_router, 'get_balance_if_exists', balance)
     monkeypatch.setattr(credits_router, 'get_enabled_price', price)
-    monkeypatch.setattr(credits_router, 'compute_price', lambda *_: pytest.fail('admin quote must not compute price'))
+    monkeypatch.setattr(
+        credits_router,
+        'compute_price',
+        lambda *_: SimpleNamespace(charged_credits=3, factors=[]),
+    )
 
     result = asyncio.run(
         credits_router.quote_image(
@@ -139,12 +144,13 @@ def test_admin_quote_reports_configured_price_without_computing_rules(monkeypatc
     )
 
     assert result['configured'] is True
-    assert result['exempt'] is True
-    assert result['charged_credits'] == 0
+    assert result['exempt'] is False
+    assert result['charged_credits'] == 3
 
 
-def test_admin_quote_reports_incomplete_price_as_configured(monkeypatch) -> None:
+def test_admin_quote_reports_incomplete_price_as_unconfigured(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits.errors import CreditError
 
     async def prepare(*_args):
         return type(
@@ -174,7 +180,11 @@ def test_admin_quote_reports_incomplete_price_as_configured(monkeypatch) -> None
     monkeypatch.setattr(credits_router, 'prepare_generation_call', prepare)
     monkeypatch.setattr(credits_router, 'get_balance_if_exists', balance)
     monkeypatch.setattr(credits_router, 'get_enabled_price', price)
-    monkeypatch.setattr(credits_router, 'compute_price', lambda *_: pytest.fail('admin quote must not compute price'))
+
+    def incomplete(*_args):
+        raise CreditError(code='price_rule_incomplete')
+
+    monkeypatch.setattr(credits_router, 'compute_price', incomplete)
 
     result = asyncio.run(
         credits_router.quote_image(
@@ -184,9 +194,9 @@ def test_admin_quote_reports_incomplete_price_as_configured(monkeypatch) -> None
         )
     )
 
-    assert result['configured'] is True
-    assert result['exempt'] is True
-    assert result['error'] is None
+    assert result['configured'] is False
+    assert result['exempt'] is False
+    assert result['error'] == 'price_rule_incomplete'
 
 
 def test_quote_cache_is_bounded(monkeypatch) -> None:

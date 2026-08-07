@@ -35,6 +35,7 @@ TABLE_NAMES = {
     'ext_creation_post_media',
     'ext_creation_post_reaction',
     'ext_image_generation_task',
+    'ext_video_generation_task',
     'ext_creation_category',
 }
 EXPECTED_INDEXES = {
@@ -56,12 +57,17 @@ EXPECTED_INDEXES = {
         'ix_ext_image_task_user_created',
         'ix_ext_image_task_status_updated',
     },
+    'ext_video_generation_task': {
+        'ix_ext_video_task_user_created',
+        'ix_ext_video_task_status_updated',
+    },
     'ext_creation_category': {'ix_ext_creation_category_enabled_order'},
 }
 EXPECTED_CHECKS = {
     'ck_ext_creation_media_kind',
     'ck_ext_creation_media_task',
     'ck_ext_creation_media_source',
+    'ck_ext_creation_media_duration',
     'ck_ext_creation_post_status',
     'ck_ext_creation_post_like_count',
     'ck_ext_creation_post_favorite_count',
@@ -70,6 +76,8 @@ EXPECTED_CHECKS = {
     'ck_ext_image_task_status',
     'ck_ext_image_task_kind',
     'ck_ext_image_task_expected_count',
+    'ck_ext_video_task_status',
+    'ck_ext_video_task_kind',
     'ck_ext_creation_category_sort_order',
 }
 BIGINT_COLUMNS = {
@@ -78,6 +86,7 @@ BIGINT_COLUMNS = {
     'ext_creation_post_media': {'created_at'},
     'ext_creation_post_reaction': {'created_at'},
     'ext_image_generation_task': {'created_at', 'started_at', 'completed_at', 'updated_at'},
+    'ext_video_generation_task': {'created_at', 'started_at', 'completed_at', 'updated_at'},
     'ext_creation_category': {'updated_at'},
 }
 TEXT_COLUMNS = {'ext_creation_media_item': {'prompt', 'negative_prompt'}}
@@ -121,7 +130,7 @@ def test_upgrade_creates_only_creation_objects_and_preserves_upstream_sentinel(s
         assert names == {'user', *TABLE_NAMES, 'ext_creation_schema_version'}
         assert 'alembic_version' not in names
         assert connection.execute(text('SELECT version_num FROM ext_creation_schema_version')).scalar_one() == (
-            '0006_create_discovery_categories'
+            '0007_add_video_creations_and_tasks'
         )
         assert connection.execute(
             text('SELECT id, display_name, enabled, sort_order FROM ext_creation_category ORDER BY sort_order')
@@ -178,6 +187,11 @@ def test_revision_has_required_constraints_and_indexes(sqlite_database):
     assert reaction_unique >= {'uq_ext_creation_post_reaction_actor_kind'}
     task_unique = {constraint['name'] for constraint in inspector.get_unique_constraints('ext_image_generation_task')}
     assert task_unique >= {'uq_ext_image_task_user_key'}
+    video_task_unique = {
+        constraint['name']
+        for constraint in inspector.get_unique_constraints('ext_video_generation_task')
+    }
+    assert video_task_unique >= {'uq_ext_video_task_user_key'}
 
     existing_checks = set()
     for table_name in TABLE_NAMES:

@@ -25,14 +25,19 @@ class CreationMediaItem(CreationBase):
     __tablename__ = 'ext_creation_media_item'
     __table_args__ = (
         UniqueConstraint('file_id', name='uq_ext_creation_media_file'),
-        CheckConstraint("kind IN ('image')", name='ck_ext_creation_media_kind'),
+        CheckConstraint("kind IN ('image', 'video')", name='ck_ext_creation_media_kind'),
         CheckConstraint(
-            "task IN ('text-to-image', 'image-to-image')",
+            "task IN ('text-to-image', 'image-to-image', 'text-to-video', 'image-to-video', 'video-to-video')",
             name='ck_ext_creation_media_task',
         ),
         CheckConstraint(
             "source IN ('web', 'api', 'chat', 'tool')",
             name='ck_ext_creation_media_source',
+        ),
+        CheckConstraint(
+            "(kind = 'image' AND duration_seconds IS NULL) OR "
+            "(kind = 'video' AND duration_seconds IS NOT NULL AND duration_seconds > 0)",
+            name='ck_ext_creation_media_duration',
         ),
         Index(
             'ix_ext_creation_media_user_visible_created',
@@ -54,6 +59,8 @@ class CreationMediaItem(CreationBase):
     user_id = Column(String(128), nullable=False)
     kind = Column(String(16), nullable=False)
     file_id = Column(String(128), nullable=False)
+    poster_file_id = Column(String(128), nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
     caption = Column(String(1000), nullable=True)
     prompt = Column(Text, nullable=False)
     negative_prompt = Column(Text, nullable=True)
@@ -201,6 +208,40 @@ class ImageGenerationTask(CreationBase):
     updated_at = Column(BigInteger, nullable=False)
 
 
+class VideoGenerationTask(CreationBase):
+    __tablename__ = 'ext_video_generation_task'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'idempotency_key', name='uq_ext_video_task_user_key'),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed')",
+            name='ck_ext_video_task_status',
+        ),
+        CheckConstraint(
+            "task IN ('text-to-video', 'image-to-video', 'video-to-video')",
+            name='ck_ext_video_task_kind',
+        ),
+        Index('ix_ext_video_task_user_created', 'user_id', 'created_at', 'id'),
+        Index('ix_ext_video_task_status_updated', 'status', 'updated_at', 'id'),
+    )
+
+    id = Column(String(128), primary_key=True)
+    user_id = Column(String(128), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    status = Column(String(16), nullable=False)
+    task = Column(String(32), nullable=False)
+    prompt = Column(Text, nullable=False)
+    model_id = Column(String(256), nullable=False)
+    params_json = Column(JSONField, nullable=True)
+    assets_json = Column(JSONField, nullable=True)
+    result_json = Column(JSONField, nullable=True)
+    error_code = Column(String(64), nullable=True)
+    usage_id = Column(String(128), nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+    started_at = Column(BigInteger, nullable=True)
+    completed_at = Column(BigInteger, nullable=True)
+    updated_at = Column(BigInteger, nullable=False)
+
+
 __all__ = [
     'CreationMediaItem',
     'CreationPost',
@@ -208,4 +249,5 @@ __all__ = [
     'CreationPostReaction',
     'DiscoveryCategorySetting',
     'ImageGenerationTask',
+    'VideoGenerationTask',
 ]

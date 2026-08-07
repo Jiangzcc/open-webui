@@ -34,6 +34,14 @@ export type ImageQuote = {
 	error: string | null;
 };
 
+export type VideoQuoteInput = {
+	resource_id: string;
+	action: 'text-to-video' | 'image-to-video' | 'video-to-video';
+	dimensions: Record<string, string | number>;
+};
+
+export type VideoQuote = ImageQuote;
+
 export type LedgerCursor = {
 	created_at: number;
 	id: string;
@@ -316,6 +324,9 @@ export const getMyCredits = (token: string, signal?: AbortSignal) =>
 
 export const quoteImageCredits = (token: string, input: ImageQuoteInput, signal?: AbortSignal) =>
 	requestCredits<ImageQuote>({ method: 'POST', path: '/quotes/image', token, body: input, signal });
+
+export const quoteVideoCredits = (token: string, input: VideoQuoteInput, signal?: AbortSignal) =>
+	requestCredits<VideoQuote>({ method: 'POST', path: '/quotes/video', token, body: input, signal });
 
 export const getMyCreditLedger = (token: string, query: LedgerQuery, signal?: AbortSignal) =>
 	requestCredits<Page<LedgerItem>>({ method: 'GET', path: '/me/ledger', token, query, signal });

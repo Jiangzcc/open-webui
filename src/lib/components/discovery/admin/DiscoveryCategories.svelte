@@ -28,7 +28,7 @@
 		try {
 			categories = await listAdminDiscoveryCategories(localStorage.token);
 		} catch {
-			toast.error($i18n.t('Failed to load image categories'));
+			toast.error($i18n.t('Failed to load creation categories'));
 		} finally {
 			loading = false;
 		}
@@ -46,9 +46,9 @@
 			categories = sortCategories(
 				categories.map((item) => (item.id === updated.id ? updated : item))
 			);
-			toast.success($i18n.t('Image category saved'));
+			toast.success($i18n.t('Creation category saved'));
 		} catch {
-			toast.error($i18n.t('Failed to save image category'));
+			toast.error($i18n.t('Failed to save creation category'));
 		} finally {
 			savingId = null;
 		}
@@ -65,9 +65,9 @@
 			categories = sortCategories([...categories, created]);
 			newCategory = { display_name: '', enabled: true, sort_order: 1000 };
 			showCreate = false;
-			toast.success($i18n.t('Image category created'));
+			toast.success($i18n.t('Creation category created'));
 		} catch {
-			toast.error($i18n.t('Failed to create image category'));
+			toast.error($i18n.t('Failed to create creation category'));
 		} finally {
 			creating = false;
 		}
@@ -76,20 +76,22 @@
 	const remove = async (category: DiscoveryCategoryItem) => {
 		if (deletingId || category.id === 'other') return;
 		if (
-			!window.confirm($i18n.t('Delete image category {{name}}?', { name: category.display_name }))
+			!window.confirm(
+				$i18n.t('Delete creation category {{name}}?', { name: category.display_name })
+			)
 		)
 			return;
 		deletingId = category.id;
 		try {
 			await deleteAdminDiscoveryCategory(localStorage.token, category.id);
 			categories = categories.filter((item) => item.id !== category.id);
-			toast.success($i18n.t('Image category deleted'));
+			toast.success($i18n.t('Creation category deleted'));
 		} catch (error) {
 			const detail = (error as { detail?: string } | null)?.detail;
 			toast.error(
 				detail === 'category is in use'
 					? $i18n.t('This category is used by published creations and cannot be deleted.')
-					: $i18n.t('Failed to delete image category')
+					: $i18n.t('Failed to delete creation category')
 			);
 		} finally {
 			deletingId = null;
@@ -109,7 +111,7 @@
 			type="button"
 			on:click={() => (showCreate = true)}
 		>
-			{$i18n.t('Add image category')}
+			{$i18n.t('Add creation category')}
 		</button>
 	</div>
 
@@ -119,7 +121,7 @@
 		<div
 			class="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-gray-200 text-sm text-gray-500 dark:border-gray-800"
 		>
-			{$i18n.t('No image categories found')}
+			{$i18n.t('No creation categories found')}
 		</div>
 	{:else}
 		<div class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800">
@@ -206,7 +208,7 @@
 			aria-labelledby="create-category-title"
 		>
 			<h2 id="create-category-title" class="text-lg font-medium dark:text-gray-100">
-				{$i18n.t('Add image category')}
+				{$i18n.t('Add creation category')}
 			</h2>
 			<div class="mt-5 grid gap-4">
 				<label class="grid gap-1.5 text-sm">

@@ -24,8 +24,15 @@ export const isProxyModel = (model: ImageGenerationModel): boolean => model.host
  * (so a model name that legitimately contains ` / ` is preserved). Falls back to the
  * model id when the name is missing or empty.
  */
-export const stripVendorFromName = (model: ImageGenerationModel): string => {
+export const stripVendorFromName = (
+	model: Pick<ImageGenerationModel, 'id' | 'name'> & { provider?: string | null }
+): string => {
 	const segments = (model.name ?? '').split(' / ');
-	const stripped = segments.length > 1 ? segments.slice(1).join(' / ').trim() : (model.name ?? '');
+	let stripped = segments.length > 1 ? segments.slice(1).join(' / ').trim() : (model.name ?? '');
+	const provider = model.provider?.trim();
+	if (provider) {
+		const escapedProvider = provider.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		stripped = stripped.replace(new RegExp(`^${escapedProvider}\\s+`, 'i'), '');
+	}
 	return stripped || model.id;
 };

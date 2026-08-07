@@ -1,0 +1,218 @@
+[
+	{
+		"id": "fal-ai/wan/v2.7/text-to-video",
+		"public_id": "wan-2.7-video",
+		"name": "Alibaba / Wan 2.7 Video",
+		"provider": "alibaba",
+		"task": "text-to-video",
+		"duration_field": "duration",
+		"durations": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
+		"default_duration": "5",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "1080p",
+		"audio_options": [
+			{ "mode": "silent", "values": {} },
+			{ "mode": "upload", "values": {} }
+		],
+		"default_audio_mode": "silent",
+		"asset_inputs": [
+			{
+				"role": "reference_audio",
+				"field": "audio_url",
+				"mime_types": ["audio/mpeg", "audio/wav"],
+				"max_bytes": 15728640,
+				"max_duration_seconds": 15
+			}
+		],
+		"boolean_fields": [{ "field": "enable_prompt_expansion", "default": true, "advanced": true }],
+		"integer_fields": [{ "field": "seed", "advanced": true }],
+		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }],
+		"fixed_fields": { "enable_safety_checker": true }
+	},
+	{
+		"id": "fal-ai/wan/v2.7/image-to-video",
+		"public_id": "wan-2.7-video/image",
+		"name": "Alibaba / Wan 2.7 Video Image",
+		"provider": "alibaba",
+		"task": "image-to-video",
+		"duration_field": "duration",
+		"durations": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
+		"default_duration": "5",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "1080p",
+		"audio_options": [
+			{ "mode": "silent", "values": {} },
+			{ "mode": "upload", "values": {} }
+		],
+		"default_audio_mode": "silent",
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "end_image_url",
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "reference_audio",
+				"field": "audio_url",
+				"mime_types": ["audio/mpeg", "audio/wav"],
+				"max_bytes": 15728640,
+				"max_duration_seconds": 15
+			}
+		],
+		"boolean_fields": [{ "field": "enable_prompt_expansion", "default": true, "advanced": true }],
+		"integer_fields": [{ "field": "seed", "advanced": true }],
+		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }],
+		"fixed_fields": { "enable_safety_checker": true }
+	},
+	{
+		"id": "fal-ai/wan/v2.7/edit-video",
+		"public_id": "wan-2.7-video/edit",
+		"name": "Alibaba / Wan 2.7 Video Edit",
+		"provider": "alibaba",
+		"task": "video-to-video",
+		"duration_field": "duration",
+		"durations": ["0", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+		"default_duration": "0",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "1080p",
+		"audio_options": [
+			{ "mode": "auto", "values": { "audio_setting": "auto" } },
+			{ "mode": "preserve", "values": { "audio_setting": "origin" } }
+		],
+		"default_audio_mode": "auto",
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime"],
+				"max_bytes": 104857600,
+				"min_duration_seconds": 2,
+				"max_duration_seconds": 10
+			},
+			{
+				"role": "reference_image",
+				"field": "reference_image_url",
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"integer_fields": [{ "field": "seed", "advanced": true }],
+		"fixed_fields": { "enable_safety_checker": true }
+	},
+	{
+		"id": "fal-ai/wan-25-preview/text-to-video",
+		"public_id": "wan-2.5-preview",
+		"name": "Alibaba / Wan 2.5 Preview",
+		"provider": "alibaba",
+		"task": "text-to-video",
+		"duration_field": "duration",
+		"durations": ["5", "10"],
+		"default_duration": "5",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16", "1:1"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["480p", "720p", "1080p"],
+		"default_resolution": "1080p",
+		"asset_inputs": [
+			{
+				"role": "reference_audio",
+				"field": "audio_url",
+				"mime_types": ["audio/mpeg", "audio/wav"],
+				"max_bytes": 15728640,
+				"max_duration_seconds": 30
+			}
+		],
+		"boolean_fields": [{ "field": "enable_prompt_expansion", "default": true, "advanced": true }],
+		"integer_fields": [{ "field": "seed", "advanced": true }],
+		"text_fields": [{ "field": "negative_prompt", "max_length": 500, "advanced": true }],
+		"fixed_fields": { "enable_safety_checker": true }
+	},
+	{
+		"id": "fal-ai/wan-25-preview/image-to-video",
+		"public_id": "wan-2.5-preview/image",
+		"name": "Alibaba / Wan 2.5 Preview Image",
+		"provider": "alibaba",
+		"task": "image-to-video",
+		"duration_field": "duration",
+		"durations": ["5", "10"],
+		"default_duration": "5",
+		"resolution_field": "resolution",
+		"resolutions": ["480p", "720p", "1080p"],
+		"default_resolution": "1080p",
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "reference_audio",
+				"field": "audio_url",
+				"mime_types": ["audio/mpeg", "audio/wav"],
+				"max_bytes": 15728640,
+				"max_duration_seconds": 30
+			}
+		],
+		"boolean_fields": [{ "field": "enable_prompt_expansion", "default": true, "advanced": true }],
+		"integer_fields": [{ "field": "seed", "advanced": true }],
+		"text_fields": [{ "field": "negative_prompt", "max_length": 500, "advanced": true }],
+		"fixed_fields": { "enable_safety_checker": true }
+	},
+	{
+		"id": "alibaba/happy-horse/video-edit",
+		"public_id": "happy-horse/edit",
+		"name": "Alibaba / Happy Horse Video Edit",
+		"provider": "alibaba",
+		"task": "video-to-video",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "1080p",
+		"audio_options": [
+			{ "mode": "auto", "values": { "audio_setting": "auto" } },
+			{ "mode": "preserve", "values": { "audio_setting": "origin" } }
+		],
+		"default_audio_mode": "auto",
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime"],
+				"max_bytes": 104857600,
+				"min_duration_seconds": 3,
+				"max_duration_seconds": 60
+			},
+			{
+				"role": "reference_image",
+				"field": "reference_image_urls",
+				"multiple": true,
+				"max_count": 5,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 10485760,
+				"max_total_bytes": 52428800
+			}
+		],
+		"integer_fields": [{ "field": "seed", "min": 0, "max": 2147483647, "advanced": true }],
+		"fixed_fields": { "enable_safety_checker": true }
+	}
+]

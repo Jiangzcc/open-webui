@@ -26,11 +26,13 @@
 	let pageSize = 20;
 	let pageCursors: Array<string | null> = [null];
 	let search = '';
+	let mediaKind: '' | 'image' | 'video' = '';
 	let editing: DiscoveryPostSummary | null = null;
 	let saving = false;
 	let showPreview = false;
 	let previewUrl = '';
 	let previewAlt = '';
+	let previewKind: 'image' | 'video' = 'image';
 
 	$: visibleItems = items.filter((item) =>
 		`${item.title ?? ''} ${item.prompt_preview ?? ''} ${item.owner.name ?? ''}`
@@ -45,14 +47,21 @@
 		try {
 			categories = await listAdminDiscoveryCategories(localStorage.token);
 		} catch {
-			toast.error($i18n.t('Failed to load image categories'));
+			toast.error($i18n.t('Failed to load creation categories'));
 		}
 	};
 
 	const load = async (cursor: string | null = null) => {
 		loading = true;
 		try {
-			const result = await listDiscoveryPosts(localStorage.token, 'latest', pageSize, cursor);
+			const result = await listDiscoveryPosts(
+				localStorage.token,
+				'latest',
+				pageSize,
+				cursor,
+				undefined,
+				mediaKind || undefined
+			);
 			items = result.items;
 			nextCursor = result.next_cursor;
 		} catch {
@@ -87,7 +96,9 @@
 
 	const openPreview = (item: DiscoveryPostSummary) => {
 		if (!item.content_url) return;
-		previewUrl = item.content_url;
+		previewUrl = item.kind === 'video' ? (item.poster_url ?? item.content_url) : item.content_url;
+		previewKind = item.kind;
+		if (item.kind === 'video') previewUrl = item.content_url;
 		previewAlt = item.title ?? item.prompt_preview ?? $i18n.t('Artwork');
 		showPreview = true;
 	};
@@ -130,12 +141,22 @@
 
 <div class="flex h-full min-h-0 flex-col gap-4">
 	<header class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-end">
-		<div class="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_7rem] lg:w-[28rem]">
+		<div class="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_8rem_7rem] lg:w-[38rem]">
 			<input
 				class="min-h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
 				bind:value={search}
 				placeholder={$i18n.t('Search creations')}
 			/>
+			<select
+				class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+				bind:value={mediaKind}
+				on:change={resetPagination}
+				aria-label={$i18n.t('Media type')}
+			>
+				<option value="">{$i18n.t('All media types')}</option>
+				<option value="image">{$i18n.t('Image')}</option>
+				<option value="video">{$i18n.t('Video')}</option>
+			</select>
 			<select
 				class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
 				bind:value={pageSize}
@@ -181,7 +202,9 @@
 							>
 								<img
 									class="h-full w-full object-cover"
-									src={item.content_url}
+									src={item.kind === 'video'
+										? (item.poster_url ?? item.content_url)
+										: item.content_url}
 									alt={item.title ?? $i18n.t('Artwork')}
 								/>
 							</button>
@@ -191,6 +214,9 @@
 						<div class="min-w-0">
 							<div class="truncate text-sm font-medium dark:text-gray-100">
 								{item.title ?? item.prompt_preview ?? $i18n.t('Untitled')}
+							</div>
+							<div class="mt-1 text-[11px] text-gray-400">
+								{$i18n.t(item.kind === 'video' ? 'Video' : 'Image')}
 							</div>
 							<div class="mt-0.5 truncate text-xs text-gray-500">
 								{item.owner.name ?? item.owner.user_id}
@@ -262,7 +288,9 @@
 					<div class="size-14 shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800">
 						{#if editing.content_url}<img
 								class="h-full w-full object-cover"
-								src={editing.content_url}
+								src={editing.kind === 'video'
+									? (editing.poster_url ?? editing.content_url)
+									: editing.content_url}
 								alt=""
 							/>{/if}
 					</div>
@@ -339,4 +367,34 @@
 	</div>
 {/if}
 
-<ImagePreview bind:show={showPreview} src={previewUrl} alt={previewAlt} />
+{#if previewKind === 'video' && showPreview}
+	<div
+		class="fixed inset-0 z-[110] flex items-center justify-center bg-black/75 p-4"
+		role="presentation"
+		on:click={(event) => event.currentTarget === event.target && (showPreview = false)}
+	>
+		<section
+			class="w-full max-w-5xl overflow-hidden rounded-2xl bg-black shadow-2xl"
+			role="dialog"
+			aria-modal="true"
+			aria-label={previewAlt}
+		>
+			<video
+				class="max-h-[82dvh] w-full bg-black object-contain"
+				src={previewUrl}
+				controls
+				autoplay
+				playsinline
+			></video>
+			<div class="flex justify-end bg-gray-950 p-2">
+				<button
+					class="min-h-10 rounded-lg px-4 text-sm text-white hover:bg-white/10"
+					type="button"
+					on:click={() => (showPreview = false)}>{$i18n.t('Close')}</button
+				>
+			</div>
+		</section>
+	</div>
+{:else}
+	<ImagePreview bind:show={showPreview} src={previewUrl} alt={previewAlt} />
+{/if}

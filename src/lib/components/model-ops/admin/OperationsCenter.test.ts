@@ -63,5 +63,15 @@ describe('operations center', () => {
 		expect(modelOperations).toContain('let pageSize = 25;');
 		expect(modelOperations).toContain('max-h-[min(62vh,44rem)]');
 		expect(modelOperations).toContain('role="dialog"');
+		expect(modelOperations).toContain('item.media_kind');
+		expect(modelOperations).toContain('value="video"');
+		expect(modelOperations).toContain("'text-to-video'");
+	});
+
+	test('treats categories and discovery operations as image and video features', () => {
+		expect(operationsPage).toContain("label: 'Creation categories'");
+		expect(discoveryCategories).toContain("$i18n.t('Add creation category')");
+		expect(discoveryOperations).toContain('mediaKind');
+		expect(discoveryOperations).toContain('<video');
 	});
 });

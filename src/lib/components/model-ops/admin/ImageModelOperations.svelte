@@ -4,7 +4,7 @@
 
 	import {
 		listImageModelOperations,
-		updateImageModelOperation,
+		updateMediaModelOperation,
 		type ImageModelOperation
 	} from '$lib/apis/image-model-ops';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -14,6 +14,7 @@
 	let loading = true;
 	let search = '';
 	let task = '';
+	let mediaKind = '';
 	let statusFilter = '';
 	let page = 1;
 	let pageSize = 25;
@@ -23,6 +24,7 @@
 
 	$: filteredItems = items.filter((item) => {
 		const matchesTask = !task || item.task === task;
+		const matchesMediaKind = !mediaKind || item.media_kind === mediaKind;
 		const matchesSearch = `${item.name} ${item.provider} ${item.public_id} ${item.tags.join(' ')}`
 			.toLowerCase()
 			.includes(search.trim().toLowerCase());
@@ -32,7 +34,7 @@
 			(statusFilter === 'disabled' && !item.enabled) ||
 			(statusFilter === 'hidden' && !item.visible) ||
 			(statusFilter === 'maintenance' && Boolean(item.maintenance_message));
-		return matchesTask && matchesSearch && matchesStatus;
+		return matchesTask && matchesMediaKind && matchesSearch && matchesStatus;
 	});
 	$: totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
 	$: if (page > totalPages) page = totalPages;
@@ -45,7 +47,7 @@
 		try {
 			items = await listImageModelOperations(localStorage.token);
 		} catch {
-			toast.error($i18n.t('Failed to load image models'));
+			toast.error($i18n.t('Failed to load generation models'));
 		} finally {
 			loading = false;
 		}
@@ -60,18 +62,25 @@
 		if (!editing || saving) return;
 		saving = true;
 		try {
-			const saved = await updateImageModelOperation(localStorage.token, editing.model_id, {
-				visible: editing.visible,
-				enabled: editing.enabled,
-				recommended: editing.recommended,
-				sort_order: editing.sort_order,
-				tags: tagDraft
-					.split(',')
-					.map((tag) => tag.trim())
-					.filter(Boolean),
-				maintenance_message: editing.maintenance_message
-			});
-			items = items.map((item) => (item.model_id === saved.model_id ? saved : item));
+			const saved = await updateMediaModelOperation(
+				localStorage.token,
+				editing.media_kind,
+				editing.model_id,
+				{
+					visible: editing.visible,
+					enabled: editing.enabled,
+					recommended: editing.recommended,
+					sort_order: editing.sort_order,
+					tags: tagDraft
+						.split(',')
+						.map((tag) => tag.trim())
+						.filter(Boolean),
+					maintenance_message: editing.maintenance_message
+				}
+			);
+			items = items.map((item) =>
+				item.model_id === saved.model_id && item.media_kind === saved.media_kind ? saved : item
+			);
 			editing = null;
 			toast.success($i18n.t('Model settings saved'));
 		} catch {
@@ -93,7 +102,7 @@
 		</div>
 	</header>
 
-	<div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_12rem_12rem_7rem]">
+	<div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(14rem,1fr)_9rem_12rem_12rem_7rem]">
 		<input
 			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm outline-none focus:border-gray-400 dark:border-gray-700 dark:focus:border-gray-500 sm:col-span-2 xl:col-span-1"
 			bind:value={search}
@@ -102,12 +111,27 @@
 		/>
 		<select
 			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+			bind:value={mediaKind}
+			on:change={() => {
+				task = '';
+				resetPage();
+			}}
+		>
+			<option value="">{$i18n.t('All media types')}</option>
+			<option value="image">{$i18n.t('Image')}</option>
+			<option value="video">{$i18n.t('Video')}</option>
+		</select>
+		<select
+			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
 			bind:value={task}
 			on:change={resetPage}
 		>
 			<option value="">{$i18n.t('All tasks')}</option>
 			<option value="text-to-image">{$i18n.t('Text to image')}</option>
 			<option value="image-to-image">{$i18n.t('Image to image')}</option>
+			<option value="text-to-video">{$i18n.t('Text to Video')}</option>
+			<option value="image-to-video">{$i18n.t('Image to Video')}</option>
+			<option value="video-to-video">{$i18n.t('Video to Video')}</option>
 		</select>
 		<select
 			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
@@ -152,16 +176,32 @@
 				<div class="text-right">{$i18n.t('Action')}</div>
 			</div>
 			<div class="max-h-[min(62vh,44rem)] overflow-y-auto overscroll-contain">
-				{#each pageItems as item (item.model_id)}
+				{#each pageItems as item (`${item.media_kind}:${item.model_id}`)}
 					<article
 						class="grid gap-2 border-b border-gray-100 px-3 py-3 last:border-b-0 dark:border-gray-800/70 md:grid-cols-[minmax(16rem,1fr)_7rem_9rem_11rem_5rem] md:items-center md:gap-3 md:px-4 md:py-2.5"
 					>
 						<div class="min-w-0">
-							<div class="truncate text-sm font-medium dark:text-gray-100">{item.name}</div>
+							<div class="flex min-w-0 items-center gap-2">
+								<span class="truncate text-sm font-medium dark:text-gray-100">{item.name}</span>
+								<span
+									class="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800"
+									>{$i18n.t(item.media_kind === 'video' ? 'Video' : 'Image')}</span
+								>
+							</div>
 							<div class="truncate text-xs text-gray-500">{item.provider} · {item.public_id}</div>
 						</div>
 						<div class="text-xs text-gray-500">
-							{item.task === 'text-to-image' ? $i18n.t('Text to image') : $i18n.t('Image to image')}
+							{$i18n.t(
+								item.task === 'text-to-image'
+									? 'Text to image'
+									: item.task === 'image-to-image'
+										? 'Image to image'
+										: item.task === 'text-to-video'
+											? 'Text to Video'
+											: item.task === 'image-to-video'
+												? 'Image to Video'
+												: 'Video to Video'
+							)}
 						</div>
 						<div class="flex flex-wrap gap-1 text-[11px]">
 							{#if !item.visible}<span
@@ -186,7 +226,8 @@
 							{#if item.tags.length}<span class="max-w-24 truncate text-gray-500"
 									>{item.tags.join(' · ')}</span
 								>{/if}
-							{#if item.maintenance_message}<span class="whitespace-nowrap text-orange-600 dark:text-orange-400"
+							{#if item.maintenance_message}<span
+									class="whitespace-nowrap text-orange-600 dark:text-orange-400"
 									>{$i18n.t('Maintenance')}</span
 								>{/if}
 						</div>

@@ -30,6 +30,9 @@ export type DiscoveryPostSummary = {
 	title: string | null;
 	description: string | null;
 	content_url: string | null;
+	poster_url: string | null;
+	kind: 'image' | 'video';
+	duration_seconds: number | null;
 	availability: 'available' | 'missing';
 	mime_type: string | null;
 	prompt_preview: string | null;
@@ -68,7 +71,7 @@ export type DiscoveryPostDetail = DiscoveryPostSummary & {
 	prompt: string | null;
 	negative_prompt: string | null;
 	params: Record<string, unknown> | null;
-	task: 'text-to-image' | 'image-to-image';
+	task: 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'video-to-video';
 };
 
 export type DiscoveryPostListResponse = {

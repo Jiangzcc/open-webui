@@ -56,12 +56,14 @@ def _item(
     model_id: str | None = 'z-image-turbo',
     model_name_snapshot: str | None = 'Z Image Turbo',
     prompt: str = 'a calm river',
+    kind: str = 'image',
 ) -> CreationMediaItem:
     return CreationMediaItem(
         id=cid,
         user_id=user_id,
-        kind='image',
+        kind=kind,
         file_id=file_id,
+        duration_seconds=5 if kind == 'video' else None,
         caption=caption,
         prompt=prompt,
         negative_prompt=None,
@@ -133,6 +135,36 @@ async def test_personal_list_returns_only_own_visible_creations(creation_session
 
 
 @pytest.mark.asyncio
+async def test_personal_and_admin_lists_filter_media_kind(creation_sessions, monkeypatch) -> None:
+    await _seed(
+        creation_sessions,
+        [
+            _item(cid='image', file_id='fi', created_at=10),
+            _item(
+                cid='video',
+                file_id='fv',
+                created_at=20,
+                kind='video',
+                task='text-to-video',
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        service,
+        'Files',
+        _FakeFiles([make_file('fi', 'user-1'), make_file('fv', 'user-1', 'video/mp4')]),
+    )
+    monkeypatch.setattr(service, 'Users', _FakeUsers([make_user('user-1')]))
+
+    async with creation_sessions() as session:
+        personal = await list_personal_creations(session, 'user-1', 20, None, kind='video')
+        admin = await list_admin_creations(session, 20, None, kind='video')
+
+    assert [item.id for item in personal.items] == ['video']
+    assert [item.id for item in admin.items] == ['video']
+
+
+@pytest.mark.asyncio
 async def test_pagination_uses_compound_cursor_without_duplicates(creation_sessions, monkeypatch) -> None:
     same_second = 500
     items = [_item(cid=f'c{i}', user_id='user-1', file_id=f'f{i}', created_at=same_second) for i in range(5)]
@@ -157,9 +189,7 @@ async def test_personal_list_rejects_invalid_cursor(creation_sessions) -> None:
 
 
 @pytest.mark.asyncio
-async def test_personal_list_filters_search_task_publication_and_oldest_sort(
-    creation_sessions, monkeypatch
-) -> None:
+async def test_personal_list_filters_search_task_publication_and_oldest_sort(creation_sessions, monkeypatch) -> None:
     await _seed(
         creation_sessions,
         [
@@ -189,12 +219,8 @@ async def test_personal_list_filters_search_task_publication_and_oldest_sort(
             ),
         ],
     )
-    await _seed_publication(
-        creation_sessions, creation_id='published-edit', user_id='user-1'
-    )
-    await _seed_publication(
-        creation_sessions, creation_id='published-text', user_id='user-1'
-    )
+    await _seed_publication(creation_sessions, creation_id='published-edit', user_id='user-1')
+    await _seed_publication(creation_sessions, creation_id='published-text', user_id='user-1')
     monkeypatch.setattr(service, 'Files', _FakeFiles([]))
 
     async with creation_sessions() as session:
@@ -359,9 +385,7 @@ async def test_soft_delete_many_only_removes_owned_visible_items_and_withdraws_p
     await _seed_publication(creation_sessions, creation_id='owned', user_id='user-1')
 
     async with creation_sessions() as session:
-        removed = await soft_delete_many(
-            session, 'user-1', ('owned', 'already-gone', 'stranger', 'missing')
-        )
+        removed = await soft_delete_many(session, 'user-1', ('owned', 'already-gone', 'stranger', 'missing'))
 
     assert removed == ('owned',)
     async with creation_sessions() as session:

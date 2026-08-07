@@ -15,6 +15,7 @@ from open_webui.extensions.creations.discovery_service import (
     delete_discovery_category,
     get_discovery_post,
     get_published_content_file,
+    get_published_poster_file,
     list_discovery_categories,
     list_discovery_posts,
     list_favorite_posts,
@@ -38,6 +39,7 @@ from open_webui.extensions.creations.schemas import (
     BulkCreationDeleteResponse,
     CaptionUpdateForm,
     CreationDetail,
+    CreationKind,
     CreationListResponse,
     CreationListSort,
     CreationPublication,
@@ -171,6 +173,7 @@ async def list_media(
     task: CreationTask | None = None,
     publication_status: CreationPublicationFilter | None = None,
     sort: CreationListSort = 'newest',
+    kind: CreationKind | None = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
@@ -184,6 +187,7 @@ async def list_media(
             task=task,
             publication_status=publication_status,
             sort=sort,
+            kind=kind,
         )
     except ValueError:
         return _invalid_cursor_response()
@@ -239,9 +243,7 @@ async def bulk_delete_media(
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
-    return BulkCreationDeleteResponse(
-        removed_ids=await soft_delete_many(session, user.id, form.ids)
-    )
+    return BulkCreationDeleteResponse(removed_ids=await soft_delete_many(session, user.id, form.ids))
 
 
 @router.post('/media/{creation_id}/publish', response_model=CreationPublication)
@@ -276,13 +278,14 @@ async def withdraw_media(
 async def list_discover_posts(
     sort: DiscoverySort = 'latest',
     category: DiscoveryCategory | None = None,
+    media_kind: CreationKind | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_discovery_posts(session, user.id, limit, cursor, sort, category)
+        return await list_discovery_posts(session, user.id, limit, cursor, sort, category, media_kind)
     except ValueError:
         return _invalid_cursor_response()
 
@@ -290,13 +293,14 @@ async def list_discover_posts(
 @router.get('/discover/favorites', response_model=DiscoveryPostListResponse)
 async def list_discover_favorites(
     category: DiscoveryCategory | None = None,
+    media_kind: CreationKind | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_favorite_posts(session, user.id, limit, cursor, category)
+        return await list_favorite_posts(session, user.id, limit, cursor, category, media_kind)
     except ValueError:
         return _invalid_cursor_response()
 
@@ -362,15 +366,39 @@ async def get_discover_post_content(
         raise HTTPException(status_code=400, detail='error getting post content') from error
 
 
+@router.get('/discover/posts/{post_id}/poster')
+async def get_discover_post_poster(
+    post_id: str,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    file = await get_published_poster_file(session, post_id)
+    if file is None or not getattr(file, 'path', None):
+        raise HTTPException(status_code=404, detail='post poster not found')
+    try:
+        file_path = Path(await asyncio.to_thread(Storage.get_file, file.path))
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail='post poster not found')
+        meta = getattr(file, 'meta', None) or {}
+        content_type = meta.get('content_type') if isinstance(meta, dict) else None
+        return FileResponse(file_path, media_type=content_type)
+    except HTTPException:
+        raise
+    except Exception as error:
+        log.exception('Error getting discovery post poster: %s', error)
+        raise HTTPException(status_code=400, detail='error getting post poster') from error
+
+
 @router.get('/admin/media', response_model=AdminCreationListResponse)
 async def list_admin_media(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
+    kind: CreationKind | None = None,
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_admin_creations(session, limit, cursor)
+        return await list_admin_creations(session, limit, cursor, kind)
     except ValueError:
         return _invalid_cursor_response()
 

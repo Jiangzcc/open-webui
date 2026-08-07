@@ -9,8 +9,8 @@
 	type OperationsTab = 'discovery' | 'categories' | 'models';
 	const tabs: Array<{ id: OperationsTab; label: string }> = [
 		{ id: 'discovery', label: 'Discovery operations' },
-		{ id: 'categories', label: 'Image categories' },
-		{ id: 'models', label: 'Image model operations' }
+		{ id: 'categories', label: 'Creation categories' },
+		{ id: 'models', label: 'Model operations' }
 	];
 	let active: OperationsTab = 'discovery';
 </script>
@@ -23,7 +23,7 @@
 	<div>
 		<h1 class="text-xl font-medium dark:text-gray-100">{$i18n.t('Operations center')}</h1>
 		<p class="mt-1 text-sm text-gray-500">
-			{$i18n.t('Manage discovery content, image categories and image models.')}
+			{$i18n.t('Manage discovery content, creation categories and generation models.')}
 		</p>
 	</div>
 

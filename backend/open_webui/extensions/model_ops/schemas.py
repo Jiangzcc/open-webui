@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -38,6 +40,7 @@ class ModelOperationUpdate(StrictModel):
 
 
 class ModelOperationItem(StrictModel):
+    media_kind: Literal['image', 'video'] = 'image'
     model_id: str
     public_id: str
     name: str
@@ -54,4 +57,3 @@ class ModelOperationItem(StrictModel):
 
 class ModelOperationList(StrictModel):
     items: tuple[ModelOperationItem, ...]
-

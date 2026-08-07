@@ -461,6 +461,22 @@ def test_credit_dimensions_return_only_the_registered_image_dimensions() -> None
     }
 
 
+def test_credit_dimensions_include_video_generation_rules() -> None:
+    from open_webui.extensions.credits import router as credits_router
+
+    response = asyncio.run(credits_router.get_credit_dimensions('video', object()))
+
+    assert set(response['dimensions']) == {
+        'text-to-video',
+        'image-to-video',
+        'video-to-video',
+    }
+    assert response['dimensions']['text-to-video'][0] == {
+        'key': 'duration',
+        'rule_types': ['exact_map', 'numeric_tier', 'unit_blocks'],
+    }
+
+
 def test_unknown_credit_dimensions_return_not_found() -> None:
     from open_webui.extensions.credits import router as credits_router
 

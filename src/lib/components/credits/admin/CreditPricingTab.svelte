@@ -77,6 +77,19 @@
 		error = '';
 	};
 
+	const actionsForService = (serviceType: string) =>
+		serviceType === 'video'
+			? ['text-to-video', 'image-to-video', 'video-to-video']
+			: ['text-to-image', 'image-to-image'];
+
+	const selectServiceType = (serviceType: string) => {
+		form = {
+			...form,
+			serviceType,
+			action: actionsForService(serviceType)[0]
+		};
+	};
+
 	const selectPrice = (price: CreditPrice) => {
 		editingPriceId = price.id;
 		form = {
@@ -279,11 +292,15 @@
 
 		<div class="space-y-3">
 			<label class="block text-xs font-medium text-gray-500"
-				>{$i18n.t('credits.admin.pricing.serviceType')}<input
+				>{$i18n.t('credits.admin.pricing.serviceType')}<select
 					class="mt-1 w-full rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-					bind:value={form.serviceType}
+					value={form.serviceType}
+					on:change={(event) => selectServiceType(event.currentTarget.value)}
 					disabled={Boolean(editingPriceId)}
-				/></label
+					><option value="image">{$i18n.t('credits.admin.imageService')}</option><option
+						value="video">{$i18n.t('credits.admin.videoService')}</option
+					></select
+				></label
 			>
 			<label class="block text-xs font-medium text-gray-500"
 				>{$i18n.t('credits.admin.pricing.resourceId')}<input
@@ -293,11 +310,14 @@
 				/></label
 			>
 			<label class="block text-xs font-medium text-gray-500"
-				>{$i18n.t('credits.common.action')}<input
+				>{$i18n.t('credits.common.action')}<select
 					class="mt-1 w-full rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
 					bind:value={form.action}
 					disabled={Boolean(editingPriceId)}
-				/></label
+					>{#each actionsForService(form.serviceType) as action}<option value={action}
+							>{priceLabel('actions', action)}</option
+						>{/each}</select
+				></label
 			>
 			<label class="block text-xs font-medium text-gray-500"
 				>{$i18n.t('credits.admin.pricing.basePrice')}<input

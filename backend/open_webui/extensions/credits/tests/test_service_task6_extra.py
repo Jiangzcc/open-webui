@@ -138,10 +138,10 @@ async def test_begin_image_usage_uses_current_role_and_rejects_deleted_user(serv
         await session.execute(User.__table__.update().where(User.id == user.id).values(role='admin'))
 
     async with service_database() as session:
-        exempt = await begin_image_usage(session, stale_admin, image_context(), 'admin-current-role')
-    assert exempt.usage.exempt is True
-    assert exempt.usage.ledger_id is None
-    assert exempt.usage.charged_credits == 0
+        charged = await begin_image_usage(session, stale_admin, image_context(), 'admin-current-role')
+    assert charged.usage.exempt is False
+    assert charged.usage.ledger_id is not None
+    assert charged.usage.charged_credits == 3
 
     async with service_database() as session, session.begin():
         await session.execute(User.__table__.delete().where(User.id == user.id))

@@ -38,11 +38,15 @@ const zh = {
 			system_adjustment: '系统调整'
 		},
 		serviceTypes: {
-			image: '图片'
+			image: '图片',
+			video: '视频'
 		},
 		actions: {
 			'text-to-image': '文生图',
-			'image-to-image': '图生图'
+			'image-to-image': '图生图',
+			'text-to-video': '文生视频',
+			'image-to-video': '图生视频',
+			'video-to-video': '视频生视频'
 		},
 		dimensionKeys: {
 			size: '尺寸',
@@ -50,6 +54,8 @@ const zh = {
 			aspect_ratio: '宽高比',
 			quality: '质量',
 			image_count: '图片数量',
+			duration: '时长',
+			audio_mode: '音频模式',
 			pixel_count: '像素数'
 		},
 		common: {
@@ -162,10 +168,11 @@ const zh = {
 			},
 			dimensionsTitle: '计费维度',
 			dimensionsDescription: '服务器注册表定义了可定价的维度键和规则类型。',
-			dimensionsNotice: '视频计费维度保留给未来服务；此页面不会启用视频生成。',
+			dimensionsNotice: '这里只定义允许参与计价的维度；具体模型价格仍需在积分价格中配置。',
 			dimensionsEmpty: '未注册计费维度',
 			dimensionsLoadError: '无法加载计费维度',
-			imageService: '图片'
+			imageService: '图片',
+			videoService: '视频'
 		},
 		validation: {
 			positiveWholeNumber: '请输入正整数',
@@ -227,11 +234,15 @@ const en = {
 			system_adjustment: 'System adjustment'
 		},
 		serviceTypes: {
-			image: 'Image'
+			image: 'Image',
+			video: 'Video'
 		},
 		actions: {
 			'text-to-image': 'Text to image',
-			'image-to-image': 'Image to image'
+			'image-to-image': 'Image to image',
+			'text-to-video': 'Text to video',
+			'image-to-video': 'Image to video',
+			'video-to-video': 'Video to video'
 		},
 		dimensionKeys: {
 			size: 'Size',
@@ -239,6 +250,8 @@ const en = {
 			aspect_ratio: 'Aspect ratio',
 			quality: 'Quality',
 			image_count: 'Image count',
+			duration: 'Duration',
+			audio_mode: 'Audio mode',
 			pixel_count: 'Pixel count'
 		},
 		common: {
@@ -355,10 +368,11 @@ const en = {
 			dimensionsDescription:
 				'The server registry defines the dimension keys and rule types that may be priced.',
 			dimensionsNotice:
-				'Video billing dimensions are reserved for a future service. This page does not enable video generation.',
+				'This registry only defines which dimensions may affect pricing; configure each model price separately.',
 			dimensionsEmpty: 'No billing dimensions registered',
 			dimensionsLoadError: 'Unable to load billing dimensions',
-			imageService: 'Image'
+			imageService: 'Image',
+			videoService: 'Video'
 		},
 		validation: {
 			positiveWholeNumber: 'Enter a positive whole number',

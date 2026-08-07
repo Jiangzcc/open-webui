@@ -47,6 +47,7 @@
 			on:change={loadDimensions}
 		>
 			<option value="image">{$i18n.t('credits.admin.imageService')}</option>
+			<option value="video">{$i18n.t('credits.admin.videoService')}</option>
 		</select>
 	</div>
 

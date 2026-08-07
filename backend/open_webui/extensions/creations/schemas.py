@@ -12,9 +12,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AuthorizationScope = Literal['direct', 'chat', 'tool']
-CreationTask = Literal['text-to-image', 'image-to-image']
+ImageCreationTask = Literal['text-to-image', 'image-to-image']
+VideoCreationTask = Literal['text-to-video', 'image-to-video', 'video-to-video']
+CreationTask = ImageCreationTask | VideoCreationTask
 CreationSource = Literal['web', 'api', 'chat', 'tool']
-CreationKind = Literal['image']
+CreationKind = Literal['image', 'video']
 CreationAvailability = Literal['available', 'missing']
 DiscoverySort = Literal['featured', 'latest', 'popular']
 DiscoveryCategory = Annotated[
@@ -83,7 +85,7 @@ class CapturedImageBatch:
 @dataclass(frozen=True)
 class CreationCaptureContext:
     user_id: str
-    task: CreationTask
+    task: ImageCreationTask
     source: CreationSource
     prompt: str
     negative_prompt: str | None
@@ -153,14 +155,14 @@ class PublishCreationForm(_StrictModel):
 
 
 class ImageGenerationTaskSubmitForm(_StrictModel):
-    kind: CreationTask
+    kind: ImageCreationTask
     payload: dict[str, object]
 
 
 class ImageGenerationTaskResponse(_StrictModel):
     id: str
     status: ImageGenerationTaskStatus
-    kind: CreationTask
+    kind: ImageCreationTask
     prompt: str
     model_id: str | None
     params: dict[str, object] | None
@@ -249,6 +251,9 @@ class DiscoveryPostSummary(_StrictModel):
     title: str | None
     description: str | None
     content_url: str | None
+    poster_url: str | None = None
+    kind: CreationKind = 'image'
+    duration_seconds: int | None = Field(default=None, gt=0)
     availability: CreationAvailability
     mime_type: str | None
     prompt_preview: str | None
@@ -296,6 +301,8 @@ class CreationSummary(_StrictModel):
     id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
     kind: CreationKind
     content_url: str | None
+    poster_url: str | None = None
+    duration_seconds: int | None = Field(default=None, gt=0)
     availability: CreationAvailability
     mime_type: str | None
     caption: str | None
@@ -311,6 +318,8 @@ class CreationDetail(_StrictModel):
     id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
     kind: CreationKind
     content_url: str | None
+    poster_url: str | None = None
+    duration_seconds: int | None = Field(default=None, gt=0)
     availability: CreationAvailability
     mime_type: str | None
     caption: str | None
@@ -345,6 +354,8 @@ class AdminCreationSummary(_StrictModel):
     id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
     kind: CreationKind
     content_url: str | None
+    poster_url: str | None = None
+    duration_seconds: int | None = Field(default=None, gt=0)
     availability: CreationAvailability
     mime_type: str | None
     caption: str | None
@@ -361,6 +372,8 @@ class AdminCreationDetail(_StrictModel):
     id: str = Field(min_length=_MIN_CREATION_ID_LENGTH, max_length=_MAX_CREATION_ID_LENGTH)
     kind: CreationKind
     content_url: str | None
+    poster_url: str | None = None
+    duration_seconds: int | None = Field(default=None, gt=0)
     availability: CreationAvailability
     mime_type: str | None
     caption: str | None

@@ -69,7 +69,7 @@ describe('images page controls', () => {
 			'primaryModels.find((model) => model.isDefault && model.enabled !== false)'
 		);
 		expect(source).toContain('buildImageQuoteInput(\n\t\tselectedAspectRatio,');
-		expect(source).toContain('\n\t\treferenceImages\n\t)');
+		expect(source).toContain('\n\t\treferenceImages,\n\t\tcustomSizeValue\n\t)');
 		expect(source).toContain('$: if (loaded && quoteInput) {');
 	});
 
@@ -103,8 +103,14 @@ describe('images page controls', () => {
 			toolbar.indexOf('bind:this={imageOptionsElement}')
 		);
 		expect(toolbar.indexOf('<ImageCreditQuoteBadge')).toBeLessThan(
-			toolbar.indexOf('type="submit"')
+			toolbar.indexOf('<GenerationSubmitButton')
 		);
+	});
+
+	test('floats the model selector above the composer and shares the generation button', () => {
+		expect(source).toContain('absolute bottom-full left-1 z-20 mb-2');
+		expect(source).toContain('border-gray-200/90 bg-white/95');
+		expect(source).toContain('<GenerationSubmitButton');
 	});
 
 	test('does not render loading text while the credit quote is pending', () => {
@@ -246,10 +252,15 @@ describe('images page controls', () => {
 		expect(source).not.toContain('flex w-full items-center justify-between gap-2 rounded-xl');
 	});
 
-	test('gives desktop model names more room without widening the mobile overlay', () => {
-		expect(source).toContain('fixed inset-x-3 bottom-14');
-		expect(source).toContain('sm:w-[30rem]');
-		expect(source).not.toContain('sm:w-[26rem]');
+	test('positions the model list from its trigger and respects the mobile visual viewport', () => {
+		const modelStart = source.indexOf('visualViewportAware={$mobile}');
+		const modelEnd = source.indexOf('{#if referenceImages.length > 0}', modelStart);
+		const modelSelector = source.slice(modelStart, modelEnd);
+
+		expect(source).toContain('<Dropdown');
+		expect(source).toContain('visualViewportAware={$mobile}');
+		expect(source).toContain('w-[min(30rem,calc(100vw-1rem))]');
+		expect(modelSelector).not.toContain('fixed inset-x-3 bottom-14');
 	});
 
 	test('uses the selected primary model and derives its active edit model', () => {

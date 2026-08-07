@@ -106,6 +106,60 @@ def test_quote_returns_price_and_current_balance_without_writing_usage(monkeypat
     assert response.json()['sufficient'] is True
 
 
+def test_admin_video_quote_maps_model_and_computes_the_regular_price(monkeypatch) -> None:
+    from open_webui.extensions.credits import router as credits_router
+
+    price_calls = []
+
+    async def balance(_session, _user_id):
+        return 10
+
+    async def price(_session, service_type, resource_id, action):
+        price_calls.append((service_type, resource_id, action))
+        return type('Price', (), {'updated_at': 1, 'enabled': True})()
+
+    monkeypatch.setattr(credits_router, 'get_balance_if_exists', balance)
+    monkeypatch.setattr(credits_router, 'get_enabled_price', price)
+    monkeypatch.setattr(
+        credits_router,
+        'compute_price',
+        lambda _price, dimensions: type('Quote', (), {'charged_credits': dimensions['duration'], 'factors': ()})(),
+    )
+
+    result = asyncio.run(
+        credits_router.quote_video(
+            object(),
+            credits_router.CreditUserSnapshot(id='admin-1', name='Admin', email='admin@example.test', role='admin'),
+            credits_router.VideoQuoteRequest.model_validate(
+                {
+                    'resource_id': 'kling-video-v3-pro',
+                    'action': 'text-to-video',
+                    'dimensions': {'duration': '5', 'resolution': '1080p'},
+                }
+            ),
+        )
+    )
+
+    assert result['charged_credits'] == 5
+    assert result['exempt'] is False
+    assert price_calls == [('video', 'fal-ai/kling-video/v3/pro/text-to-video', 'text-to-video')]
+
+
+def test_video_quote_rejects_fractional_duration_before_pricing() -> None:
+    from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits.errors import CreditError
+
+    with pytest.raises(CreditError, match='Price rule is incomplete'):
+        credits_router._normalize_video_quote_dimensions({'duration': '5.5'})
+
+
+def test_video_quote_preserves_auto_duration_for_exact_map_pricing() -> None:
+    from open_webui.extensions.credits import router as credits_router
+
+    assert credits_router._normalize_video_quote_dimensions({'duration': 'auto'}) == {'duration': 'auto'}
+    assert credits_router._normalize_video_quote_dimensions({'duration': '0'}) == {'duration': '0'}
+
+
 def test_quote_endpoint_uses_the_image_adapter(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
@@ -470,7 +524,7 @@ def test_quote_prices_the_adapter_normalized_dimensions(monkeypatch) -> None:
     assert received_dimensions == [normalized_dimensions]
 
 
-def test_quote_preserves_admin_role_for_exemption(monkeypatch) -> None:
+def test_quote_preserves_admin_role_without_forcing_an_exemption(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
     app = FastAPI()
@@ -485,7 +539,7 @@ def test_quote_preserves_admin_role_for_exemption(monkeypatch) -> None:
         return {
             'balance': 10,
             'sufficient': True,
-            'exempt': True,
+            'exempt': False,
             'configured': False,
             'factors': [],
             'charged_credits': 0,
@@ -500,7 +554,7 @@ def test_quote_preserves_admin_role_for_exemption(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()['exempt'] is True
+    assert response.json()['exempt'] is False
 
 
 def test_quote_returns_incomplete_price_state(monkeypatch) -> None:

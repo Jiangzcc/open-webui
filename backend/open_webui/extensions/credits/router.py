@@ -125,7 +125,27 @@ _IMAGE_DIMENSIONS = {
             'image_count': ('quantity',),
             'pixel_count': ('proportional',),
         },
-    }
+    },
+    'video': {
+        'text-to-video': {
+            'duration': ('exact_map', 'numeric_tier', 'unit_blocks'),
+            'resolution': ('exact_map',),
+            'aspect_ratio': ('exact_map',),
+            'audio_mode': ('exact_map',),
+        },
+        'image-to-video': {
+            'duration': ('exact_map', 'numeric_tier', 'unit_blocks'),
+            'resolution': ('exact_map',),
+            'aspect_ratio': ('exact_map',),
+            'audio_mode': ('exact_map',),
+        },
+        'video-to-video': {
+            'duration': ('exact_map', 'numeric_tier', 'unit_blocks'),
+            'resolution': ('exact_map',),
+            'aspect_ratio': ('exact_map',),
+            'audio_mode': ('exact_map',),
+        },
+    },
 }
 
 
@@ -137,6 +157,29 @@ class ImageQuoteRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=MAX_IMAGE_PROMPT_BYTES)
     image: str | Annotated[list[str], Field(max_length=MAX_IMAGE_REFERENCES)] | None = None
     dimensions: dict[str, str | int] = Field(default_factory=dict)
+
+
+class VideoQuoteRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', frozen=True)
+
+    resource_id: str = Field(min_length=1, max_length=128)
+    action: str = Field(pattern='^(text-to-video|image-to-video|video-to-video)$')
+    dimensions: dict[str, str | int] = Field(default_factory=dict)
+
+
+def _normalize_video_quote_dimensions(values: Mapping[str, str | int]) -> dict[str, str | int]:
+    dimensions = dict(values)
+    duration = dimensions.get('duration')
+    if isinstance(duration, str):
+        if duration in {'auto', '0'}:
+            return dimensions
+        parsed_duration = float(duration)
+        if not parsed_duration.is_integer() or parsed_duration < 1:
+            raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_duration'})
+        dimensions['duration'] = int(parsed_duration)
+    elif duration is not None and (isinstance(duration, bool) or duration < 1):
+        raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_duration'})
+    return dimensions
 
 
 def _quote_input_values(payload: Mapping[str, object]) -> tuple[str, Mapping[str, object], str, object]:
@@ -211,11 +254,7 @@ def _public_user_error_response(error: CreditError) -> JSONResponse:
 def _public_pricing_snapshot(snapshot: Mapping[str, object] | None) -> dict[str, object] | None:
     if not isinstance(snapshot, Mapping):
         return None
-    return {
-        key: value
-        for key, value in snapshot.items()
-        if key in {'factors', 'charged_credits', 'rounding'}
-    }
+    return {key: value for key, value in snapshot.items() if key in {'factors', 'charged_credits', 'rounding'}}
 
 
 def _public_user_ledger_item(item: object) -> dict[str, object]:
@@ -340,18 +379,6 @@ def _unconfigured_quote(balance: int, error: str) -> dict[str, object]:
     )
 
 
-def _admin_quote(balance: int, price: CreditPrice | None) -> dict[str, object]:
-    return _quote_response(
-        balance,
-        sufficient=True,
-        exempt=True,
-        configured=price is not None,
-        factors=[],
-        charged_credits=0,
-        error=None,
-    )
-
-
 async def _prepare_quote_call(action: str, image_input: CompatImageInput, user: UserSnapshot):
     if action == 'text-to-image':
         return await prepare_generation_call(None, image_input, None, user)
@@ -389,8 +416,6 @@ async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mappin
     billing = prepared.billing
     price = await get_enabled_price(session, billing.service_type, billing.resource_id, billing.action)
     balance = await get_balance_if_exists(session, user.id)
-    if getattr(user, 'role', None) == 'admin':
-        return _admin_quote(balance, price)
     if price is None:
         credit_metrics.quote_rejected(
             model=billing.resource_id,
@@ -451,6 +476,61 @@ async def get_image_credit_quote(
         return await quote_image(session, snapshot, payload)
     except CreditError as error:
         return _public_user_error_response(error)
+    except Exception as error:
+        return _unexpected_error_response(error)
+
+
+async def quote_video(
+    session: AsyncSession,
+    snapshot: CreditUserSnapshot,
+    quote_request: VideoQuoteRequest,
+) -> dict[str, object]:
+    from open_webui.extensions.fal_catalog import load_video_catalog
+
+    catalog = load_video_catalog()
+    internal_id = catalog.public_to_internal.get(quote_request.resource_id)
+    if internal_id is None:
+        raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_video_model'})
+    definition = next(item for item in catalog.definitions if item.id == internal_id)
+    if definition.task != quote_request.action:
+        raise CreditError(code='price_rule_incomplete', context={'reason': 'video_model_task_mismatch'})
+    dimensions = _normalize_video_quote_dimensions(quote_request.dimensions)
+    balance = await get_balance_if_exists(session, snapshot.id)
+    price = await get_enabled_price(session, 'video', internal_id, quote_request.action)
+    if price is None:
+        return _unconfigured_quote(balance, 'price_not_configured')
+    quote = compute_price(price, dimensions)
+    return _quote_response(
+        balance,
+        sufficient=balance >= quote.charged_credits,
+        exempt=False,
+        configured=True,
+        factors=[factor.__dict__ for factor in quote.factors],
+        charged_credits=quote.charged_credits,
+        error=None,
+    )
+
+
+@router.post('/quotes/video')
+async def get_video_credit_quote(
+    quote_request: VideoQuoteRequest,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict[str, object]:
+    snapshot = _user_snapshot(user)
+    _enforce_rate_limit(_quote_limiter, f'credits:quote:{snapshot.id}')
+    try:
+        return await quote_video(session, snapshot, quote_request)
+    except CreditError as error:
+        if error.code == 'price_rule_incomplete':
+            try:
+                balance = await get_balance_if_exists(session, snapshot.id)
+                return _unconfigured_quote(balance, error.code)
+            except Exception as balance_error:
+                return _unexpected_error_response(balance_error)
+        return _public_user_error_response(error)
+    except (TypeError, ValueError) as error:
+        return _unexpected_error_response(error)
     except Exception as error:
         return _unexpected_error_response(error)
 

@@ -90,6 +90,7 @@
 	import Note from '../icons/Note.svelte';
 	import Code from '../icons/Code.svelte';
 	import Photo from '../icons/Photo.svelte';
+	import Camera from '../icons/Camera.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
@@ -182,6 +183,8 @@
 				// regardless of the image feature switches; the backend direct endpoints
 				// remain the authorization boundary, and the library is always reachable.
 				return $user?.role === 'admin' || $user?.role === 'user';
+			case 'videos':
+				return $user?.role === 'admin' || $user?.role === 'user';
 			case 'discover':
 				return $user?.role === 'admin' || $user?.role === 'user';
 			case 'playground':
@@ -198,6 +201,7 @@
 			automations: { label: 'Automations', href: '/automations', iconType: 'automations' },
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },
 			images: { label: 'Images', href: '/images', iconType: 'images' },
+			videos: { label: 'Videos', href: '/videos', iconType: 'videos' },
 			discover: { label: 'Discover', href: '/discover', iconType: 'discover' },
 			playground: { label: 'Playground', href: '/playground', iconType: 'playground' }
 		};
@@ -209,6 +213,7 @@
 		workspace: '/workspace',
 		calendar: '/calendar',
 		automations: '/automations',
+		videos: '/videos',
 		playground: '/playground'
 	};
 
@@ -1068,6 +1073,8 @@
 											<CalendarIcon className="size-4" strokeWidth="1.5" />
 										{:else if itemId === 'images'}
 											<Photo className="size-4.5" strokeWidth="1.5" />
+										{:else if itemId === 'videos'}
+											<Camera className="size-4.5" strokeWidth="1.5" />
 										{:else if itemId === 'discover'}
 											<Sparkles className="size-4.5" strokeWidth="1.5" />
 										{:else if itemId === 'playground'}
@@ -1282,6 +1289,8 @@
 												<CalendarIcon className="size-4" strokeWidth="1.5" />
 											{:else if itemId === 'images'}
 												<Photo className="size-4.5" strokeWidth="2" />
+											{:else if itemId === 'videos'}
+												<Camera className="size-4.5" strokeWidth="2" />
 											{:else if itemId === 'discover'}
 												<Sparkles className="size-4.5" strokeWidth="2" />
 											{:else if itemId === 'playground'}

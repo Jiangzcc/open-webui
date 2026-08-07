@@ -7,10 +7,16 @@ from pathlib import Path
 from types import MappingProxyType
 
 from open_webui.extensions.fal_catalog.schemas import CatalogManifest, FalImageModelDefinition
+from open_webui.extensions.fal_catalog.video_schemas import (
+    FalVideoModelDefinition,
+    VideoCatalogManifest,
+)
 from pydantic import TypeAdapter, ValidationError
 
 _DEFAULT_IMAGE_CATALOG_DIR = Path(__file__).resolve().parent / 'catalog' / 'image'
+_DEFAULT_VIDEO_CATALOG_DIR = Path(__file__).resolve().parent / 'catalog' / 'video'
 _MODEL_LIST_ADAPTER = TypeAdapter(list[FalImageModelDefinition])
+_VIDEO_MODEL_LIST_ADAPTER = TypeAdapter(list[FalVideoModelDefinition])
 
 
 class FalCatalogError(ValueError):
@@ -27,6 +33,14 @@ class FalCatalog:
 
     def legacy_models(self) -> list[dict[str, object]]:
         return [definition.to_legacy_dict() for definition in self.definitions]
+
+
+@dataclass(frozen=True)
+class FalVideoCatalog:
+    defaults: Mapping[str, str]
+    definitions: tuple[FalVideoModelDefinition, ...]
+    internal_to_public: Mapping[str, str]
+    public_to_internal: Mapping[str, str]
 
 
 def _read_json(path: Path) -> object:
@@ -106,3 +120,54 @@ def load_image_catalog(catalog_dir: Path | None = None) -> FalCatalog:
         internal_to_public=internal_to_public,
         public_to_internal=public_to_internal,
     )
+
+
+def load_video_catalog(catalog_dir: Path | None = None) -> FalVideoCatalog:
+    root = (catalog_dir or _DEFAULT_VIDEO_CATALOG_DIR).resolve()
+    try:
+        manifest = VideoCatalogManifest.model_validate(_read_json(root / 'manifest.json'))
+    except ValidationError as error:
+        raise FalCatalogError(f'invalid fal video catalog manifest: {error}') from error
+
+    definitions: list[FalVideoModelDefinition] = []
+    for filename in manifest.files:
+        try:
+            definitions.extend(_VIDEO_MODEL_LIST_ADAPTER.validate_python(_read_json(root / filename)))
+        except ValidationError as error:
+            raise FalCatalogError(f'invalid fal video model file {filename}: {error}') from error
+
+    internal_ids = [definition.id for definition in definitions]
+    public_ids = [definition.public_id for definition in definitions]
+    if len(internal_ids) != len(set(internal_ids)):
+        raise FalCatalogError('fal video model internal ids must be unique')
+    if len(public_ids) != len(set(public_ids)):
+        raise FalCatalogError('fal video model public ids must be unique')
+
+    defaults = {
+        'text-to-video': manifest.defaults.text_to_video,
+        'image-to-video': manifest.defaults.image_to_video,
+        'video-to-video': manifest.defaults.video_to_video,
+    }
+    by_id = {definition.id: definition for definition in definitions}
+    for task, model_id in defaults.items():
+        definition = by_id.get(model_id)
+        if definition is None:
+            raise FalCatalogError(f'default {task} video model is not registered')
+        if definition.task != task:
+            raise FalCatalogError(f'default {task} video model has the wrong task')
+
+    return FalVideoCatalog(
+        defaults=MappingProxyType(defaults),
+        definitions=tuple(definitions),
+        internal_to_public=MappingProxyType(dict(zip(internal_ids, public_ids, strict=True))),
+        public_to_internal=MappingProxyType(dict(zip(public_ids, internal_ids, strict=True))),
+    )
+
+
+__all__ = [
+    'FalCatalog',
+    'FalCatalogError',
+    'FalVideoCatalog',
+    'load_image_catalog',
+    'load_video_catalog',
+]

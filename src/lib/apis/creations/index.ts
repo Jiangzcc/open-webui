@@ -33,6 +33,7 @@ const requestCreationList = async (
 		params.set('cursor', cursor);
 	}
 	if (filters.search?.trim()) params.set('search', filters.search.trim());
+	if (filters.kind) params.set('kind', filters.kind);
 	if (filters.task) params.set('task', filters.task);
 	if (filters.publicationStatus) params.set('publication_status', filters.publicationStatus);
 	if (filters.sort) params.set('sort', filters.sort);
@@ -89,13 +90,18 @@ export const listCreations = (
 		filters
 	) as Promise<CreationListResponse>;
 
-export const listAdminCreations = (token = '', limit = 20, cursor: string | null = null) =>
+export const listAdminCreations = (
+	token = '',
+	limit = 20,
+	cursor: string | null = null,
+	filters: CreationListFilters = {}
+) =>
 	requestCreationList(
 		'/creations/admin/media',
 		token,
 		limit,
 		cursor,
-		{}
+		filters
 	) as Promise<AdminCreationListResponse>;
 
 export const getCreation = (token: string, id: string) =>

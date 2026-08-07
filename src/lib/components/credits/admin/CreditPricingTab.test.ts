@@ -32,4 +32,10 @@ describe('CreditPricingTab', () => {
 		expect(source).toContain("'credits.admin.pricing.unitSize'");
 		expect(source).toContain("'credits.admin.pricing.proportionalDescription'");
 	});
+
+	test('offers image and video services with their supported actions', () => {
+		expect(source).toContain('value="video"');
+		expect(source).toContain("['text-to-video', 'image-to-video', 'video-to-video']");
+		expect(source).toContain('actionsForService(form.serviceType)');
+	});
 });

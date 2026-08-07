@@ -61,18 +61,16 @@ async def test_image_usage_charges_once_and_replays_without_new_ledger(service_d
 
 
 @pytest.mark.asyncio
-async def test_admin_image_usage_is_exempt_without_price_or_account(service_database) -> None:
+async def test_admin_image_usage_requires_price_and_does_not_create_a_placeholder(service_database) -> None:
     user = await create_user(service_database, 'admin-user')
     async with service_database() as session, session.begin():
         await session.execute(User.__table__.update().where(User.id == user.id).values(role='admin'))
 
     async with service_database() as session:
-        result = await begin_image_usage(session, user, image_context(), 'admin-key')
+        with pytest.raises(CreditError) as raised:
+            await begin_image_usage(session, user, image_context(), 'admin-key')
 
-    assert result.outcome == 'new'
-    assert result.usage.exempt is True
-    assert result.usage.charged_credits == 0
-    assert result.usage.ledger_id is None
+    assert raised.value.code == 'price_not_configured'
     async with service_database() as session:
         assert await session.scalar(select(func.count()).select_from(CreditAccount)) == 0
         assert await session.scalar(select(func.count()).select_from(CreditLedger)) == 0

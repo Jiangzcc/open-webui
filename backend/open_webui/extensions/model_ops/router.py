@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from open_webui.internal.db import get_async_session
@@ -32,6 +32,26 @@ async def patch_admin_image_model_operation(
     item = await update_model_operation(session, model_id, form, user)
     if item is None:
         raise HTTPException(status_code=404, detail='image model not found')
+    return item
+
+
+@router.patch('/admin/media-models/{media_kind}/{model_id:path}', response_model=ModelOperationItem)
+async def patch_admin_media_model_operation(
+    media_kind: Literal['image', 'video'],
+    model_id: Annotated[str, Field(min_length=1, max_length=256)],
+    form: ModelOperationUpdate,
+    user=Depends(get_admin_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    item = await update_model_operation(
+        session,
+        model_id,
+        form,
+        user,
+        media_kind=media_kind,
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail=f'{media_kind} model not found')
     return item
 
 

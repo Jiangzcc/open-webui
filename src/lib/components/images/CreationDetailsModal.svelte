@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
@@ -253,6 +254,20 @@
 
 	const reuseCreation = (useAsReference = false) => {
 		if (!detail) return;
+		if (detail.kind === 'video') {
+			localStorage.setItem(
+				'video-creation-draft',
+				JSON.stringify({
+					task: detail.task,
+					prompt: detail.prompt,
+					model: detail.model_id,
+					params: detail.params
+				})
+			);
+			show = false;
+			void goto('/videos');
+			return;
+		}
 		onReuse(
 			buildCreationDraft({
 				prompt: detail.prompt,
@@ -269,7 +284,7 @@
 		if (!detail?.content_url) return;
 		const anchor = document.createElement('a');
 		anchor.href = detail.content_url;
-		anchor.download = `creation-${detail.id}.png`;
+		anchor.download = `creation-${detail.id}.${detail.kind === 'video' ? 'mp4' : 'png'}`;
 		anchor.rel = 'noopener';
 		anchor.click();
 	};
@@ -357,7 +372,16 @@
 >
 	<svelte:fragment slot="media">
 		{#if detail}
-			{#if detail.content_url}
+			{#if detail.content_url && detail.kind === 'video'}
+				<video
+					src={detail.content_url}
+					poster={detail.poster_url ?? undefined}
+					class="max-h-[80dvh] max-w-full rounded-xl bg-black object-contain sm:rounded-2xl lg:max-h-[72dvh]"
+					controls
+					playsinline
+					preload="metadata"
+				></video>
+			{:else if detail.content_url}
 				<button
 					type="button"
 					class="flex max-h-[80dvh] items-center justify-center overflow-hidden rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:rounded-2xl lg:max-h-[72dvh]"
@@ -394,7 +418,7 @@
 					<Sparkles className="size-4" strokeWidth="1.8" />
 					{$i18n.t('Create again')}
 				</button>
-				{#if detail.content_url}
+				{#if detail.content_url && detail.kind === 'image'}
 					<button
 						type="button"
 						class="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
