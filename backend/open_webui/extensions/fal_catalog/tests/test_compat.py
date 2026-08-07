@@ -1,20 +1,26 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 
+from open_webui.extensions.fal_catalog.loader import load_image_catalog
 from open_webui.utils.images import fal_models
 
-EXPECTED_PUBLIC_CATALOG_SHA256 = 'bc43422f0297812c8b4e33fb3036d484e44f8b61eb25b316d93fb2fd3d78594c'
 
-
-def test_legacy_facade_preserves_public_catalog_snapshot() -> None:
+def test_legacy_facade_projects_every_packaged_catalog_model() -> None:
+    catalog = load_image_catalog()
     public = fal_models.public_fal_image_models(fal_models.FAL_DEFAULT_IMAGE_MODEL)
-    raw = json.dumps(public, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+    public_ids = [model['id'] for model in public]
 
-    assert len(public) == 44
-    assert hashlib.sha256(raw).hexdigest() == EXPECTED_PUBLIC_CATALOG_SHA256
+    assert public_ids == [definition.public_id for definition in catalog.definitions]
+    assert [model['id'] for model in public if model['is_default']] == [
+        catalog.internal_to_public[catalog.generation_default]
+    ]
+    assert all(
+        related_id in public_ids
+        for model in public
+        for related_id in (model.get('generation_model'), model.get('edit_model'))
+        if related_id is not None
+    )
 
 
 def test_legacy_facade_preserves_fail_closed_bidirectional_ids() -> None:

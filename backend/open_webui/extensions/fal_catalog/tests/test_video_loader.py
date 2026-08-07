@@ -1,10 +1,38 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 from open_webui.extensions.fal_catalog.loader import FalCatalogError, load_video_catalog
+
+EXPECTED_PACKAGED_PROVIDERS = {
+    'alibaba',
+    'bytedance',
+    'google',
+    'kling',
+    'ltx',
+    'luma',
+    'minimax',
+    'pika',
+    'pixverse',
+    'vidu',
+}
+
+TARGET_DOC_PATTERNS = (
+    'vidu/**/*.md',
+    'minimax/hailuo-2/*.md',
+    'minimax/hailuo-2.3/*.md',
+    'google/veo3.1/*.md',
+    'google/gemini-omni-flash/*.md',
+    'pika/v2/*.md',
+    'pika/v2.1/*.md',
+    'pika/v2.2/*.md',
+    'pixverse/c1/*.md',
+    'pixverse/v6/*.md',
+    'luma/ray-3.2/*.md',
+)
 
 
 def _example_models() -> list[dict[str, object]]:
@@ -72,37 +100,54 @@ def _write_catalog(tmp_path: Path, models: list[dict[str, object]]) -> Path:
 def test_loads_packaged_video_catalog() -> None:
     catalog = load_video_catalog()
 
-    assert len(catalog.definitions) == 23
+    assert catalog.definitions
     assert catalog.defaults == {
         'text-to-video': 'bytedance/seedance-2.0/text-to-video',
         'image-to-video': 'bytedance/seedance-2.0/image-to-video',
         'video-to-video': 'fal-ai/wan/v2.7/edit-video',
     }
-    assert {definition.provider for definition in catalog.definitions} == {
-        'alibaba',
-        'bytedance',
-        'kling',
-        'ltx',
-    }
+    providers = {definition.provider for definition in catalog.definitions}
+    assert providers >= EXPECTED_PACKAGED_PROVIDERS
     assert {definition.task for definition in catalog.definitions} == {
         'text-to-video',
         'image-to-video',
         'video-to-video',
     }
-    assert len(catalog.internal_to_public) == len(catalog.public_to_internal) == 23
+    assert len(catalog.internal_to_public) == len(catalog.public_to_internal) == len(catalog.definitions)
+
+    for provider in EXPECTED_PACKAGED_PROVIDERS:
+        tasks = {definition.task for definition in catalog.definitions if definition.provider == provider}
+        assert tasks & {'text-to-video', 'image-to-video'}, f'{provider} has no generation model'
 
 
 def test_packaged_video_models_require_their_primary_asset() -> None:
     catalog = load_video_catalog()
 
     for definition in catalog.definitions:
-        required_roles = {
-            asset.role for asset in definition.asset_inputs or () if asset.required
-        }
+        required_roles = {asset.role for asset in definition.asset_inputs or () if asset.required}
         if definition.task == 'image-to-video':
-            assert 'start_image' in required_roles
+            required_primary_json = any(
+                field.required and field.primary_input for field in definition.json_fields or ()
+            )
+            assert 'start_image' in required_roles or required_primary_json
         elif definition.task == 'video-to-video':
             assert 'source_video' in required_roles
+
+
+def test_packaged_video_catalog_covers_target_documented_endpoints() -> None:
+    docs_root = Path(__file__).resolve().parents[5] / 'docs' / 'fal'
+    documented_ids: set[str] = set()
+    for pattern in TARGET_DOC_PATTERNS:
+        for path in docs_root.glob(pattern):
+            source = path.read_text(encoding='utf-8')
+            category = re.search(r'\*\*Category\*\*: ([^\n]+)', source)
+            model_id = re.search(r'\*\*Model ID\*\*: `([^`]+)`', source)
+            if category and category.group(1).strip() in {'text-to-video', 'image-to-video', 'video-to-video'}:
+                assert model_id is not None, f'{path} has no model id'
+                documented_ids.add(model_id.group(1))
+
+    packaged_ids = {definition.id for definition in load_video_catalog().definitions}
+    assert documented_ids <= packaged_ids
 
 
 def test_packaged_video_models_keep_safety_server_controlled() -> None:

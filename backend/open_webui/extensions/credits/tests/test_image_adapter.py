@@ -864,11 +864,10 @@ async def test_file_reference_checks_response_size_mime_and_ownership_helper(mon
     monkeypatch.setattr(compat, 'get_runtime_image_config', AsyncMock(return_value=config()))
     path = tmp_path / 'owned.png'
     path.write_bytes(PNG)
-    import open_webui.routers.files as files
     from starlette.responses import FileResponse
 
     helper = AsyncMock(return_value=FileResponse(path, media_type='image/png'))
-    monkeypatch.setattr(files, 'get_file_content_by_id', helper)
+    monkeypatch.setattr(adapter, 'get_file_content_by_id', helper)
     prepared = await adapter.prepare_edit_call(
         request(), image_input(image='/api/v1/files/file-1/content'), None, user()
     )
@@ -881,11 +880,10 @@ async def test_file_reference_checks_response_size_mime_and_ownership_helper(mon
 async def test_file_reference_rejects_non_response_size_type_and_paths(monkeypatch, tmp_path: Path) -> None:
     compat, adapter = modules()
     monkeypatch.setattr(compat, 'get_runtime_image_config', AsyncMock(return_value=config()))
-    import open_webui.routers.files as files
     from starlette.responses import FileResponse
 
     helper = AsyncMock(return_value=object())
-    monkeypatch.setattr(files, 'get_file_content_by_id', helper)
+    monkeypatch.setattr(adapter, 'get_file_content_by_id', helper)
     with pytest.raises(CreditError) as non_response:
         await adapter.prepare_edit_call(request(), image_input(image='file-1'), None, user())
     assert_credit_error(non_response, 'price_rule_incomplete', 'reference_fetch_failed')
@@ -959,11 +957,10 @@ async def test_same_bytes_from_data_url_url_and_file_have_same_hash_without_seco
 
     path = tmp_path / 'same.png'
     path.write_bytes(PNG)
-    import open_webui.routers.files as files
     from starlette.responses import FileResponse
 
     monkeypatch.setattr(
-        files, 'get_file_content_by_id', AsyncMock(return_value=FileResponse(path, media_type='image/png'))
+        adapter, 'get_file_content_by_id', AsyncMock(return_value=FileResponse(path, media_type='image/png'))
     )
     prepared = await adapter.prepare_edit_call(
         request(),

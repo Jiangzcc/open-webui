@@ -1,0 +1,254 @@
+[
+	{
+		"id": "fal-ai/minimax/hailuo-02-fast/image-to-video",
+		"public_id": "minimax/hailuo-02-fast/image-to-video",
+		"name": "MiniMax / Hailuo 02 Fast Image",
+		"provider": "minimax",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"duration_field": "duration",
+		"durations": ["6", "10"],
+		"default_duration": "6",
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-02/pro/image-to-video",
+		"public_id": "minimax/hailuo-02/pro/image-to-video",
+		"name": "MiniMax / Hailuo 02 Pro Image",
+		"provider": "minimax",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "end_image_url",
+				"required": false,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-02/pro/text-to-video",
+		"public_id": "minimax/hailuo-02/pro/text-to-video",
+		"name": "MiniMax / Hailuo 02 Pro Text",
+		"provider": "minimax",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-02/standard/image-to-video",
+		"public_id": "minimax/hailuo-02/standard/image-to-video",
+		"name": "MiniMax / Hailuo 02 Standard Image",
+		"provider": "minimax",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "end_image_url",
+				"required": false,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"duration_field": "duration",
+		"durations": ["6", "10"],
+		"default_duration": "6",
+		"resolution_field": "resolution",
+		"resolutions": ["512P", "768P"],
+		"default_resolution": "768P",
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-02/standard/text-to-video",
+		"public_id": "minimax/hailuo-02/standard/text-to-video",
+		"name": "MiniMax / Hailuo 02 Standard Text",
+		"provider": "minimax",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"duration_field": "duration",
+		"durations": ["6", "10"],
+		"default_duration": "6",
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-2.3-fast/pro/image-to-video",
+		"public_id": "minimax/hailuo-2.3-fast/pro/image-to-video",
+		"name": "MiniMax / Hailuo 2.3 Fast Pro Image",
+		"provider": "minimax",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-2.3-fast/standard/image-to-video",
+		"public_id": "minimax/hailuo-2.3-fast/standard/image-to-video",
+		"name": "MiniMax / Hailuo 2.3 Fast Standard Image",
+		"provider": "minimax",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"duration_field": "duration",
+		"durations": ["6", "10"],
+		"default_duration": "6",
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-2.3/pro/image-to-video",
+		"public_id": "minimax/hailuo-2.3/pro/image-to-video",
+		"name": "MiniMax / Hailuo 2.3 Pro Image",
+		"provider": "minimax",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-2.3/pro/text-to-video",
+		"public_id": "minimax/hailuo-2.3/pro/text-to-video",
+		"name": "MiniMax / Hailuo 2.3 Pro Text",
+		"provider": "minimax",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-2.3/standard/image-to-video",
+		"public_id": "minimax/hailuo-2.3/standard/image-to-video",
+		"name": "MiniMax / Hailuo 2.3 Standard Image",
+		"provider": "minimax",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"duration_field": "duration",
+		"durations": ["6", "10"],
+		"default_duration": "6",
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/minimax/hailuo-2.3/standard/text-to-video",
+		"public_id": "minimax/hailuo-2.3/standard/text-to-video",
+		"name": "MiniMax / Hailuo 2.3 Standard Text",
+		"provider": "minimax",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"duration_field": "duration",
+		"durations": ["6", "10"],
+		"default_duration": "6",
+		"boolean_fields": [
+			{
+				"field": "prompt_optimizer",
+				"default": true
+			}
+		]
+	}
+]

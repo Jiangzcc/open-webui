@@ -39,6 +39,7 @@
 		"name": "Alibaba / Wan 2.7 Video Image",
 		"provider": "alibaba",
 		"task": "image-to-video",
+		"prompt_required": false,
 		"duration_field": "duration",
 		"durations": ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
 		"default_duration": "5",
@@ -63,6 +64,14 @@
 				"field": "end_image_url",
 				"mime_types": ["image/jpeg", "image/png", "image/webp"],
 				"max_bytes": 31457280
+			},
+			{
+				"role": "reference_video",
+				"field": "video_url",
+				"mime_types": ["video/mp4", "video/quicktime"],
+				"max_bytes": 104857600,
+				"min_duration_seconds": 2,
+				"max_duration_seconds": 10
 			},
 			{
 				"role": "reference_audio",

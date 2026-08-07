@@ -351,13 +351,85 @@ async def mark_usage_succeeded(usage_id: str, urls: Sequence[str]) -> int:
     return changed
 
 
-async def mark_usage_failed(usage_id: str, error: SafeProviderError) -> int:
-    """Persist a bounded sanitized provider failure only while a usage is invoking."""
-    changed = await _update_usage_status(
-        usage_id,
-        ('invoking',),
-        {'status': 'failed', 'error_snapshot': _safe_error_snapshot(error), 'completed_at': _now()},
-    )
+async def mark_usage_failed(
+    usage_id: str,
+    error: SafeProviderError,
+    *,
+    restore_prepaid: bool = False,
+) -> int:
+    """Fail an invoking usage and optionally restore its prepaid credits atomically.
+
+    Provider failures remain prepaid by default for the existing reconciliation
+    workflow. An explicit user cancellation is different: no completed result is
+    delivered, so the cancellation path writes one idempotent compensating ledger
+    row in the same transaction as the terminal usage state.
+    """
+    now = _now()
+    async with credit_session() as session, session.begin():
+        usage = await session.scalar(select(CreditUsage).where(CreditUsage.id == usage_id).with_for_update())
+        if usage is None or usage.status != 'invoking':
+            return 0
+
+        if restore_prepaid and not usage.exempt and usage.charged_credits > 0 and usage.ledger_id:
+            existing_refund = await session.scalar(
+                select(CreditLedger).where(CreditLedger.related_ledger_id == usage.ledger_id)
+            )
+            if existing_refund is None:
+                consumption = await session.scalar(select(CreditLedger).where(CreditLedger.id == usage.ledger_id))
+                if consumption is None:
+                    credit_metrics.consistency_anomaly()
+                    raise CreditError(
+                        code='credit_service_unavailable',
+                        context={'reason': 'consumption_ledger_missing'},
+                    )
+                account = await _lock_and_verify_account_matches_ledger(session, consumption.account_id)
+                balance = await update_account_balance(
+                    session,
+                    account,
+                    usage.charged_credits,
+                    now=now,
+                )
+                if balance is None:
+                    raise CreditError(
+                        code='credit_service_unavailable',
+                        context={'reason': 'refund_balance_limit_exceeded'},
+                    )
+                balance_before, balance_after = balance
+                cancellation_key = f'cancel:{usage.id}'[:MAX_IDEMPOTENCY_KEY_LENGTH]
+                await insert_ledger(
+                    session,
+                    {
+                        'id': str(uuid4()),
+                        'account_id': account.id,
+                        'usage_id': usage.id,
+                        'user_id': usage.user_id,
+                        'user_name_snapshot': usage.user_name_snapshot,
+                        'user_email_snapshot': usage.user_email_snapshot,
+                        'amount': usage.charged_credits,
+                        'balance_before': balance_before,
+                        'balance_after': balance_after,
+                        'entry_type': 'system_adjustment',
+                        'reason_code': 'accounting_correction',
+                        'note': 'Generation cancelled before completion',
+                        'request_source': 'internal_admin',
+                        'request_id': cancellation_key,
+                        'idempotency_key': cancellation_key,
+                        'service_type': usage.service_type,
+                        'resource_id': usage.resource_id,
+                        'action': usage.action,
+                        'pricing_snapshot': usage.pricing_snapshot,
+                        'metadata_snapshot': {'reason': 'generation_cancelled'},
+                        'related_ledger_id': usage.ledger_id,
+                        'created_at': now,
+                    },
+                )
+
+        usage.status = 'failed'
+        usage.error_snapshot = _safe_error_snapshot(error)
+        usage.completed_at = now
+        usage.updated_at = now
+        await session.flush()
+        changed = 1
     if changed == 1:
         credit_metrics.usage_status(status='failed')
     return changed

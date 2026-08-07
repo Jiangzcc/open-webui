@@ -1,0 +1,193 @@
+[
+	{
+		"id": "luma/agent/ray/v3.2/image-to-video",
+		"public_id": "luma/agent/ray/v3.2/image-to-video",
+		"name": "Luma AI / Ray V3.2 Image",
+		"provider": "luma",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "end_image_url",
+				"required": false,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["3:4", "4:3", "1:1", "9:16", "16:9", "21:9"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["540p", "720p", "1080p"],
+		"default_resolution": "540p",
+		"duration_field": "duration",
+		"durations": ["5s", "10s"],
+		"default_duration": "5s",
+		"boolean_fields": [
+			{
+				"field": "loop",
+				"default": false
+			},
+			{
+				"field": "hdr",
+				"default": false
+			},
+			{
+				"field": "exr_export",
+				"default": false
+			}
+		],
+		"json_fields": [
+			{
+				"field": "keyframes",
+				"required": false
+			},
+			{
+				"field": "keyframe_indexes",
+				"required": false
+			}
+		]
+	},
+	{
+		"id": "luma/agent/ray/v3.2/reframe",
+		"public_id": "luma/agent/ray/v3.2/reframe",
+		"name": "Luma AI / Ray V3.2 Reframe",
+		"provider": "luma",
+		"task": "video-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime", "video/webm"],
+				"max_bytes": 209715200
+			}
+		],
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["3:4", "4:3", "1:1", "9:16", "16:9", "21:9"],
+		"default_aspect_ratio": "3:4",
+		"resolution_field": "resolution",
+		"resolutions": ["540p", "720p", "1080p"],
+		"default_resolution": "540p",
+		"json_fields": [
+			{
+				"field": "source_position",
+				"required": false
+			}
+		]
+	},
+	{
+		"id": "luma/agent/ray/v3.2/text-to-video",
+		"public_id": "luma/agent/ray/v3.2/text-to-video",
+		"name": "Luma AI / Ray V3.2 Text",
+		"provider": "luma",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["3:4", "4:3", "1:1", "9:16", "16:9", "21:9"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["540p", "720p", "1080p"],
+		"default_resolution": "540p",
+		"duration_field": "duration",
+		"durations": ["5s", "10s"],
+		"default_duration": "5s",
+		"boolean_fields": [
+			{
+				"field": "loop",
+				"default": false
+			},
+			{
+				"field": "hdr",
+				"default": false
+			},
+			{
+				"field": "exr_export",
+				"default": false
+			}
+		]
+	},
+	{
+		"id": "luma/agent/ray/v3.2/video-to-video",
+		"public_id": "luma/agent/ray/v3.2/video-to-video",
+		"name": "Luma AI / Ray V3.2 Video Edit",
+		"provider": "luma",
+		"task": "video-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime", "video/webm"],
+				"max_bytes": 209715200
+			},
+			{
+				"role": "reference_image",
+				"field": "start_image_url",
+				"required": false,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"resolution_field": "resolution",
+		"resolutions": ["540p", "720p", "1080p"],
+		"default_resolution": "540p",
+		"duration_field": "duration",
+		"durations": ["5s", "10s"],
+		"default_duration": "5s",
+		"option_fields": [
+			{
+				"field": "edit_strength",
+				"options": [
+					"adhere_1",
+					"adhere_2",
+					"adhere_3",
+					"flex_1",
+					"flex_2",
+					"flex_3",
+					"reimagine_1",
+					"reimagine_2",
+					"reimagine_3"
+				]
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_controls",
+				"default": false
+			},
+			{
+				"field": "hdr",
+				"default": false
+			},
+			{
+				"field": "exr_export",
+				"default": false
+			}
+		],
+		"json_fields": [
+			{
+				"field": "controls",
+				"required": false
+			},
+			{
+				"field": "keyframes",
+				"required": false
+			},
+			{
+				"field": "keyframe_indexes",
+				"required": false
+			}
+		]
+	}
+]

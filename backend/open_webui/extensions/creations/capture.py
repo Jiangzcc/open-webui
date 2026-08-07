@@ -8,8 +8,6 @@ import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
-
 from open_webui.extensions.creations.metrics import creation_metrics
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.creations.schemas import (
@@ -20,6 +18,7 @@ from open_webui.extensions.creations.schemas import (
     PreparedReference,
     ReusedImageResult,
 )
+from sqlalchemy import select
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -196,6 +195,7 @@ def build_creation_capture_context(
     prepared: object,
     user: object,
     usage_id: str,
+    generation_task_id: str | None = None,
 ) -> CreationCaptureContext:
     from open_webui.utils.images.fal_models import normalize_fal_image_model_id, public_fal_image_model_id
 
@@ -227,7 +227,7 @@ def build_creation_capture_context(
         public_model_id=public_model_id,
         model_name_snapshot=model_name_snapshot,
         params=_allowlisted_params(provider_input, raw_negative),
-        batch_id=usage_id,
+        batch_id=generation_task_id or usage_id,
     )
 
 

@@ -37,7 +37,7 @@ async def test_initialization_runs_migration_then_schema_validation(monkeypatch)
         '_validate_creation_schema',
         'validated',
     ]
-    assert app.state.creation_generation_tasks == set()
+    assert app.state.creation_generation_tasks == {}
 
 
 @pytest.mark.asyncio
@@ -51,13 +51,13 @@ async def test_initialization_failure_propagates(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_initialization_registers_generation_task_set(monkeypatch) -> None:
+async def test_initialization_registers_generation_task_registry(monkeypatch) -> None:
     app = _app()
     monkeypatch.setattr(registration, 'run_creation_migrations', lambda: None)
     monkeypatch.setattr(registration, '_validate_creation_schema', lambda: None)
     monkeypatch.setattr(registration, 'fail_incomplete_generation_tasks', lambda: _async_value(0))
     await registration.initialize_creations_extension(app)
-    assert app.state.creation_generation_tasks == set()
+    assert app.state.creation_generation_tasks == {}
     assert not hasattr(app.state, 'credit_recovery_task')
 
 
@@ -81,6 +81,4 @@ def test_main_py_initializes_creations_after_credits_and_includes_router_once() 
     assert source.index('initialize_credit_extension') < source.index('initialize_creations_extension')
     # router included exactly once
     assert source.count('include_router(creations_router)') == 1
-    assert source.index('shutdown_creations_extension(app)') < source.index(
-        'shutdown_credit_extension(app)'
-    )
+    assert source.index('shutdown_creations_extension(app)') < source.index('shutdown_credit_extension(app)')

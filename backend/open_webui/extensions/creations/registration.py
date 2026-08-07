@@ -160,7 +160,7 @@ async def initialize_creations_extension(app: FastAPI) -> None:
     """
     await anyio.to_thread.run_sync(run_creation_migrations)
     await anyio.to_thread.run_sync(_validate_creation_schema)
-    app.state.creation_generation_tasks = set()
+    app.state.creation_generation_tasks = {}
     interrupted = await fail_incomplete_generation_tasks()
     if interrupted:
         log.warning('Marked %s interrupted image generation task(s) as failed', interrupted)

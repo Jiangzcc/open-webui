@@ -22,6 +22,8 @@ type ImageGenerationErrorCode =
 	| 'invalid_adjustment'
 	| 'credit_service_unavailable'
 	| 'provider_failed'
+	| 'invalid_image_size'
+	| 'rate_limited'
 	| 'image_generation_failed';
 
 type ImageGenerationError = {
@@ -37,7 +39,9 @@ const publicCreditErrorCodes = new Set<ImageGenerationErrorCode>([
 	'credit_account_conflict',
 	'invalid_adjustment',
 	'credit_service_unavailable',
-	'provider_failed'
+	'provider_failed',
+	'invalid_image_size',
+	'rate_limited'
 ]);
 
 export const getImageGenerationErrorCode = (error: unknown): ImageGenerationErrorCode => {

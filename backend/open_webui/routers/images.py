@@ -26,11 +26,6 @@ from open_webui.config import (
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import AIOHTTP_CLIENT_ALLOW_REDIRECTS, AIOHTTP_CLIENT_SESSION_SSL, ENABLE_FORWARD_USER_INFO_HEADERS
 from open_webui.events import EVENTS, publish_event
-from open_webui.extensions.credits.errors import CreditError
-from open_webui.extensions.credits.http import public_credit_error_response
-from open_webui.extensions.credits.image_billing import ImageTerminalPreparationError, bill_image_call
-from open_webui.extensions.credits.pricing import attach_model_base_prices
-from open_webui.extensions.credits.repository import get_enabled_prices
 from open_webui.extensions.creations.capture import (
     build_creation_capture_context,
     capture_reference_snapshots,
@@ -41,6 +36,17 @@ from open_webui.extensions.creations.schemas import (
     CapturedImageBatch,
     CapturedImageResult,
 )
+from open_webui.extensions.credits.errors import CreditError
+from open_webui.extensions.credits.http import public_credit_error_response
+from open_webui.extensions.credits.image_billing import ImageTerminalPreparationError, bill_image_call
+from open_webui.extensions.credits.pricing import attach_model_base_prices
+from open_webui.extensions.credits.repository import get_enabled_prices
+from open_webui.extensions.images.limits import (
+    acquire_image_generation_slot,
+    enforce_image_generation_rate,
+    release_image_generation_slot,
+)
+from open_webui.extensions.images.resilience import run_image_operation
 from open_webui.internal.db import get_async_session
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
@@ -59,6 +65,7 @@ from open_webui.utils.images.comfyui import (
 )
 from open_webui.utils.images.fal import (
     FAL_DEFAULT_IMAGE_MODEL,
+    FalImageSizeError,
     build_fal_image_payload,
     extract_fal_image_urls,
     get_fal_edit_model,
@@ -66,6 +73,7 @@ from open_webui.utils.images.fal import (
     get_fal_image_models,
     get_mock_fal_image_result,
     run_fal_queue,
+    validate_fal_image_size,
 )
 from open_webui.utils.images.fal_models import public_fal_image_models
 from open_webui.utils.session_pool import get_session
@@ -637,7 +645,12 @@ async def generate_images(request: Request, form_data: CreateImageForm, user=Dep
     # builtin tools) gate themselves and call image_generations() with their own
     # server-supplied scope.
     try:
-        result = await image_generations(request, form_data, 'direct', user=user)
+        enforce_image_generation_rate(user.id)
+        await acquire_image_generation_slot(user.id)
+        try:
+            result = await image_generations(request, form_data, 'direct', user=user)
+        finally:
+            await release_image_generation_slot(user.id)
     except CreditError as error:
         return public_credit_error_response(error)
     await publish_event(
@@ -656,12 +669,12 @@ async def generate_images(request: Request, form_data: CreateImageForm, user=Dep
     return result
 
 
-def finalize_image_creations_factory(request: Request, form_data, user):
+def finalize_image_creations_factory(request: Request, form_data, metadata, user):
     """Build the terminal finalizer closures handed to bill_image_call.
 
-    The closure captures only the already-validated raw form, request, and
-    authenticated user; credits invokes it inside the terminal transaction so
-    creation rows commit atomically with the usage success transition.
+    The closure captures only the already-validated raw form, request metadata,
+    and authenticated user; credits invokes it inside the terminal transaction
+    so creation rows commit atomically with the usage success transition.
     """
 
     async def finalize_image_creations(session, prepared, internal_result, usage_id) -> None:
@@ -670,6 +683,11 @@ def finalize_image_creations_factory(request: Request, form_data, user):
             prepared=prepared,
             user=user,
             usage_id=usage_id,
+            generation_task_id=(
+                metadata.get('generation_task_id')
+                if isinstance(metadata, dict) and isinstance(metadata.get('generation_task_id'), str)
+                else None
+            ),
         )
         await finalize_created_images(session, context, internal_result)
 
@@ -686,7 +704,11 @@ def invoke_edit_creations_factory(request: Request, metadata, user):
     """
 
     async def invoke_edit_creations(prepared, provider_form):
-        internal_result = await _invoke_image_edits(request, provider_form, metadata, user)
+        image_config = await get_image_config()
+        internal_result = await run_image_operation(
+            image_config.IMAGE_EDIT_ENGINE,
+            lambda: _invoke_image_edits(request, provider_form, metadata, user),
+        )
         try:
             references = await capture_reference_snapshots(
                 request,
@@ -714,6 +736,13 @@ async def image_generations(
 
         candidate = form_data.model or await get_image_model(request)
         try:
+            validate_fal_image_size(candidate, form_data)
+        except FalImageSizeError as error:
+            raise CreditError(
+                code='invalid_image_size',
+                context={'reason': 'custom_size_constraints'},
+            ) from error
+        try:
             async with model_ops_session() as model_session:
                 await ensure_model_enabled(model_session, candidate)
         except HTTPException as error:
@@ -730,8 +759,11 @@ async def image_generations(
         raw_user=user,
         action='text-to-image',
         authorization_scope=authorization_scope,
-        invoke=lambda _prepared, provider_form: _invoke_image_generations(request, provider_form, metadata, user),
-        finalize=finalize_image_creations_factory(request, form_data, user),
+        invoke=lambda _prepared, provider_form: run_image_operation(
+            image_config.IMAGE_GENERATION_ENGINE,
+            lambda: _invoke_image_generations(request, provider_form, metadata, user),
+        ),
+        finalize=finalize_image_creations_factory(request, form_data, metadata, user),
     )
 
 
@@ -1124,6 +1156,13 @@ async def image_edits(
 
         candidate = form_data.model if form_data.model else image_config.IMAGE_EDIT_MODEL
         try:
+            validate_fal_image_size(candidate, form_data)
+        except FalImageSizeError as error:
+            raise CreditError(
+                code='invalid_image_size',
+                context={'reason': 'custom_size_constraints'},
+            ) from error
+        try:
             async with model_ops_session() as model_session:
                 await ensure_model_enabled(model_session, candidate)
         except HTTPException as error:
@@ -1141,7 +1180,7 @@ async def image_edits(
         action='image-to-image',
         authorization_scope=authorization_scope,
         invoke=invoke_edit_creations_factory(request, metadata, user),
-        finalize=finalize_image_creations_factory(request, form_data, user),
+        finalize=finalize_image_creations_factory(request, form_data, metadata, user),
     )
 
 

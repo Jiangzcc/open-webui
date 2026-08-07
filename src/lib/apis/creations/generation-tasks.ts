@@ -61,6 +61,13 @@ export const getImageGenerationTask = (token: string, taskId: string) =>
 		token
 	);
 
+export const cancelImageGenerationTask = (token: string, taskId: string) =>
+	requestJson<ImageGenerationTask>(
+		`/creations/generation-tasks/${encodeURIComponent(taskId)}/cancel`,
+		token,
+		{ method: 'POST' }
+	);
+
 export const deleteImageGenerationTask = (token: string, taskId: string) =>
 	requestNoContent(`/creations/generation-tasks/${encodeURIComponent(taskId)}`, token, {
 		method: 'DELETE'

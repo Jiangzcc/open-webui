@@ -59,10 +59,15 @@ async def mark_usage_succeeded_in_session(session: object, usage_id: str, urls: 
     return await mark(session, usage_id, urls)
 
 
-async def mark_usage_failed(usage_id: str, error: object) -> int:
+async def mark_usage_failed(
+    usage_id: str,
+    error: object,
+    *,
+    restore_prepaid: bool = False,
+) -> int:
     from open_webui.extensions.credits.service import mark_usage_failed as mark
 
-    return await mark(usage_id, error)
+    return await mark(usage_id, error, restore_prepaid=restore_prepaid)
 
 
 AuthorizationScope = Literal['direct', 'chat', 'tool']
@@ -290,9 +295,18 @@ def _safe_provider_error(error: Exception) -> object:
     return SafeProviderError(code=code, summary='Image provider request failed')
 
 
-async def _mark_failed_or_unavailable(usage_id: str, error: Exception) -> None:
+async def _mark_failed_or_unavailable(
+    usage_id: str,
+    error: Exception,
+    *,
+    restore_prepaid: bool = False,
+) -> None:
     try:
-        changed = await mark_usage_failed(usage_id, _safe_provider_error(error))
+        changed = await mark_usage_failed(
+            usage_id,
+            _safe_provider_error(error),
+            restore_prepaid=restore_prepaid,
+        )
     except Exception:
         raise _unavailable(usage_id, reason='failed_status_write_failed') from None
     if changed != 1:
@@ -356,7 +370,13 @@ async def bill_image_call(
     try:
         result = await invoke(prepared, provider_form)
         urls = _result_urls(result)
-    except asyncio.CancelledError:
+    except asyncio.CancelledError as error:
+        if error.args and error.args[0] == 'generation_cancelled':
+            await _mark_failed_or_unavailable(
+                begin.usage.id,
+                CreditError(code='generation_cancelled'),
+                restore_prepaid=True,
+            )
         raise
     except ImageTerminalPreparationError:
         raise _unavailable(begin.usage.id, reason='terminal_preparation_failed') from None

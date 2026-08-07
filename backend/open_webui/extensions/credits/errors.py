@@ -11,6 +11,9 @@ CreditErrorCode = Literal[
     'invalid_adjustment',
     'credit_service_unavailable',
     'provider_failed',
+    'invalid_image_size',
+    'generation_cancelled',
+    'rate_limited',
 ]
 
 
@@ -30,6 +33,9 @@ PUBLIC_ERRORS: dict[CreditErrorCode, PublicErrorDefinition] = {
     'invalid_adjustment': PublicErrorDefinition(422, 'Credit adjustment is invalid'),
     'credit_service_unavailable': PublicErrorDefinition(503, 'Credit service is unavailable'),
     'provider_failed': PublicErrorDefinition(502, 'Image provider request failed'),
+    'invalid_image_size': PublicErrorDefinition(422, 'Image size is invalid'),
+    'generation_cancelled': PublicErrorDefinition(409, 'Image generation was cancelled'),
+    'rate_limited': PublicErrorDefinition(429, 'Too many image generation requests'),
 }
 
 

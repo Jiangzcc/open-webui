@@ -434,9 +434,9 @@ describe('image generation utils', () => {
 			}
 		]);
 
-		expect(
-			buildImageGenerationPayload({ prompt: 'field', model })
-		).toMatchObject({ output_format: 'jpeg' });
+		expect(buildImageGenerationPayload({ prompt: 'field', model })).toMatchObject({
+			output_format: 'jpeg'
+		});
 	});
 
 	test('falls back to png when a model declares output formats without a default', () => {
@@ -447,9 +447,9 @@ describe('image generation utils', () => {
 			}
 		]);
 
-		expect(
-			buildImageGenerationPayload({ prompt: 'field', model })
-		).toMatchObject({ output_format: 'png' });
+		expect(buildImageGenerationPayload({ prompt: 'field', model })).toMatchObject({
+			output_format: 'png'
+		});
 	});
 
 	test('omits output_format when the model declares no formats', () => {
@@ -758,9 +758,9 @@ describe('custom size constraints', () => {
 				image_size_whitelist: { '1024x1024': '1024x1024' }
 			}
 		]);
-		expect(
-			buildImageGenerationPayload({ prompt: 'p', model, size: '1024x1024' })
-		).toMatchObject({ size: '1024x1024' });
+		expect(buildImageGenerationPayload({ prompt: 'p', model, size: '1024x1024' })).toMatchObject({
+			size: '1024x1024'
+		});
 	});
 
 	test('validateCustomSize rejects violations and accepts valid sizes', () => {
@@ -776,10 +776,16 @@ describe('custom size constraints', () => {
 		expect(validateCustomSize(513, 1024, cs)?.field).toBe('width'); // not multiple of 16
 		expect(validateCustomSize(4096, 1024, cs)?.field).toBe('width'); // exceeds max
 		expect(validateCustomSize(512, 512, cs)?.field).toBeUndefined(); // 512 valid min
+		expect(validateCustomSize(0, 512)?.field).toBe('width'); // shared backend guard without model constraints
 	});
 
 	test('validateCustomSize enforces pixel and aspect-ratio bounds', () => {
-		const cs = { minPixels: 1_048_576, maxPixels: 4_194_304, aspectRatioMin: 0.0625, aspectRatioMax: 16 };
+		const cs = {
+			minPixels: 1_048_576,
+			maxPixels: 4_194_304,
+			aspectRatioMin: 0.0625,
+			aspectRatioMax: 16
+		};
 		expect(validateCustomSize(1024, 1024, cs)).toBeNull();
 		expect(validateCustomSize(512, 512, cs)?.field).toBe('pixels'); // below min pixels
 		expect(validateCustomSize(4096, 2000, cs)?.field).toBe('pixels'); // above max pixels

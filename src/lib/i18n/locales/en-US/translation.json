@@ -2223,6 +2223,20 @@
 	"Remove this creation from your library?": "",
 	"Remove this record from your history?": "",
 	"Record removed": "",
+	"Cancel generation": "",
+	"Cancelling...": "",
+	"Cancelled": "",
+	"Failed to cancel generation": "",
+	"Generation cancelled": "",
+	"Generation already completed": "",
+	"Image size is invalid": "",
+	"Too many image generation requests": "",
+	"Failed to load video generation": "",
+	"Failed to update video generation": "",
+	"Video generation failed": "",
+	"Failed to upload video asset": "",
+	"Unsupported file type": "",
+	"File is too large": "",
 	"Failed to remove record": "",
 	"Remove record": "",
 	"Remove record?": "",
@@ -3083,5 +3097,6 @@
 	"Failed to download images": "",
 	"Failed to load more generations": "",
 	"Remix": "",
-	"Generate from this prompt": ""
+	"Generate from this prompt": "",
+	"Enter a JSON array or object": ""
 }

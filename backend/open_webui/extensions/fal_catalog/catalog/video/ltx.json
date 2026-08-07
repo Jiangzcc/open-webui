@@ -146,6 +146,12 @@
 				"required": true,
 				"mime_types": ["image/jpeg", "image/png", "image/webp"],
 				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "end_image_url",
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
 			}
 		],
 		"option_fields": [

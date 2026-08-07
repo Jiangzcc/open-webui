@@ -1,0 +1,911 @@
+[
+	{
+		"id": "google/gemini-omni-flash/edit",
+		"public_id": "google/gemini-omni-flash/edit",
+		"name": "Google / Gemini Omni Flash Edit",
+		"provider": "google",
+		"task": "video-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime", "video/webm"],
+				"max_bytes": 209715200
+			}
+		]
+	},
+	{
+		"id": "google/gemini-omni-flash/image-to-video",
+		"public_id": "google/gemini-omni-flash/image-to-video",
+		"name": "Google / Gemini Omni Flash Image",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"duration_min": 3,
+		"duration_max": 10,
+		"duration_step": 1,
+		"default_duration": "8"
+	},
+	{
+		"id": "google/gemini-omni-flash/reference-to-video",
+		"public_id": "google/gemini-omni-flash/reference-to-video",
+		"name": "Google / Gemini Omni Flash Reference",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_urls",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280,
+				"multiple": true,
+				"max_count": 4,
+				"max_total_bytes": 125829120
+			}
+		],
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"duration_min": 3,
+		"duration_max": 10,
+		"duration_step": 1,
+		"default_duration": "8"
+	},
+	{
+		"id": "google/gemini-omni-flash",
+		"public_id": "google/gemini-omni-flash",
+		"name": "Google / Gemini Omni Flash",
+		"provider": "google",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"duration_min": 3,
+		"duration_max": 10,
+		"duration_step": 1,
+		"default_duration": "8"
+	},
+	{
+		"id": "fal-ai/veo3.1/extend-video",
+		"public_id": "veo3.1/extend-video",
+		"name": "Google / Veo3.1 Extend",
+		"provider": "google",
+		"task": "video-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime", "video/webm"],
+				"max_bytes": 209715200
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["7s"],
+		"default_duration": "7s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/fast/extend-video",
+		"public_id": "veo3.1/fast/extend-video",
+		"name": "Google / Veo3.1 Fast Extend",
+		"provider": "google",
+		"task": "video-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime", "video/webm"],
+				"max_bytes": 209715200
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["7s"],
+		"default_duration": "7s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/fast/first-last-frame-to-video",
+		"public_id": "veo3.1/fast/first-last-frame-to-video",
+		"name": "Google / Veo3.1 Fast First-Last Frame",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "first_frame_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "last_frame_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/fast/image-to-video",
+		"public_id": "veo3.1/fast/image-to-video",
+		"name": "Google / Veo3.1 Fast Image",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/fast/reference-to-video",
+		"public_id": "veo3.1/fast/reference-to-video",
+		"name": "Google / Veo3.1 Fast Reference",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_urls",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280,
+				"multiple": true,
+				"max_count": 4,
+				"max_total_bytes": 125829120
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"durations": ["8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/fast",
+		"public_id": "veo3.1/fast",
+		"name": "Google / Veo3.1 Fast",
+		"provider": "google",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": true
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/first-last-frame-to-video",
+		"public_id": "veo3.1/first-last-frame-to-video",
+		"name": "Google / Veo3.1 First-Last Frame",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "first_frame_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "last_frame_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/image-to-video",
+		"public_id": "veo3.1/image-to-video",
+		"name": "Google / Veo3.1 Image",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/lite/first-last-frame-to-video",
+		"public_id": "veo3.1/lite/first-last-frame-to-video",
+		"name": "Google / Veo3.1 Lite First-Last Frame",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "first_frame_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "last_frame_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/lite/image-to-video",
+		"public_id": "veo3.1/lite/image-to-video",
+		"name": "Google / Veo3.1 Lite Image",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["auto", "16:9", "9:16"],
+		"default_aspect_ratio": "auto",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/lite",
+		"public_id": "veo3.1/lite",
+		"name": "Google / Veo3.1 Lite",
+		"provider": "google",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": true
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1/reference-to-video",
+		"public_id": "veo3.1/reference-to-video",
+		"name": "Google / Veo3.1 Reference",
+		"provider": "google",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_urls",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280,
+				"multiple": true,
+				"max_count": 4,
+				"max_total_bytes": 125829120
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"durations": ["8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": false
+			}
+		]
+	},
+	{
+		"id": "fal-ai/veo3.1",
+		"public_id": "veo3.1",
+		"name": "Google / Veo3.1",
+		"provider": "google",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio": true
+				}
+			}
+		],
+		"default_audio_mode": "generate",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16"],
+		"default_aspect_ratio": "16:9",
+		"duration_field": "duration",
+		"durations": ["4s", "6s", "8s"],
+		"default_duration": "8s",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p", "4k"],
+		"default_resolution": "720p",
+		"option_fields": [
+			{
+				"field": "safety_tolerance",
+				"options": ["1", "2", "3", "4", "5", "6"],
+				"default": "4"
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "auto_fix",
+				"default": true
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	}
+]

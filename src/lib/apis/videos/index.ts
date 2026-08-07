@@ -27,6 +27,8 @@ export type VideoField = {
 	max?: number | null;
 	step?: number | null;
 	max_length?: number;
+	required?: boolean;
+	format?: 'json';
 	advanced: boolean;
 };
 
@@ -53,6 +55,7 @@ export type VideoModel = {
 	integer_fields?: VideoField[] | null;
 	number_fields?: VideoField[] | null;
 	text_fields?: VideoField[] | null;
+	json_fields?: VideoField[] | null;
 	visible?: boolean;
 	enabled?: boolean;
 	recommended?: boolean;

@@ -272,9 +272,7 @@ def test_proportional_rejects_invalid_unit_size(unit_size: object) -> None:
 
 
 @pytest.mark.parametrize(('unit_size', 'expected'), [(1_000_000, Decimal('1000000')), ('0.5', Decimal('0.5'))])
-def test_proportional_accepts_positive_integer_or_exact_decimal_string(
-    unit_size: object, expected: Decimal
-) -> None:
+def test_proportional_accepts_positive_integer_or_exact_decimal_string(unit_size: object, expected: Decimal) -> None:
     rule = ProportionalRule(key='pixel_count', kind='proportional', unit_size=unit_size)
 
     assert rule.unit_size == expected
@@ -402,6 +400,9 @@ ERROR_CASES = [
     ('invalid_adjustment', 422, 'Credit adjustment is invalid'),
     ('credit_service_unavailable', 503, 'Credit service is unavailable'),
     ('provider_failed', 502, 'Image provider request failed'),
+    ('invalid_image_size', 422, 'Image size is invalid'),
+    ('generation_cancelled', 409, 'Image generation was cancelled'),
+    ('rate_limited', 429, 'Too many image generation requests'),
 ]
 
 

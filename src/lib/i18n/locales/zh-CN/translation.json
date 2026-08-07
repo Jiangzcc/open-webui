@@ -2277,6 +2277,19 @@
 	"Remove image": "移除图像",
 	"Remove this record from your history?": "确定要移除这条记录吗？",
 	"Record removed": "已移除记录",
+	"Cancel generation": "取消生成",
+	"Cancelling...": "正在取消...",
+	"Cancelled": "已取消",
+	"Failed to cancel generation": "取消生成失败",
+	"Generation cancelled": "已取消生成并退回预扣额度",
+	"Generation already completed": "生成已完成，无法取消",
+	"Image size is invalid": "图片尺寸不符合所选模型的要求",
+	"Too many image generation requests": "生成请求过于频繁，请稍后再试",
+	"Failed to load video generation": "无法加载视频生成页面",
+	"Failed to update video generation": "无法更新视频生成状态",
+	"Failed to upload video asset": "无法上传视频生成素材",
+	"Unsupported file type": "不支持此文件类型",
+	"File is too large": "文件过大",
 	"Failed to remove record": "移除记录失败",
 	"Remove record": "移除记录",
 	"Remove record?": "移除记录？",
@@ -3281,5 +3294,6 @@
 	"is required": "为必填项",
 	"Please enter a prompt": "请输入提示词",
 	"Video price is not configured": "该视频模型尚未配置积分价格",
-	"Insufficient credits": "积分不足"
+	"Insufficient credits": "积分不足",
+	"Enter a JSON array or object": "请输入 JSON 数组或对象"
 }

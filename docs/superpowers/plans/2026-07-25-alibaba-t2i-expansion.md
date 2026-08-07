@@ -24,21 +24,21 @@
 
 ## File Structure
 
-| 文件 | 责任 | 改动性质 |
-|---|---|---|
-| `backend/open_webui/utils/images/fal_models.py` | 13 条模型能力元数据 + 3 工厂模板 + ID 映射 + hosting 白名单 | 改 |
-| `backend/open_webui/utils/images/test_fal_models.py` | 13 条注册/映射/hosting/模板的 pytest | 新增 |
-| `backend/open_webui/utils/images/test_fal.py` | build_fal_image_payload 对新模型的 payload 形态 | 扩 |
-| `backend/open_webui/extensions/credits/tests/test_public_image_models.py` | public_fal_image_models 下发 hosting | 扩 |
-| `src/lib/utils/image-generation.ts` | ImageGenerationModel 加 hosting | 改 |
-| `src/lib/utils/image-generation.test.ts` | 13 条 capability 断言 | 扩 |
-| `src/lib/utils/images-dropdown.ts` | 纯函数:groupByVendor / vendorLogoUrl / isProxyModel | 新增 |
-| `src/lib/utils/images-dropdown.test.ts` | 上述纯函数 Vitest | 新增 |
-| `src/lib/components/images/Images.svelte` | 两级菜单下拉 + 单张隐藏张数 + proxy tooltip | 改 |
-| `src/lib/i18n/locales/zh-CN/translation.json` | 新 i18n 键的简体中文 | 改 |
-| `src/lib/i18n/locales/en-US/translation.json` | 新 i18n 键(空串) | 改 |
-| `docs/fal/alibaba/*.md` | 13 篇接口文档 | 新增 |
-| ~~`backend/open_webui/extensions/credits/seed_alibaba_prices.py`~~ | ~~13 条定价录入 seed 脚本(可选)~~ | **已废弃,见下** |
+| 文件                                                                      | 责任                                                        | 改动性质        |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------- |
+| `backend/open_webui/utils/images/fal_models.py`                           | 13 条模型能力元数据 + 3 工厂模板 + ID 映射 + hosting 白名单 | 改              |
+| `backend/open_webui/utils/images/test_fal_models.py`                      | 13 条注册/映射/hosting/模板的 pytest                        | 新增            |
+| `backend/open_webui/utils/images/test_fal.py`                             | build_fal_image_payload 对新模型的 payload 形态             | 扩              |
+| `backend/open_webui/extensions/credits/tests/test_public_image_models.py` | public_fal_image_models 下发 hosting                        | 扩              |
+| `src/lib/utils/image-generation.ts`                                       | ImageGenerationModel 加 hosting                             | 改              |
+| `src/lib/utils/image-generation.test.ts`                                  | 13 条 capability 断言                                       | 扩              |
+| `src/lib/utils/images-dropdown.ts`                                        | 纯函数:groupByVendor / vendorLogoUrl / isProxyModel         | 新增            |
+| `src/lib/utils/images-dropdown.test.ts`                                   | 上述纯函数 Vitest                                           | 新增            |
+| `src/lib/components/images/Images.svelte`                                 | 两级菜单下拉 + 单张隐藏张数 + proxy tooltip                 | 改              |
+| `src/lib/i18n/locales/zh-CN/translation.json`                             | 新 i18n 键的简体中文                                        | 改              |
+| `src/lib/i18n/locales/en-US/translation.json`                             | 新 i18n 键(空串)                                            | 改              |
+| `docs/fal/alibaba/*.md`                                                   | 13 篇接口文档                                               | 新增            |
+| ~~`backend/open_webui/extensions/credits/seed_alibaba_prices.py`~~        | ~~13 条定价录入 seed 脚本(可选)~~                           | **已废弃,见下** |
 
 > ⚠️ **【2026-07-25 公告】** 表中被划掉的 seed 脚本已于当日从仓库删除,不应再创建或执行。13 条定价的实际入库方式为:经管理后台逐条 `POST /api/v1/credits/admin/prices`(详见 spec §4.4 与本文 Task 12 顶部公告)。凡下文出现该脚本的文件路径、`python -m` 运行命令或 `compileall` 校验步骤,一律视为**历史规划原文**,仅供追溯,不再有效。
 
@@ -47,10 +47,12 @@
 ## Task 1: 新增 `FAL_ALIBABA_NAMED_SIZES` 常量与模板 A 扩展
 
 **Files:**
+
 - Modify: `backend/open_webui/utils/images/fal_models.py`(顶部常量区 + `_alibaba_model` 函数 164-186)
 - Test: `backend/open_webui/utils/images/test_fal_models.py`(新建)
 
 **Interfaces:**
+
 - Produces: `FAL_ALIBABA_NAMED_SIZES: list[str]`(六命名档像素串);扩展后的 `_alibaba_model(id, name, resolutions, default_resolution, *, hosting='serverless', steps_max=8, safety_default=False, prompt_expansion_default=False) -> dict`。
 
 - [ ] **Step 1: 写失败测试(常量 + 模板 A 扩展 + z-image/turbo 不回归)**
@@ -111,6 +113,7 @@ def test_z_image_turbo_remains_backward_compatible():
 cd D:\code\github\open-webui-main
 python -m pytest backend/open_webui/utils/images/test_fal_models.py -q
 ```
+
 Expected: FAIL — `ImportError: cannot import name 'FAL_ALIBABA_NAMED_SIZES'`(常量未定义)。
 
 - [ ] **Step 3: 新增常量**
@@ -172,6 +175,7 @@ def _alibaba_model(
 ```
 python -m pytest backend/open_webui/utils/images/test_fal_models.py -q
 ```
+
 Expected: `3 passed`。
 
 - [ ] **Step 6: 验证 z-image/turbo 既有测试不回归**
@@ -179,6 +183,7 @@ Expected: `3 passed`。
 ```
 python -m pytest backend/open_webui/utils/images/test_fal.py backend/open_webui/extensions/credits/tests/test_public_image_models.py -q
 ```
+
 Expected: 全部 passed(无 failures/errors)。
 
 - [ ] **Step 7: Python 编译检查**
@@ -186,6 +191,7 @@ Expected: 全部 passed(无 failures/errors)。
 ```
 python -m compileall backend/open_webui/utils/images/fal_models.py
 ```
+
 Expected: 无输出(编译成功)。
 
 ---
@@ -193,10 +199,12 @@ Expected: 无输出(编译成功)。
 ## Task 2: 新增模板 B `_alibaba_qwen2_model` 与模板 C `_alibaba_wan_model`
 
 **Files:**
+
 - Modify: `backend/open_webui/utils/images/fal_models.py`(在 `_alibaba_model` 之后新增两个函数)
 - Test: `backend/open_webui/utils/images/test_fal_models.py`(扩)
 
 **Interfaces:**
+
 - Produces:
   - `_alibaba_qwen2_model(id, name, default_image_size, hosting) -> dict`
   - `_alibaba_wan_model(id, name, default_image_size, hosting, count_field, image_counts, output_formats, prompt_expansion_default=True) -> dict`
@@ -285,6 +293,7 @@ def test_wan_model_no_output_formats_when_empty():
 ```
 python -m pytest backend/open_webui/utils/images/test_fal_models.py -q
 ```
+
 Expected: FAIL — `ImportError: cannot import name '_alibaba_qwen2_model'`。
 
 - [ ] **Step 3: 新增两个模板函数**
@@ -353,6 +362,7 @@ def _alibaba_wan_model(
 ```
 python -m pytest backend/open_webui/utils/images/test_fal_models.py -q
 ```
+
 Expected: `7 passed`(Task1 的 3 个 + Task2 的 4 个)。
 
 - [ ] **Step 5: 编译检查**
@@ -360,6 +370,7 @@ Expected: `7 passed`(Task1 的 3 个 + Task2 的 4 个)。
 ```
 python -m compileall backend/open_webui/utils/images/fal_models.py
 ```
+
 Expected: 无输出。
 
 ---
@@ -367,10 +378,12 @@ Expected: 无输出。
 ## Task 3: 注册 13 条模型到 `FAL_IMAGE_MODELS`
 
 **Files:**
+
 - Modify: `backend/open_webui/utils/images/fal_models.py`(`FAL_IMAGE_MODELS` 列表,在现有 `_alibaba_model('fal-ai/z-image/turbo', ...)` 之后插入 13 条)
 - Test: `backend/open_webui/utils/images/test_fal_models.py`(扩)
 
 **Interfaces:**
+
 - Produces: `FAL_IMAGE_MODELS` 含 13 条新模型,每条 `id`/`provider='alibaba'`/`task='text-to-image'`/`hosting`/`count_field`/`image_counts`/`image_size_whitelist` 齐备。
 
 - [ ] **Step 1: 写失败测试(13 条注册 + 字段断言)**
@@ -425,6 +438,7 @@ def test_existing_22_models_still_present():
 ```
 python -m pytest backend/open_webui/utils/images/test_fal_models.py::test_all_thirteen_new_models_registered -q
 ```
+
 Expected: FAIL — `AssertionError: missing model: fal-ai/qwen-image`。
 
 - [ ] **Step 3: 在 `FAL_IMAGE_MODELS` 插入 13 条**
@@ -553,6 +567,7 @@ Expected: FAIL — `AssertionError: missing model: fal-ai/qwen-image`。
 ```
 python -m pytest backend/open_webui/utils/images/test_fal_models.py -q
 ```
+
 Expected: 全部 passed(Task1+2+3 共 11 个)。
 
 - [ ] **Step 5: 编译检查**
@@ -560,6 +575,7 @@ Expected: 全部 passed(Task1+2+3 共 11 个)。
 ```
 python -m compileall backend/open_webui/utils/images/fal_models.py
 ```
+
 Expected: 无输出。
 
 ---
@@ -567,10 +583,12 @@ Expected: 无输出。
 ## Task 4: 追加 13 条 `_FAL_INTERNAL_TO_PUBLIC_ID` 双向映射
 
 **Files:**
+
 - Modify: `backend/open_webui/utils/images/fal_models.py`(`_FAL_INTERNAL_TO_PUBLIC_ID` 字典)
 - Test: `backend/open_webui/utils/images/test_fal_models.py`(扩)
 
 **Interfaces:**
+
 - Produces: `public_fal_image_model_id('<internal>')` 与 `internal_fal_image_model_id('<public>')` 对 13 条互通。
 
 - [ ] **Step 1: 写失败测试(双向映射闭合)**
@@ -624,6 +642,7 @@ def test_every_registered_model_has_public_id():
 ```
 python -m pytest backend/open_webui/utils/images/test_fal_models.py::test_bidirectional_mapping_roundtrip -q
 ```
+
 Expected: FAIL — `AssertionError: assert None == 'qwen-image'`。
 
 - [ ] **Step 3: 追加映射**
@@ -651,6 +670,7 @@ Expected: FAIL — `AssertionError: assert None == 'qwen-image'`。
 ```
 python -m pytest backend/open_webui/utils/images/test_fal_models.py -q
 ```
+
 Expected: 全部 passed。
 
 - [ ] **Step 5: 编译检查**
@@ -658,6 +678,7 @@ Expected: 全部 passed。
 ```
 python -m compileall backend/open_webui/utils/images/fal_models.py
 ```
+
 Expected: 无输出。
 
 ---
@@ -665,10 +686,12 @@ Expected: 无输出。
 ## Task 5: `_FAL_PUBLIC_MODEL_FIELDS` 白名单加 `hosting`
 
 **Files:**
+
 - Modify: `backend/open_webui/utils/images/fal_models.py`(`_FAL_PUBLIC_MODEL_FIELDS` 集合)
 - Test: `backend/open_webui/extensions/credits/tests/test_public_image_models.py`(扩)
 
 **Interfaces:**
+
 - Produces: `public_fal_image_models()` 返回的每个 dict 含 `hosting` 字段。
 
 - [ ] **Step 1: 写失败测试(hosting 下发)**
@@ -700,13 +723,14 @@ def test_legacy_models_keep_hosting_absent_or_filled():
     assert turbo.get('hosting') == 'serverless'
 ```
 
-> 备注:Task 1 改造 `_alibaba_model` 后,z-image/turbo 也会有 `hosting='serverless'`。其它旧模板(_google_model/_openai_model/_xai_model)未加 hosting,其 public dict 不含 hosting 字段(white-list 过滤),前端按 `hosting === 'proxy'` 判定,缺失即非 proxy,行为正确。
+> 备注:Task 1 改造 `_alibaba_model` 后,z-image/turbo 也会有 `hosting='serverless'`。其它旧模板(\_google_model/\_openai_model/\_xai_model)未加 hosting,其 public dict 不含 hosting 字段(white-list 过滤),前端按 `hosting === 'proxy'` 判定,缺失即非 proxy,行为正确。
 
 - [ ] **Step 2: 运行测试,确认失败(RED)**
 
 ```
 python -m pytest backend/open_webui/extensions/credits/tests/test_public_image_models.py::test_public_fal_image_models_include_hosting_for_alibaba -q
 ```
+
 Expected: FAIL — `KeyError: 'hosting'`(白名单未含,public dict 无此键)。
 
 - [ ] **Step 3: 白名单加 `hosting`**
@@ -722,6 +746,7 @@ Expected: FAIL — `KeyError: 'hosting'`(白名单未含,public dict 无此键)�
 ```
 python -m pytest backend/open_webui/extensions/credits/tests/test_public_image_models.py -q
 ```
+
 Expected: 全部 passed(含原有 + 2 个新)。
 
 - [ ] **Step 5: 编译检查**
@@ -729,6 +754,7 @@ Expected: 全部 passed(含原有 + 2 个新)。
 ```
 python -m compileall backend/open_webui/utils/images/fal_models.py
 ```
+
 Expected: 无输出。
 
 ---
@@ -736,9 +762,11 @@ Expected: 无输出。
 ## Task 6: `build_fal_image_payload` 对新模型的 payload 形态回归
 
 **Files:**
+
 - Test: `backend/open_webui/utils/images/test_fal.py`(扩)
 
 **Interfaces:**
+
 - Consumes: Task 3 注册的 13 条模型;`build_fal_image_payload(form_data, model)`(fal.py 现有)。
 - Verifies: count_field 异构(num_images/max_images/None)、image_size 转 {width,height}、wan v2.2 不发 count。
 
@@ -816,6 +844,7 @@ def test_payload_qwen2_has_no_guidance_or_steps():
 ```
 python -m pytest backend/open_webui/utils/images/test_fal.py -k "payload_qwen_image or payload_wan or payload_qwen2" -q
 ```
+
 Expected: 多数 FAIL — 例如 `KeyError: 'num_images'`(模型未注册时 `_get_fal_model_info` 返回 None,走到 fallback 分支)。若 Task 3 已完成,这些应已能通过;若仍有 fail,排查 fixture 字段名与 `CreateImageForm` 一致。
 
 > 若 Step 2 全部 PASS(因 Task 3 已让模型注册),则此 Task 为回归保障而非 RED→GREEN:记录"测试先行,实现已在 Task3 完成,此处验证 payload 契约",继续 Step 3。
@@ -825,6 +854,7 @@ Expected: 多数 FAIL — 例如 `KeyError: 'num_images'`(模型未注册时 `_g
 ```
 python -m pytest backend/open_webui/utils/images/test_fal.py -q
 ```
+
 Expected: 全部 passed。
 
 - [ ] **Step 4: 编译检查**
@@ -832,6 +862,7 @@ Expected: 全部 passed。
 ```
 python -m compileall backend/open_webui/utils/images/fal.py
 ```
+
 Expected: 无输出。
 
 ---
@@ -839,10 +870,12 @@ Expected: 无输出。
 ## Task 7: 前端 `ImageGenerationModel` 类型加 `hosting`
 
 **Files:**
+
 - Modify: `src/lib/utils/image-generation.ts`(`ImageGenerationModel` 类型,57-78 行)
 - Test: `src/lib/utils/image-generation.test.ts`(扩)
 
 **Interfaces:**
+
 - Produces: `ImageGenerationModel.hosting?: string`。
 
 - [ ] **Step 1: 写失败测试(hosting 透传 capability)**
@@ -881,6 +914,7 @@ describe('alibaba t2i hosting field', () => {
 ```
 npm run test -- image-generation.test.ts
 ```
+
 Expected: FAIL — TS 类型错误 `Property 'hosting' does not exist on type 'ImageGenerationModel'`(若 vitest 对 TS 类型报错敏感)或测试因 capability 不透传 hosting 而 fail。
 
 - [ ] **Step 3: 类型加 `hosting`**
@@ -896,6 +930,7 @@ Expected: FAIL — TS 类型错误 `Property 'hosting' does not exist on type 'I
 ```
 npm run test -- image-generation.test.ts
 ```
+
 Expected: 全部 passed。
 
 - [ ] **Step 5: 类型检查(改动文件 0 诊断)**
@@ -903,6 +938,7 @@ Expected: 全部 passed。
 ```
 npx svelte-check --tsconfig ./tsconfig.json --threshold error --output machine 2>&1 | grep "image-generation.ts" || echo "no diagnostics in image-generation.ts"
 ```
+
 Expected: `no diagnostics in image-generation.ts`。
 
 ---
@@ -910,10 +946,12 @@ Expected: `no diagnostics in image-generation.ts`。
 ## Task 8: 前端纯函数 `groupByVendor` / `vendorLogoUrl` / `isProxyModel`
 
 **Files:**
+
 - Create: `src/lib/utils/images-dropdown.ts`
 - Test: `src/lib/utils/images-dropdown.test.ts`(新建)
 
 **Interfaces:**
+
 - Produces:
   - `groupByVendor(models: ImageGenerationModel[]): Record<string, ImageGenerationModel[]>`(按 `provider` 分组,空 provider 归 `'other'`)
   - `vendorLogoUrl(provider: string): string`(返回 `/assets/vendors/<provider>.webp`)
@@ -959,6 +997,7 @@ describe('images-dropdown utils', () => {
 ```
 npm run test -- images-dropdown.test.ts
 ```
+
 Expected: FAIL — `Failed to resolve import "$lib/utils/images-dropdown"`(文件不存在)。
 
 - [ ] **Step 3: 实现纯函数**
@@ -968,7 +1007,9 @@ Expected: FAIL — `Failed to resolve import "$lib/utils/images-dropdown"`(文�
 ```typescript
 import type { ImageGenerationModel } from '$lib/utils/image-generation';
 
-export const groupByVendor = (models: ImageGenerationModel[]): Record<string, ImageGenerationModel[]> => {
+export const groupByVendor = (
+	models: ImageGenerationModel[]
+): Record<string, ImageGenerationModel[]> => {
 	const groups: Record<string, ImageGenerationModel[]> = {};
 	for (const model of models) {
 		const vendor = model.provider ?? 'other';
@@ -987,6 +1028,7 @@ export const isProxyModel = (model: ImageGenerationModel): boolean => model.host
 ```
 npm run test -- images-dropdown.test.ts
 ```
+
 Expected: `3 passed`。
 
 - [ ] **Step 5: Prettier 格式检查**
@@ -994,6 +1036,7 @@ Expected: `3 passed`。
 ```
 npx prettier --check "src/lib/utils/images-dropdown.ts" "src/lib/utils/images-dropdown.test.ts"
 ```
+
 Expected: `All matched files use Prettier code style!`。
 
 - [ ] **Step 6: 类型检查**
@@ -1001,6 +1044,7 @@ Expected: `All matched files use Prettier code style!`。
 ```
 npx svelte-check --tsconfig ./tsconfig.json --threshold error --output machine 2>&1 | grep "images-dropdown" || echo "no diagnostics"
 ```
+
 Expected: `no diagnostics`。
 
 ---
@@ -1008,10 +1052,12 @@ Expected: `no diagnostics`。
 ## Task 9: Images.svelte 模型下拉改两级菜单 + 单张隐藏张数 + proxy tooltip
 
 **Files:**
+
 - Modify: `src/lib/components/images/Images.svelte`(模型选择器 893-931 区域;张数触发按钮 958-961;张数 section 1056-1079)
 - Test: `src/lib/components/images/Images.test.ts`(扩,若存在;否则靠手动验收)
 
 **Interfaces:**
+
 - Consumes: Task 8 的 `groupByVendor`/`vendorLogoUrl`/`isProxyModel`;Task 7 的 `ImageGenerationModel.hosting`。
 - Produces: 两级菜单 UI(左品牌+logo / 右模型,窄屏上下堆叠);单张模型隐藏张数;proxy tooltip。
 
@@ -1022,26 +1068,26 @@ Expected: `no diagnostics`。
 在 `Images.svelte` `<script>` 顶部 import 区(34 行附近)加:
 
 ```typescript
-	import { groupByVendor, vendorLogoUrl, isProxyModel } from '$lib/utils/images-dropdown';
+import { groupByVendor, vendorLogoUrl, isProxyModel } from '$lib/utils/images-dropdown';
 ```
 
 在状态变量区(`let showModelSelector = false;` 附近,64 行)加:
 
 ```typescript
-	let selectedVendor = '';
+let selectedVendor = '';
 ```
 
 在 reactive 区(`$: view = ...` 附近)加:
 
 ```typescript
-	$: vendorGroups = groupByVendor(models);
-	$: vendorList = Object.keys(vendorGroups).sort((a, b) =>
-		a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)
-	);
-	$: if (selectedVendor === '' && vendorList.length > 0) {
-		selectedVendor = vendorList[0];
-	}
-	$: vendorModels = vendorGroups[selectedVendor] ?? [];
+$: vendorGroups = groupByVendor(models);
+$: vendorList = Object.keys(vendorGroups).sort((a, b) =>
+	a === 'other' ? 1 : b === 'other' ? -1 : a.localeCompare(b)
+);
+$: if (selectedVendor === '' && vendorList.length > 0) {
+	selectedVendor = vendorList[0];
+}
+$: vendorModels = vendorGroups[selectedVendor] ?? [];
 ```
 
 - [ ] **Step 2: 改造模型下拉为两级菜单**
@@ -1056,16 +1102,29 @@ Expected: `no diagnostics`。
 		aria-label={$i18n.t('Select a model')}
 	>
 		<!-- 品牌级(左/上)-->
-		<ul class="flex snap-x snap-mandatory gap-1 overflow-x-auto sm:w-40 sm:flex-col sm:overflow-visible sm:border-r sm:border-gray-100 sm:pr-1 dark:sm:border-gray-800" role="group" aria-label={$i18n.t('Brands')}>
+		<ul
+			class="flex snap-x snap-mandatory gap-1 overflow-x-auto sm:w-40 sm:flex-col sm:overflow-visible sm:border-r sm:border-gray-100 sm:pr-1 dark:sm:border-gray-800"
+			role="group"
+			aria-label={$i18n.t('Brands')}
+		>
 			{#each vendorList as vendor}
 				<li class="snap-start">
 					<button
 						type="button"
-						class="flex w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor === vendor ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+						class="flex w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor ===
+						vendor
+							? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+							: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
 						on:click={() => (selectedVendor = vendor)}
 						aria-pressed={selectedVendor === vendor}
 					>
-						<img src={vendorLogoUrl(vendor)} alt={vendor} class="size-4 rounded-sm" loading="lazy" decoding="async" />
+						<img
+							src={vendorLogoUrl(vendor)}
+							alt={vendor}
+							class="size-4 rounded-sm"
+							loading="lazy"
+							decoding="async"
+						/>
 						<span class="capitalize">{vendor}</span>
 					</button>
 				</li>
@@ -1077,7 +1136,10 @@ Expected: `no diagnostics`。
 				<li>
 					<button
 						type="button"
-						class="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedModel === model.id ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+						class="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedModel ===
+						model.id
+							? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+							: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
 						on:click={() => selectModel(model.id)}
 						role="option"
 						aria-selected={selectedModel === model.id}
@@ -1085,7 +1147,9 @@ Expected: `no diagnostics`。
 						<span class="truncate">{model.name ?? model.id}</span>
 						{#if isProxyModel(model)}
 							<Tooltip content={$i18n.t('First image may be slower')}>
-								<span class="shrink-0 text-xs text-gray-400 dark:text-gray-500" aria-hidden="true">⏱</span>
+								<span class="shrink-0 text-xs text-gray-400 dark:text-gray-500" aria-hidden="true"
+									>⏱</span
+								>
 							</Tooltip>
 						{/if}
 					</button>
@@ -1109,6 +1173,7 @@ Expected: `no diagnostics`。
 ```
 npx svelte-check --tsconfig ./tsconfig.json --threshold error --output machine 2>&1 | grep "images/Images.svelte" || echo "no diagnostics in Images.svelte"
 ```
+
 Expected: `no diagnostics in Images.svelte`。
 
 - [ ] **Step 5: Prettier 格式检查**
@@ -1116,6 +1181,7 @@ Expected: `no diagnostics in Images.svelte`。
 ```
 npx prettier --check "src/lib/components/images/Images.svelte"
 ```
+
 Expected: `All matched files use Prettier code style!`。
 
 - [ ] **Step 6: 既有前端测试不回归**
@@ -1123,6 +1189,7 @@ Expected: `All matched files use Prettier code style!`。
 ```
 npm run test -- Images.test.ts
 ```
+
 Expected: 既有用例全部 passed(若 Images.test.ts 不存在则跳过,记为 N/A)。
 
 ---
@@ -1130,11 +1197,13 @@ Expected: 既有用例全部 passed(若 Images.test.ts 不存在则跳过,记为
 ## Task 10: i18n 新增键(zh-CN 补齐,en-US 空串)
 
 **Files:**
+
 - Modify: `src/lib/i18n/locales/zh-CN/translation.json`
 - Modify: `src/lib/i18n/locales/en-US/translation.json`
 - Test: 手动 + 现有 i18n 测试不回归
 
 **Interfaces:**
+
 - Produces: `Brands`/`Models`/`Select a model`/`First image may be slower` 的 zh-CN 翻译;en-US 空串回落。
 
 - [ ] **Step 1: zh-CN 加键**
@@ -1166,6 +1235,7 @@ Expected: 既有用例全部 passed(若 Images.test.ts 不存在则跳过,记为
 ```
 npx prettier --check "src/lib/i18n/locales/zh-CN/translation.json" "src/lib/i18n/locales/en-US/translation.json"
 ```
+
 Expected: `All matched files use Prettier code style!`。
 
 - [ ] **Step 4: 既有 i18n 测试不回归**
@@ -1173,6 +1243,7 @@ Expected: `All matched files use Prettier code style!`。
 ```
 npm run test -- i18n
 ```
+
 Expected: 既有用例 passed(若无 i18n 专项测试则跳过)。
 
 ---
@@ -1180,9 +1251,11 @@ Expected: 既有用例 passed(若无 i18n 专项测试则跳过)。
 ## Task 11: 13 篇 fal 接口文档归档
 
 **Files:**
+
 - Create: `docs/fal/alibaba/qwen-image.md`、`qwen-image-2512.md`、`qwen-image-2512-lora.md`、`z-image-base.md`、`qwen-image-2.md`、`qwen-image-2-pro.md`、`qwen-image-max.md`、`wan-2.2-5b.md`、`wan-2.2-a14b.md`、`wan-2.6.md`、`wan-2.7.md`、`wan-2.7-pro.md`、`wan-2.5-preview.md`
 
 **Interfaces:**
+
 - Consumes: 每条对应的 `https://fal.ai/models/<id>/llms.txt`(已在 Temp 缓存,见 findings)。
 
 - [ ] **Step 1: 为每条模型新建文档**
@@ -1200,6 +1273,7 @@ Expected: 既有用例 passed(若无 i18n 专项测试则跳过)。
 ```
 grep -rE "TBD|TODO|占位" docs/fal/alibaba/ || echo "no placeholders"
 ```
+
 Expected: `no placeholders`。
 
 ---
@@ -1213,6 +1287,7 @@ Expected: `no placeholders`。
 > **实际录入已完成**,走的是 spec §4.4 的主线路径:经管理后台逐条 `POST /api/v1/credits/admin/prices`,13 条定价全部入库(`service_type=image`、`action=text-to-image`、`enabled=true`),经只读对账 0 mismatch。
 >
 > **该脚本被弃用的客观原因**(供未来回顾,勿再蹈辙):
+>
 > 1. `CreditPrice` 表的 `id` / `created_at` / `updated_at` 三列为 `nullable=False` 且无 `server_default`,credits 代码内**无任何 `before_insert` ORM 钩子**为其兜底;脚本构造 `CreditPrice(...)` 时遗漏这三列,flush 时必然 `IntegrityError`,整个 `session.begin()` 事务回滚,一条都进不去。Task 12 当年仅以 `compileall` + AST 静态校验宣告 DONE,未能揭示此运行期缺陷。
 > 2. `ExactMapRule.values` 要求 `dict[str, PositivePrice]`,后者经 `BeforeValidator(parse_decimal_string)` 仅接受字符串形态的价格;脚本中以裸整数 `4` 充当 value 会被后端 422 拒绝。
 > 3. 脚本不带存在性检查,与 `uq_ext_credit_price_service` 唯一约束结合后不具备幂等性,重复执行会产生 409/回滚。
@@ -1220,9 +1295,11 @@ Expected: `no placeholders`。
 > 如未来确需批量种子能力,应以"调用管理路由"的形式重写(让路由自动填补 id/时间戳/审计字段并处理冲突),切勿沿袭本任务的直接 `session.add` 范式。
 
 **Files:**
+
 - Create: `backend/open_webui/extensions/credits/seed_alibaba_prices.py`
 
 **Interfaces:**
+
 - Produces: 13 条 `CreditPrice` 的 seed 脚本,供管理员一次性导入(非自动运行;需 admin 手动执行)。
 
 > 本任务**可选**。若用户倾向管理后台逐条手录,可跳过本任务。
@@ -1314,6 +1391,7 @@ if __name__ == '__main__':
 ```
 python -m compileall backend/open_webui/extensions/credits/seed_alibaba_prices.py
 ```
+
 Expected: 无输出。
 
 - [ ] **Step 3: 验证 PRICES 清单与 spec §4 一致**
@@ -1321,6 +1399,7 @@ Expected: 无输出。
 ```
 python -c "from open_webui.extensions.credits.seed_alibaba_prices import PRICES; print(len(PRICES))"
 ```
+
 Expected: `13`。
 
 > 注意:此脚本不自动运行,需 admin 在部署环境手动执行。录制后应在管理后台或 `/api/v1/credits/admin/prices` 核对 13 条已存在。
@@ -1337,6 +1416,7 @@ Expected: `13`。
 cd D:\code\github\open-webui-main
 python -m pytest backend/open_webui/utils/images/test_fal_models.py backend/open_webui/utils/images/test_fal.py backend/open_webui/extensions/credits/tests/test_public_image_models.py -q
 ```
+
 Expected: 全部 passed,0 failures。
 
 - [ ] **Step 2: credits 全套不回归**
@@ -1344,6 +1424,7 @@ Expected: 全部 passed,0 failures。
 ```
 python -m pytest backend/open_webui/extensions/credits/tests/ -q
 ```
+
 Expected: 全部 passed(预期 547 passed / 8 skipped 量级,以实际基线为准)。
 
 - [ ] **Step 3: Python 编译检查**
@@ -1351,6 +1432,7 @@ Expected: 全部 passed(预期 547 passed / 8 skipped 量级,以实际基线为�
 ```
 python -m compileall backend/open_webui/utils/images/fal_models.py backend/open_webui/utils/images/fal.py backend/open_webui/extensions/credits/seed_alibaba_prices.py
 ```
+
 Expected: 无输出。
 
 > ℹ️ 【2026-07-25 更新】`seed_alibaba_prices.py` 已删除,执行时应将该文件名从命令中去掉,仅编译 `fal_models.py` 与 `fal.py` 两项。
@@ -1360,6 +1442,7 @@ Expected: 无输出。
 ```
 npm run test -- image-generation images-dropdown
 ```
+
 Expected: 全部 passed。
 
 - [ ] **Step 5: 前端类型检查(改动文件 0 诊断)**
@@ -1367,6 +1450,7 @@ Expected: 全部 passed。
 ```
 npx svelte-check --tsconfig ./tsconfig.json --threshold error --output machine 2>&1 | grep -E "images.Images.svelte|image-generation.ts|images-dropdown" || echo "no diagnostics in changed files"
 ```
+
 Expected: `no diagnostics in changed files`(全量既有错误不计)。
 
 - [ ] **Step 6: Prettier**
@@ -1374,6 +1458,7 @@ Expected: `no diagnostics in changed files`(全量既有错误不计)。
 ```
 npx prettier --check "src/lib/utils/images-dropdown.ts" "src/lib/utils/images-dropdown.test.ts" "src/lib/utils/image-generation.ts" "src/lib/utils/image-generation.test.ts" "src/lib/components/images/Images.svelte" "src/lib/i18n/locales/zh-CN/translation.json" "src/lib/i18n/locales/en-US/translation.json"
 ```
+
 Expected: `All matched files use Prettier code style!`。
 
 - [ ] **Step 7: git diff 格式检查**
@@ -1381,6 +1466,7 @@ Expected: `All matched files use Prettier code style!`。
 ```
 git diff --check
 ```
+
 Expected: 无输出(无行尾空白/冲突标记)。
 
 - [ ] **Step 8: 报告**
@@ -1399,7 +1485,8 @@ Expected: 无输出(无行尾空白/冲突标记)。
 
 - [ ] **Step 2: 桌面端验收**
 
-访问 `/images`,登录管理员(292591116@qq.com):
+访问 `/images`，使用本地测试管理员账号登录（凭据从开发环境安全配置读取，不写入仓库）：
+
 - 点击模型按钮,下拉为两级菜单:左栏品牌(Alibaba 带 logo),右栏该品牌模型。
 - 点 Alibaba → 右栏出现 13 条新模型 + z-image-turbo。
 - 选 `Wan 2.2 (5B)` → 张数选择器消失(单张)。
@@ -1411,6 +1498,7 @@ Expected: 无输出(无行尾空白/冲突标记)。
 - [ ] **Step 3: 移动端窄屏验收**
 
 DevTools 切到 375px 宽:
+
 - 下拉两级菜单变为上下堆叠:品牌栏在上(横向滚动 chips),模型栏在下。
 - 品牌芯片可横向滑动选择,模型栏随之切换。
 - 张数选择器、proxy tooltip 在窄屏下可见且不溢出。
@@ -1428,6 +1516,7 @@ DevTools 切到 375px 宽:
 ## Self-Review
 
 **1. Spec coverage:**
+
 - §3.1 13 条清单 → Task 3(EXPECTED_NEW_MODELS 表逐一对应)✅
 - §3.2 三模板 → Task 1(A)/Task 2(B,C)✅
 - §3.3 FAL_ALIBABA_NAMED_SIZES → Task 1 ✅
@@ -1447,6 +1536,7 @@ DevTools 切到 375px 宽:
 **2. Placeholder scan:** 已扫,无 TBD/TODO/"适当处理";每步含全代码或确切命令。Task 11 文档生成依赖 llms.txt 缓存读取,给出了确切路径与体例参照,非占位。
 
 **3. Type consistency:**
+
 - `hosting` 在 Task 5(后端 white-list)→ Task 7(TS 类型)→ Task 8(isProxyModel)→ Task 9(渲染)贯穿一致 ✅
 - `count_field`/`image_counts` 在 Task 2(模板)→ Task 3(注册)→ Task 6(payload)一致 ✅
 - `FAL_ALIBABA_NAMED_SIZES` 在 Task 1(定义)→ Task 2/3(引用)一致 ✅

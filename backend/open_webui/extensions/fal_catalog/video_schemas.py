@@ -158,8 +158,7 @@ class VideoIntegerField(_StrictModel):
         if self.min is not None and self.max is not None and self.min > self.max:
             raise ValueError('video integer minimum must not exceed maximum')
         if self.default is not None and (
-            (self.min is not None and self.default < self.min)
-            or (self.max is not None and self.default > self.max)
+            (self.min is not None and self.default < self.min) or (self.max is not None and self.default > self.max)
         ):
             raise ValueError('video integer default must be within range')
         return self
@@ -186,8 +185,7 @@ class VideoNumberField(_StrictModel):
         if self.min is not None and self.max is not None and self.min > self.max:
             raise ValueError('video number minimum must not exceed maximum')
         if self.default is not None and (
-            (self.min is not None and self.default < self.min)
-            or (self.max is not None and self.default > self.max)
+            (self.min is not None and self.default < self.min) or (self.max is not None and self.default > self.max)
         ):
             raise ValueError('video number default must be within range')
         return self
@@ -205,6 +203,29 @@ class VideoTextField(_StrictModel):
         if value is not None and _FIELD_PATTERN.fullmatch(value) is None:
             raise ValueError('video text fields must use lowercase snake_case')
         return value
+
+
+class VideoJsonField(_StrictModel):
+    field: str = Field(min_length=1)
+    source: str | None = Field(default=None, min_length=1)
+    required: bool = False
+    primary_input: bool = False
+    max_length: int = Field(default=20000, ge=2, le=100000)
+    advanced: bool = True
+    format: Literal['json'] = 'json'
+
+    @field_validator('field', 'source')
+    @classmethod
+    def validate_field(cls, value: str | None) -> str | None:
+        if value is not None and _FIELD_PATTERN.fullmatch(value) is None:
+            raise ValueError('video JSON fields must use lowercase snake_case')
+        return value
+
+    @model_validator(mode='after')
+    def validate_primary_input(self) -> VideoJsonField:
+        if self.primary_input and not self.required:
+            raise ValueError('primary JSON inputs must be required')
+        return self
 
 
 class FalVideoModelDefinition(_StrictModel):
@@ -234,6 +255,7 @@ class FalVideoModelDefinition(_StrictModel):
     integer_fields: list[VideoIntegerField] | None = None
     number_fields: list[VideoNumberField] | None = None
     text_fields: list[VideoTextField] | None = None
+    json_fields: list[VideoJsonField] | None = None
     fixed_fields: dict[str, bool | str | int | float | None] = Field(default_factory=dict)
     output_field: str = Field(default='video', min_length=1)
     output_mime_types: list[str] = Field(default_factory=lambda: ['video/mp4'], min_length=1)
@@ -292,9 +314,8 @@ class FalVideoModelDefinition(_StrictModel):
                 default_duration = float(self.default_duration)
             except ValueError as error:
                 raise ValueError('range video duration default must be numeric') from error
-            if (
-                (self.duration_min is not None and default_duration < self.duration_min)
-                or (self.duration_max is not None and default_duration > self.duration_max)
+            if (self.duration_min is not None and default_duration < self.duration_min) or (
+                self.duration_max is not None and default_duration > self.duration_max
             ):
                 raise ValueError('default video duration must be within range')
         for label, default, options in (
@@ -320,7 +341,8 @@ class FalVideoModelDefinition(_StrictModel):
             'image-to-video': 'start_image',
             'video-to-video': 'source_video',
         }.get(self.task)
-        if expected is not None and expected not in required_roles:
+        has_primary_json_input = any(field.required and field.primary_input for field in self.json_fields or ())
+        if expected is not None and expected not in required_roles and not has_primary_json_input:
             raise ValueError(f'{self.task} models must require {expected}')
         dynamic_fields = [
             field.field
@@ -330,6 +352,7 @@ class FalVideoModelDefinition(_StrictModel):
                 self.integer_fields,
                 self.number_fields,
                 self.text_fields,
+                self.json_fields,
             )
             if group is not None
             for field in group

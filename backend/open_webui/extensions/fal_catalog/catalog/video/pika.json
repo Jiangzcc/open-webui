@@ -1,0 +1,275 @@
+[
+	{
+		"id": "fal-ai/pika/v2/turbo/image-to-video",
+		"public_id": "pika/v2/turbo/image-to-video",
+		"name": "Pika / V2 Turbo Image",
+		"provider": "pika",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"durations": ["5"],
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pika/v2/turbo/text-to-video",
+		"public_id": "pika/v2/turbo/text-to-video",
+		"name": "Pika / V2 Turbo Text",
+		"provider": "pika",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16", "1:1", "4:5", "5:4", "3:2", "2:3"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"durations": ["5"],
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pika/v2.1/image-to-video",
+		"public_id": "pika/v2.1/image-to-video",
+		"name": "Pika / V2.1 Image",
+		"provider": "pika",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"durations": ["5"],
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pika/v2.1/text-to-video",
+		"public_id": "pika/v2.1/text-to-video",
+		"name": "Pika / V2.1 Text",
+		"provider": "pika",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16", "1:1", "4:5", "5:4", "3:2", "2:3"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"durations": ["5"],
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pika/v2.2/image-to-video",
+		"public_id": "pika/v2.2/image-to-video",
+		"name": "Pika / V2.2 Image",
+		"provider": "pika",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"durations": ["5", "10"],
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pika/v2.2/pikaframes",
+		"public_id": "pika/v2.2/pikaframes",
+		"name": "Pika / V2.2 Pikaframes",
+		"provider": "pika",
+		"task": "image-to-video",
+		"prompt_required": false,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_urls",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280,
+				"multiple": true,
+				"max_count": 4,
+				"max_total_bytes": 125829120
+			}
+		],
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "720p",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		],
+		"json_fields": [
+			{
+				"field": "transitions",
+				"required": false
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pika/v2.2/pikascenes",
+		"public_id": "pika/v2.2/pikascenes",
+		"name": "Pika / V2.2 Pikascenes",
+		"provider": "pika",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_urls",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280,
+				"multiple": true,
+				"max_count": 4,
+				"max_total_bytes": 125829120
+			}
+		],
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16", "1:1", "4:5", "5:4", "3:2", "2:3"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["720p", "1080p"],
+		"default_resolution": "1080p",
+		"duration_field": "duration",
+		"durations": ["5", "10"],
+		"default_duration": "5",
+		"option_fields": [
+			{
+				"field": "ingredients_mode",
+				"options": ["precise", "creative"],
+				"default": "precise"
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pika/v2.2/text-to-video",
+		"public_id": "pika/v2.2/text-to-video",
+		"name": "Pika / V2.2 Text",
+		"provider": "pika",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "9:16", "1:1", "4:5", "5:4", "3:2", "2:3"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["1080p", "720p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"durations": ["5", "10"],
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	}
+]

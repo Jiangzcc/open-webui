@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile
 
 log = logging.getLogger(__name__)
+upload_file_handler = None  # lazily bound; tests replace this module-level seam
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 _MOCK_VIDEO_PATH = _REPOSITORY_ROOT / 'static' / 'assets' / 'welcome.mp4'
@@ -243,7 +244,11 @@ async def _upload_mock_file(
     filename: str,
     content_type: str,
 ):
-    from open_webui.routers.files import upload_file_handler
+    global upload_file_handler
+    if upload_file_handler is None:
+        from open_webui.routers.files import upload_file_handler as upstream_upload_file_handler
+
+        upload_file_handler = upstream_upload_file_handler
 
     payload = await asyncio.to_thread(source.read_bytes)
     return await upload_file_handler(

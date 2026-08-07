@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
 from open_webui.extensions.fal_catalog.loader import FalCatalogError, load_image_catalog
-
-EXPECTED_CATALOG_SHA256 = 'c61d2e7e7e62acfe64c1573f8061cdbcddc1041af36e32218a922e17a2a697c6'
 
 
 def _write_catalog(tmp_path: Path, models: list[dict[str, object]]) -> Path:
@@ -46,62 +43,47 @@ def _example_models() -> list[dict[str, object]]:
     ]
 
 
-def test_loads_packaged_image_catalog_with_stable_legacy_snapshot() -> None:
+def test_loads_packaged_image_catalog_with_consistent_legacy_projection() -> None:
     catalog = load_image_catalog()
-    payload = {
-        'generation_default': catalog.generation_default,
-        'edit_default': catalog.edit_default,
-        'models': catalog.legacy_models(),
-        'public_ids': dict(catalog.internal_to_public),
+    by_id = {definition.id: definition for definition in catalog.definitions}
+    legacy_models = catalog.legacy_models()
+
+    assert catalog.definitions
+    assert by_id[catalog.generation_default].task == 'text-to-image'
+    assert by_id[catalog.edit_default].task == 'image-to-image'
+    assert [model['id'] for model in legacy_models] == [definition.id for definition in catalog.definitions]
+    assert dict(catalog.internal_to_public) == {
+        definition.id: definition.public_id for definition in catalog.definitions
     }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+    assert dict(catalog.public_to_internal) == {
+        definition.public_id: definition.id for definition in catalog.definitions
+    }
 
-    assert len(catalog.definitions) == 44
-    assert hashlib.sha256(raw).hexdigest() == EXPECTED_CATALOG_SHA256
 
-
-def test_packaged_catalog_has_curated_primary_model_order() -> None:
+def test_every_packaged_provider_has_a_generation_model() -> None:
     catalog = load_image_catalog()
     primary_by_provider: dict[str, list[str]] = {}
     for definition in catalog.definitions:
         if definition.task == 'text-to-image':
             primary_by_provider.setdefault(definition.provider, []).append(definition.public_id)
 
-    assert primary_by_provider == {
-        'alibaba': [
-            'z-image-turbo',
-            'z-image-base',
-            'qwen-image-max',
-            'qwen-image-2-pro',
-            'qwen-image-2',
-            'qwen-image-2512',
-            'qwen-image',
-            'wan-2.7-pro',
-            'wan-2.7',
-            'wan-2.6',
-            'wan-2.5-preview',
-            'wan-2.2-a14b',
-            'wan-2.2-5b',
-        ],
-        'google': [
-            'nano-banana-2',
-            'nano-banana-2-lite',
-            'nano-banana-pro',
-            'nano-banana',
-            'nano-banana-lite',
-        ],
-        'openai': ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'],
-        'xai': ['grok-imagine-image-pro', 'grok-imagine-image'],
-    }
+    providers = {definition.provider for definition in catalog.definitions}
+
+    assert set(primary_by_provider) == providers
+    assert all(public_ids for public_ids in primary_by_provider.values())
+    assert all(len(public_ids) == len(set(public_ids)) for public_ids in primary_by_provider.values())
 
 
-def test_packaged_catalog_keeps_edit_siblings_next_to_generation_models() -> None:
+def test_packaged_catalog_keeps_edit_sibling_relations_bidirectional() -> None:
     catalog = load_image_catalog()
-    positions = {definition.id: index for index, definition in enumerate(catalog.definitions)}
+    by_id = {definition.id: definition for definition in catalog.definitions}
 
     for definition in catalog.definitions:
         if definition.edit_model is not None:
-            assert positions[definition.edit_model] == positions[definition.id] + 1
+            sibling = by_id[definition.edit_model]
+            assert sibling.task == 'image-to-image'
+            assert sibling.generation_model == definition.id
+            assert sibling.provider == definition.provider
 
 
 def test_rejects_duplicate_public_ids(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@
 		"name": "Kling Video V3 Pro",
 		"provider": "kling",
 		"task": "text-to-video",
+		"prompt_required": false,
 		"duration_field": "duration",
 		"durations": ["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
 		"default_duration": "5",
@@ -27,7 +28,8 @@
 		"number_fields": [
 			{ "field": "cfg_scale", "min": 0, "max": 1, "step": 0.1, "default": 0.5, "advanced": true }
 		],
-		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }]
+		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }],
+		"json_fields": [{ "field": "multi_prompt" }]
 	},
 	{
 		"id": "fal-ai/kling-video/v3/pro/image-to-video",
@@ -35,6 +37,7 @@
 		"name": "Kling Video V3 Pro Image",
 		"provider": "kling",
 		"task": "image-to-video",
+		"prompt_required": false,
 		"duration_field": "duration",
 		"durations": ["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
 		"default_duration": "5",
@@ -69,7 +72,8 @@
 		"number_fields": [
 			{ "field": "cfg_scale", "min": 0, "max": 1, "step": 0.1, "default": 0.5, "advanced": true }
 		],
-		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }]
+		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }],
+		"json_fields": [{ "field": "multi_prompt" }, { "field": "elements" }]
 	},
 	{
 		"id": "fal-ai/kling-video/o3/pro/video-to-video/edit",
@@ -102,7 +106,8 @@
 				"max_total_bytes": 125829120
 			}
 		],
-		"fixed_fields": { "shot_type": "customize" }
+		"fixed_fields": { "shot_type": "customize" },
+		"json_fields": [{ "field": "elements" }]
 	},
 	{
 		"id": "fal-ai/kling-video/v3/standard/text-to-video",
@@ -110,6 +115,7 @@
 		"name": "Kling Video V3 Standard",
 		"provider": "kling",
 		"task": "text-to-video",
+		"prompt_required": false,
 		"duration_field": "duration",
 		"durations": ["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
 		"default_duration": "5",
@@ -132,7 +138,8 @@
 		"number_fields": [
 			{ "field": "cfg_scale", "min": 0, "max": 1, "step": 0.1, "default": 0.5, "advanced": true }
 		],
-		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }]
+		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }],
+		"json_fields": [{ "field": "multi_prompt" }]
 	},
 	{
 		"id": "fal-ai/kling-video/v3/standard/image-to-video",
@@ -140,6 +147,7 @@
 		"name": "Kling Video V3 Standard Image",
 		"provider": "kling",
 		"task": "image-to-video",
+		"prompt_required": false,
 		"duration_field": "duration",
 		"durations": ["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
 		"default_duration": "5",
@@ -174,7 +182,8 @@
 		"number_fields": [
 			{ "field": "cfg_scale", "min": 0, "max": 1, "step": 0.1, "default": 0.5, "advanced": true }
 		],
-		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }]
+		"text_fields": [{ "field": "negative_prompt", "max_length": 2500, "advanced": true }],
+		"json_fields": [{ "field": "multi_prompt" }, { "field": "elements" }]
 	},
 	{
 		"id": "fal-ai/kling-video/v3/turbo/pro/text-to-video",
@@ -182,12 +191,14 @@
 		"name": "Kling Video V3 Turbo Pro",
 		"provider": "kling",
 		"task": "text-to-video",
+		"prompt_required": false,
 		"duration_field": "duration",
 		"durations": ["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
 		"default_duration": "5",
 		"aspect_ratio_field": "aspect_ratio",
 		"aspect_ratios": ["16:9", "9:16", "1:1"],
-		"default_aspect_ratio": "16:9"
+		"default_aspect_ratio": "16:9",
+		"json_fields": [{ "field": "multi_prompt" }]
 	},
 	{
 		"id": "fal-ai/kling-video/v3/turbo/pro/image-to-video",
@@ -195,18 +206,20 @@
 		"name": "Kling Video V3 Turbo Pro Image",
 		"provider": "kling",
 		"task": "image-to-video",
+		"prompt_required": false,
 		"duration_field": "duration",
 		"durations": ["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"],
 		"default_duration": "5",
 		"asset_inputs": [
 			{
 				"role": "start_image",
-				"field": "start_image_url",
+				"field": "image_url",
 				"required": true,
 				"mime_types": ["image/jpeg", "image/png", "image/webp"],
 				"max_bytes": 31457280
 			}
-		]
+		],
+		"json_fields": [{ "field": "multi_prompt" }]
 	},
 	{
 		"id": "fal-ai/kling-video/o3/standard/video-to-video/edit",
@@ -239,6 +252,7 @@
 				"max_total_bytes": 125829120
 			}
 		],
-		"fixed_fields": { "shot_type": "customize" }
+		"fixed_fields": { "shot_type": "customize" },
+		"json_fields": [{ "field": "elements" }]
 	}
 ]

@@ -166,6 +166,7 @@ const DEFAULT_IMAGE_ASPECT_RATIO_SIZES: Record<ImageAspectRatio, string | undefi
 	'4:3': '1024x768',
 	'3:2': '1536x1024',
 	'2:3': '1024x1536',
+	'2.35:1': '1536x654',
 	'21:9': '1536x640',
 	'2:1': '1536x768',
 	'1:2': '768x1536',
@@ -369,18 +370,21 @@ const normalizePresetSizes = (value: unknown): string[] => {
 		});
 };
 
-export type CustomSizeValidationError = { field: 'width' | 'height' | 'pixels' | 'aspect'; message: string };
+export type CustomSizeValidationError = {
+	field: 'width' | 'height' | 'pixels' | 'aspect';
+	message: string;
+};
 
 export const validateCustomSize = (
 	width: number,
 	height: number,
 	constraints?: CustomSizeConstraints
 ): CustomSizeValidationError | null => {
-	if (!constraints) {
-		return null;
-	}
 	if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
 		return { field: 'width', message: '宽高必须是正整数' };
+	}
+	if (!constraints) {
+		return null;
 	}
 	if (constraints.minWidth !== undefined && width < constraints.minWidth) {
 		return { field: 'width', message: `宽度不能小于 ${constraints.minWidth}` };
@@ -394,7 +398,10 @@ export const validateCustomSize = (
 	if (constraints.maxHeight !== undefined && height > constraints.maxHeight) {
 		return { field: 'height', message: `高度不能大于 ${constraints.maxHeight}` };
 	}
-	if (constraints.multipleOf !== undefined && (width % constraints.multipleOf || height % constraints.multipleOf)) {
+	if (
+		constraints.multipleOf !== undefined &&
+		(width % constraints.multipleOf || height % constraints.multipleOf)
+	) {
 		return { field: 'width', message: `宽高必须是 ${constraints.multipleOf} 的倍数` };
 	}
 	const pixels = width * height;

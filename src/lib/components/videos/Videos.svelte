@@ -98,7 +98,8 @@
 				...(selectedModel.boolean_fields ?? []),
 				...(selectedModel.integer_fields ?? []),
 				...(selectedModel.number_fields ?? []),
-				...(selectedModel.text_fields ?? [])
+				...(selectedModel.text_fields ?? []),
+				...(selectedModel.json_fields ?? [])
 			].filter((field) => field.advanced)
 		: [];
 	$: durationChoices = (() => {
@@ -210,6 +211,8 @@
 				? $i18n.t('Match source duration')
 				: `${value}s`;
 
+	const videoRequestErrorMessage = (fallback: string) => $i18n.t(fallback);
+
 	const resetForModel = (model: VideoModel | null) => {
 		params = {};
 		assets = {};
@@ -294,8 +297,8 @@
 			}
 			history = tasks.items;
 			activeTask = tasks.items.find((item) => item.result) ?? tasks.items[0] ?? null;
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : String(error));
+		} catch {
+			toast.error(videoRequestErrorMessage('Failed to load video generation'));
 		} finally {
 			loading = false;
 		}
@@ -309,8 +312,8 @@
 		try {
 			const uploaded = await Promise.all(
 				selected.map(async (file) => {
-					if (!capability.mime_types.includes(file.type)) throw new Error('Unsupported file type');
-					if (file.size > capability.max_bytes) throw new Error('File is too large');
+					if (!capability.mime_types.includes(file.type)) throw new Error('unsupported_type');
+					if (file.size > capability.max_bytes) throw new Error('too_large');
 					const result = await uploadFile(
 						localStorage.token,
 						file,
@@ -331,7 +334,15 @@
 				[capability.role]: capability.multiple ? [...existing, ...uploaded] : uploaded
 			};
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : String(error));
+			toast.error(
+				videoRequestErrorMessage(
+					error instanceof Error && error.message === 'unsupported_type'
+						? 'Unsupported file type'
+						: error instanceof Error && error.message === 'too_large'
+							? 'File is too large'
+							: 'Failed to upload video asset'
+				)
+			);
 		}
 	};
 
@@ -356,8 +367,8 @@
 			} else {
 				toast.error($i18n.t('Video generation failed'));
 			}
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : String(error));
+		} catch {
+			toast.error(videoRequestErrorMessage('Failed to update video generation'));
 		}
 	};
 
@@ -370,6 +381,12 @@
 		for (const capability of selectedModel.asset_inputs ?? []) {
 			if (capability.required && !(assets[capability.role]?.length ?? 0)) {
 				toast.error(`${$i18n.t(assetLabels[capability.role])} ${$i18n.t('is required')}`);
+				return;
+			}
+		}
+		for (const field of selectedModel.json_fields ?? []) {
+			if (field.required && !String(fieldValue(field)).trim()) {
+				toast.error(`${$i18n.t(fieldKey(field).replaceAll('_', ' '))} ${$i18n.t('is required')}`);
 				return;
 			}
 		}
@@ -400,8 +417,8 @@
 			activeTask = created;
 			history = [created, ...history];
 			await pollTask(created.id);
-		} catch (error) {
-			toast.error(error instanceof Error ? error.message : String(error));
+		} catch {
+			toast.error(videoRequestErrorMessage('Video generation failed'));
 		} finally {
 			submitting = false;
 		}
@@ -455,6 +472,7 @@
 		<div
 			class="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-gray-700/80 dark:bg-gray-900/80 dark:shadow-black/30"
 			role="tablist"
+			tabindex="-1"
 			aria-label={$i18n.t('Videos')}
 		>
 			{#each [['generate', 'Create art'], ['mine', 'My creations']] as tab}
@@ -462,7 +480,7 @@
 					type="button"
 					role="tab"
 					aria-selected={selection === tab[0]}
-					class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all {selection ===
+					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
 					tab[0]
 						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
 						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
@@ -475,7 +493,7 @@
 					type="button"
 					role="tab"
 					aria-selected={selection === 'all'}
-					class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all {selection ===
+					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
 					'all'
 						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
 						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
@@ -557,6 +575,7 @@
 					<div
 						class="mb-2 flex gap-1 overflow-x-auto pb-0.5 pr-36 sm:pr-48"
 						role="tablist"
+						tabindex="-1"
 						aria-label={$i18n.t('Video mode')}
 					>
 						{#each taskOptions as option}
@@ -564,7 +583,7 @@
 								type="button"
 								role="tab"
 								aria-selected={task === option.id}
-								class="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition {task ===
+								class="min-h-11 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition sm:min-h-0 {task ===
 								option.id
 									? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
 									: 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}"
@@ -589,7 +608,7 @@
 							>
 								<button
 									type="button"
-									class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-[10px] border border-gray-200/90 bg-white/95 px-2 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-xl transition hover:bg-white dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-200 dark:hover:bg-gray-900"
+									class="inline-flex min-h-11 min-w-0 max-w-full items-center gap-2 rounded-[10px] border border-gray-200/90 bg-white/95 px-2 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-xl transition hover:bg-white sm:h-8 sm:min-h-0 dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-200 dark:hover:bg-gray-900"
 								>
 									<svg
 										class="size-4 shrink-0"
@@ -619,7 +638,7 @@
 										{#each modelVendors as vendor}
 											<button
 												type="button"
-												class="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm transition {vendor ===
+												class="flex min-h-11 w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm transition sm:min-h-9 {vendor ===
 												selectedVendor
 													? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
 													: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
@@ -635,7 +654,7 @@
 										{#each vendorModels as model}
 											<button
 												type="button"
-												class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition {model.id ===
+												class="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition sm:min-h-9 {model.id ===
 												modelId
 													? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
 													: model.enabled === false
@@ -738,7 +757,7 @@
 												</div>
 												<button
 													type="button"
-													class="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-white/90 text-sm text-gray-600 shadow-sm transition hover:text-gray-950 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:text-white"
+													class="absolute right-1 top-1 flex size-11 items-center justify-center rounded-full bg-white/90 text-sm text-gray-600 shadow-sm transition hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-8 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:text-white"
 													aria-label={$i18n.t('Remove')}
 													on:click={() => removeAsset(role as VideoAssetRole, item.id)}>×</button
 												>
@@ -863,16 +882,32 @@
 										<section class="border-t border-gray-100 pt-3 dark:border-gray-800">
 											<button
 												type="button"
-												class="rounded-lg px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+												class="min-h-11 rounded-lg px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 sm:min-h-0 dark:hover:bg-gray-800"
 												aria-expanded={showAdvanced}
 												on:click={() => (showAdvanced = !showAdvanced)}
 												>{$i18n.t('Advanced')} {showAdvanced ? '↑' : '↓'}</button
 											>
 											{#if showAdvanced}<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-													{#each advancedFields as field}<div class="text-xs text-gray-500">
+													{#each advancedFields as field}<div
+															class="text-xs text-gray-500 {field.format === 'json'
+																? 'sm:col-span-2'
+																: ''}"
+														>
 															<span class="mb-1.5 block"
-																>{$i18n.t(fieldKey(field).replaceAll('_', ' '))}</span
-															>{#if field.options}<div class="flex flex-wrap gap-1.5">
+																>{$i18n.t(fieldKey(field).replaceAll('_', ' '))}{field.required
+																	? ' *'
+																	: ''}</span
+															>{#if field.format === 'json'}<textarea
+																	class="min-h-24 w-full resize-y rounded-xl bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900 outline-none dark:bg-gray-800 dark:text-gray-100"
+																	rows="4"
+																	value={String(fieldValue(field, params))}
+																	placeholder={$i18n.t('Enter a JSON array or object')}
+																	aria-label={$i18n.t(fieldKey(field).replaceAll('_', ' '))}
+																	on:input={(event) =>
+																		setAdvancedParam(field, event.currentTarget.value)}
+																></textarea>{:else if field.options}<div
+																	class="flex flex-wrap gap-1.5"
+																>
 																	{#each field.options as option}<button
 																			type="button"
 																			class="rounded-xl border px-3 py-2 text-xs {fieldValue(

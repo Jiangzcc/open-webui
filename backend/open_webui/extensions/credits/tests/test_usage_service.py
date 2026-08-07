@@ -372,6 +372,46 @@ async def test_usage_state_transitions_are_conditional_and_sanitize_results(serv
 
 
 @pytest.mark.asyncio
+async def test_user_cancellation_atomically_restores_prepaid_credits(service_database, monkeypatch) -> None:
+    user = await create_user(service_database, 'user-cancel')
+    await credit_user(service_database, user)
+    await add_price(service_database)
+    monkeypatch.setattr(credit_service, 'credit_session', lambda: credit_session_for_test(service_database))
+    async with service_database() as session:
+        result = await begin_image_usage(session, user, image_context(), 'cancel-key')
+
+    assert await mark_usage_invoking(result.usage.id) == 1
+    cancelled = SafeProviderError(
+        code='generation_cancelled',
+        summary='Image provider request failed',
+    )
+    assert await mark_usage_failed(result.usage.id, cancelled, restore_prepaid=True) == 1
+    # A repeated cancel cannot create another refund ledger row.
+    assert await mark_usage_failed(result.usage.id, cancelled, restore_prepaid=True) == 0
+
+    async with service_database() as session:
+        usage = await session.get(CreditUsage, result.usage.id)
+        account = await session.scalar(select(CreditAccount).where(CreditAccount.user_id == user.id))
+        ledgers = list(
+            (
+                await session.scalars(
+                    select(CreditLedger)
+                    .where(CreditLedger.usage_id == result.usage.id)
+                    .order_by(CreditLedger.created_at, CreditLedger.id)
+                )
+            ).all()
+        )
+
+    assert usage is not None and usage.status == 'failed'
+    assert usage.error_snapshot['code'] == 'generation_cancelled'
+    assert account is not None and account.balance == 10
+    assert sorted(ledger.amount for ledger in ledgers) == [-3, 3]
+    refund = next(ledger for ledger in ledgers if ledger.amount > 0)
+    assert refund.entry_type == 'system_adjustment'
+    assert refund.related_ledger_id == result.usage.ledger_id
+
+
+@pytest.mark.asyncio
 async def test_usage_state_updates_reject_external_urls_and_mark_stale_without_refund(
     service_database, monkeypatch
 ) -> None:

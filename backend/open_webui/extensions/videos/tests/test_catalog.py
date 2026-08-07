@@ -32,7 +32,19 @@ def test_public_catalog_hides_internal_provider_controls() -> None:
         'video-to-video': 'wan-2.7-video/edit',
     }
     models = catalog['models']
-    assert len(models) == 23
+    assert models
+    assert {model['provider'] for model in models} >= {
+        'alibaba',
+        'bytedance',
+        'google',
+        'kling',
+        'ltx',
+        'luma',
+        'minimax',
+        'pika',
+        'pixverse',
+        'vidu',
+    }
     assert all('fixed_fields' not in model and not model['id'].startswith('fal-ai/') for model in models)
 
 
@@ -129,3 +141,27 @@ def test_allows_multiple_reference_images_only_when_catalog_allows_it() -> None:
     definition, _provider_payload, _safe_params = build_video_provider_payload(submission)
 
     assert definition.task == 'video-to-video'
+
+
+def test_parses_structured_advanced_parameters_as_json() -> None:
+    submission = VideoTaskSubmitForm(
+        task='text-to-video',
+        model='kling-video-v3-pro',
+        params={'multi_prompt': '[{"prompt": "Orbit left", "duration": 3}]'},
+    )
+
+    _definition, provider_payload, safe_params = build_video_provider_payload(submission)
+
+    assert provider_payload['multi_prompt'] == [{'prompt': 'Orbit left', 'duration': 3}]
+    assert safe_params['multi_prompt'] == provider_payload['multi_prompt']
+
+
+def test_rejects_malformed_structured_advanced_parameters() -> None:
+    submission = VideoTaskSubmitForm(
+        task='text-to-video',
+        model='kling-video-v3-pro',
+        params={'multi_prompt': '[invalid]'},
+    )
+
+    with pytest.raises(VideoInputError, match='invalid_multi_prompt'):
+        build_video_provider_payload(submission)

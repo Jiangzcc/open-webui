@@ -1,0 +1,142 @@
+[
+	{
+		"id": "fal-ai/emu-3.5-image/text-to-image",
+		"public_id": "emu-3.5-image",
+		"name": "BAAI / Emu 3.5 Image",
+		"provider": "baai",
+		"task": "text-to-image",
+		"image_counts": [1],
+		"count_field": null,
+		"resolutions": ["480p", "720p"],
+		"default_resolution": "720p",
+		"resolution_field": "resolution",
+		"aspect_ratios": ["21:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:21"],
+		"default_aspect_ratio": "1:1",
+		"aspect_ratio_field": "aspect_ratio",
+		"output_formats": ["jpeg", "png", "webp"],
+		"default_output_format": "png",
+		"integer_fields": [{ "field": "seed" }],
+		"boolean_fields": [
+			{ "field": "enable_safety_checker", "default": true },
+			{ "field": "sync_mode", "default": false }
+		],
+		"hosting": "serverless",
+		"edit_model": "fal-ai/emu-3.5-image/edit-image"
+	},
+	{
+		"id": "fal-ai/emu-3.5-image/edit-image",
+		"public_id": "emu-3.5-image-edit",
+		"name": "BAAI / Emu 3.5 Image Edit",
+		"provider": "baai",
+		"task": "image-to-image",
+		"image_counts": [1],
+		"count_field": null,
+		"resolutions": ["480p", "720p"],
+		"default_resolution": "720p",
+		"resolution_field": "resolution",
+		"aspect_ratios": ["auto", "21:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:21"],
+		"default_aspect_ratio": "auto",
+		"aspect_ratio_field": "aspect_ratio",
+		"output_formats": ["jpeg", "png", "webp"],
+		"default_output_format": "png",
+		"integer_fields": [{ "field": "seed" }],
+		"boolean_fields": [
+			{ "field": "enable_safety_checker", "default": true },
+			{ "field": "sync_mode", "default": false }
+		],
+		"image_input_field": "image_url",
+		"image_input_max_count": 1,
+		"hosting": "serverless",
+		"generation_model": "fal-ai/emu-3.5-image/text-to-image"
+	},
+	{
+		"id": "fal-ai/omnigen-v1",
+		"public_id": "omnigen-v1",
+		"name": "BAAI / OmniGen V1",
+		"provider": "baai",
+		"task": "text-to-image",
+		"image_counts": [1, 2, 3, 4],
+		"count_field": "num_images",
+		"resolutions": ["512x512", "1024x1024", "768x1024", "576x1024", "1024x768", "1024x576"],
+		"default_resolution": "1024x1024",
+		"custom_size_field": "image_size",
+		"image_size_whitelist": {
+			"512x512": "512x512",
+			"1024x1024": "1024x1024",
+			"768x1024": "768x1024",
+			"576x1024": "576x1024",
+			"1024x768": "1024x768",
+			"1024x576": "1024x576"
+		},
+		"custom_size": {
+			"min_width": 256,
+			"max_width": 4096,
+			"min_height": 256,
+			"max_height": 4096,
+			"max_pixels": 4194304
+		},
+		"integer_fields": [
+			{ "field": "seed" },
+			{ "field": "num_inference_steps", "source": "steps", "min": 1, "max": 50 }
+		],
+		"number_fields": [
+			{ "field": "guidance_scale", "min": 0, "max": 20 },
+			{ "field": "img_guidance_scale", "min": 0, "max": 20 }
+		],
+		"boolean_fields": [
+			{ "field": "sync_mode", "default": false },
+			{ "field": "enable_safety_checker", "default": true }
+		],
+		"output_formats": ["jpeg", "png"],
+		"default_output_format": "jpeg",
+		"hosting": "serverless"
+	},
+	{
+		"id": "fal-ai/omnigen-v2",
+		"public_id": "omnigen-v2",
+		"name": "BAAI / OmniGen V2",
+		"provider": "baai",
+		"task": "text-to-image",
+		"image_counts": [1, 2, 3, 4],
+		"count_field": "num_images",
+		"resolutions": ["512x512", "1024x1024", "768x1024", "576x1024", "1024x768", "1024x576"],
+		"default_resolution": "1024x1024",
+		"custom_size_field": "image_size",
+		"image_size_whitelist": {
+			"512x512": "512x512",
+			"1024x1024": "1024x1024",
+			"768x1024": "768x1024",
+			"576x1024": "576x1024",
+			"1024x768": "1024x768",
+			"1024x576": "1024x576"
+		},
+		"custom_size": {
+			"min_width": 256,
+			"max_width": 4096,
+			"min_height": 256,
+			"max_height": 4096,
+			"max_pixels": 4194304
+		},
+		"option_fields": [
+			{ "field": "scheduler", "options": ["euler", "dpmsolver"], "default": "euler" }
+		],
+		"integer_fields": [
+			{ "field": "seed" },
+			{ "field": "num_inference_steps", "source": "steps", "min": 20, "max": 50 }
+		],
+		"number_fields": [
+			{ "field": "text_guidance_scale", "min": 1, "max": 8 },
+			{ "field": "image_guidance_scale", "min": 1, "max": 3 },
+			{ "field": "cfg_range_start", "min": 0, "max": 1 },
+			{ "field": "cfg_range_end", "min": 0, "max": 1 }
+		],
+		"text_fields": [{ "field": "negative_prompt" }],
+		"boolean_fields": [
+			{ "field": "sync_mode", "default": false },
+			{ "field": "enable_safety_checker", "default": true }
+		],
+		"output_formats": ["jpeg", "png"],
+		"default_output_format": "jpeg",
+		"hosting": "serverless"
+	}
+]

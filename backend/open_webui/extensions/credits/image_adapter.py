@@ -43,6 +43,7 @@ _FILE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]{1,128}$')
 _FILE_ROUTE_PATTERN = re.compile(r'^/api/v1/files/([A-Za-z0-9_-]{1,128})/content$')
 _PIXEL_SIZE_PATTERN = re.compile(r'^([1-9][0-9]{0,5})x([1-9][0-9]{0,5})$')
 _READ_CHUNK_SIZE = 64 * 1024
+get_file_content_by_id = None  # lazily bound; tests replace this module-level seam
 
 # Image magic byte signatures for content validation
 _PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
@@ -362,11 +363,15 @@ def _read_file_bounded(path: str) -> bytes:
 
 
 async def _read_file_reference(reference: str, user: object) -> tuple[bytes, str]:
+    global get_file_content_by_id
     file_id = _extract_file_id(reference)
     try:
-        from open_webui.routers.files import get_file_content_by_id
         from starlette.responses import FileResponse
 
+        if get_file_content_by_id is None:
+            from open_webui.routers.files import get_file_content_by_id as upstream_get_file_content
+
+            get_file_content_by_id = upstream_get_file_content
         response = await get_file_content_by_id(file_id, user)
         if not isinstance(response, FileResponse):
             raise _error('price_rule_incomplete', 'reference_fetch_failed')

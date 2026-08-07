@@ -3,12 +3,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
 from fastapi import Request
 from open_webui.extensions.creations.db import creation_session
-from open_webui.extensions.creations.models import ImageGenerationTask
+from open_webui.extensions.creations.models import (
+    CreationMediaItem,
+    CreationPost,
+    CreationPostMedia,
+    ImageGenerationTask,
+)
 from open_webui.extensions.creations.schemas import (
     ImageGenerationTaskListResponse,
     ImageGenerationTaskResponse,
@@ -22,6 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 log = logging.getLogger(__name__)
 
 _PRIVATE_PAYLOAD_KEYS = frozenset({'prompt', 'image', 'mask', 'mask_url', 'mask_image_url'})
+_TERMINAL_STATUSES = frozenset({'succeeded', 'failed'})
+
+
+class GenerationTaskNotCancellable(Exception):
+    """The caller owns the task, but no live worker can be cancelled."""
 
 
 def _now() -> int:
@@ -32,9 +43,7 @@ def _safe_params(payload: dict[str, Any]) -> dict[str, object]:
     return {
         key: value
         for key, value in payload.items()
-        if key not in _PRIVATE_PAYLOAD_KEYS
-        and value is not None
-        and isinstance(value, (str, int, float, bool))
+        if key not in _PRIVATE_PAYLOAD_KEYS and value is not None and isinstance(value, (str, int, float, bool))
     }
 
 
@@ -111,9 +120,7 @@ async def create_generation_task(
     return _response(task), True
 
 
-async def get_generation_task(
-    session: AsyncSession, user_id: str, task_id: str
-) -> ImageGenerationTaskResponse | None:
+async def get_generation_task(session: AsyncSession, user_id: str, task_id: str) -> ImageGenerationTaskResponse | None:
     task = (
         await session.execute(
             select(ImageGenerationTask).where(
@@ -126,6 +133,48 @@ async def get_generation_task(
 
 
 async def delete_generation_task(session: AsyncSession, user_id: str, task_id: str) -> bool:
+    task = await session.scalar(
+        select(ImageGenerationTask).where(
+            ImageGenerationTask.id == task_id,
+            ImageGenerationTask.user_id == user_id,
+        )
+    )
+    if task is None:
+        return False
+
+    # New task-backed generations use task.id as their creation batch_id. Keep
+    # the legacy credit-usage mapping so batches created before this change are
+    # cleaned up by the same owner-scoped transaction as well.
+    from open_webui.extensions.credits.models import CreditUsage
+
+    legacy_usage_id = await session.scalar(
+        select(CreditUsage.id).where(
+            CreditUsage.user_id == user_id,
+            CreditUsage.idempotency_key == task.idempotency_key,
+        )
+    )
+    batch_ids = {task.id}
+    if legacy_usage_id:
+        batch_ids.add(legacy_usage_id)
+    creation_ids = select(CreationMediaItem.id).where(
+        CreationMediaItem.user_id == user_id,
+        CreationMediaItem.batch_id.in_(batch_ids),
+    )
+    post_ids = select(CreationPostMedia.post_id).where(CreationPostMedia.creation_id.in_(creation_ids))
+    now = _now()
+    await session.execute(
+        update(CreationPost)
+        .where(CreationPost.id.in_(post_ids), CreationPost.status != 'hidden')
+        .values(status='withdrawn', updated_at=now)
+    )
+    await session.execute(
+        update(CreationMediaItem)
+        .where(
+            CreationMediaItem.user_id == user_id,
+            CreationMediaItem.batch_id.in_(batch_ids),
+        )
+        .values(soft_deleted=True, updated_at=now)
+    )
     result = await session.execute(
         delete(ImageGenerationTask).where(
             ImageGenerationTask.id == task_id,
@@ -155,18 +204,18 @@ async def list_generation_tasks(
             )
         )
     rows = (
-        await session.execute(
-            stmt.order_by(desc(ImageGenerationTask.created_at), desc(ImageGenerationTask.id)).limit(limit + 1)
+        (
+            await session.execute(
+                stmt.order_by(desc(ImageGenerationTask.created_at), desc(ImageGenerationTask.id)).limit(limit + 1)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     page = rows[:limit]
-    next_cursor = (
-        encode_keyset_cursor(page[-1].created_at, page[-1].id) if len(rows) > limit and page else None
-    )
-    return ImageGenerationTaskListResponse(
-        items=tuple(_response(task) for task in page), next_cursor=next_cursor
-    )
+    next_cursor = encode_keyset_cursor(page[-1].created_at, page[-1].id) if len(rows) > limit and page else None
+    return ImageGenerationTaskListResponse(items=tuple(_response(task) for task in page), next_cursor=next_cursor)
 
 
 async def _set_task_state(
@@ -186,9 +235,7 @@ async def _set_task_state(
         values['result_json'] = result
     values['error_code'] = error_code
     async with creation_session() as session:
-        await session.execute(
-            update(ImageGenerationTask).where(ImageGenerationTask.id == task_id).values(**values)
-        )
+        await session.execute(update(ImageGenerationTask).where(ImageGenerationTask.id == task_id).values(**values))
         await session.commit()
 
 
@@ -211,16 +258,38 @@ def _error_code(error: Exception) -> str:
 
 async def run_generation_task(task_id: str, request: Request, user: object, form: object, kind: str) -> None:
     await _set_task_state(task_id, status='running')
+    result: object | None = None
     try:
         from open_webui.routers.images import image_edits, image_generations
 
         if kind == 'image-to-image':
-            result = await image_edits(request, form, 'direct', user=user)
+            result = await image_edits(
+                request,
+                form,
+                'direct',
+                metadata={'generation_task_id': task_id},
+                user=user,
+            )
         else:
-            result = await image_generations(request, form, 'direct', user=user)
+            result = await image_generations(
+                request,
+                form,
+                'direct',
+                metadata={'generation_task_id': task_id},
+                user=user,
+            )
         await _set_task_state(task_id, status='succeeded', result=_public_result(result))
-    except asyncio.CancelledError:
-        await _set_task_state(task_id, status='failed', error_code='server_shutdown')
+    except asyncio.CancelledError as error:
+        # The billed call already returned a terminal result. A cancellation
+        # arriving in the tiny window before the task-row update is too late;
+        # preserve the completed result rather than reporting a false refund.
+        if result is not None:
+            await _set_task_state(task_id, status='succeeded', result=_public_result(result))
+            return
+        error_code = (
+            'generation_cancelled' if error.args and error.args[0] == 'generation_cancelled' else 'server_shutdown'
+        )
+        await _set_task_state(task_id, status='failed', error_code=error_code)
         raise
     except Exception as error:
         log.exception('Image generation task %s failed', task_id)
@@ -234,11 +303,52 @@ def schedule_generation_task(
     user: object,
     form: object,
     kind: str,
+    on_finished: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
-    running: set[asyncio.Task] = request.app.state.creation_generation_tasks
+    running: dict[str, asyncio.Task] = request.app.state.creation_generation_tasks
     task = asyncio.create_task(run_generation_task(task_id, request, user, form, kind))
-    running.add(task)
-    task.add_done_callback(running.discard)
+    running[task_id] = task
+
+    def discard_finished(finished: asyncio.Task) -> None:
+        if running.get(task_id) is finished:
+            running.pop(task_id, None)
+        if on_finished is not None:
+            asyncio.create_task(on_finished())
+
+    task.add_done_callback(discard_finished)
+
+
+async def cancel_generation_task(
+    request: Request,
+    session: AsyncSession,
+    user_id: str,
+    task_id: str,
+) -> ImageGenerationTaskResponse | None:
+    task = await get_generation_task(session, user_id, task_id)
+    if task is None or task.status in _TERMINAL_STATUSES:
+        return task
+
+    running: dict[str, asyncio.Task] = getattr(
+        request.app.state,
+        'creation_generation_tasks',
+        {},
+    )
+    worker = running.get(task_id)
+    if worker is None or worker.done():
+        raise GenerationTaskNotCancellable()
+
+    worker.cancel('generation_cancelled')
+    await asyncio.gather(worker, return_exceptions=True)
+
+    async with creation_session() as fresh_session:
+        cancelled = await get_generation_task(fresh_session, user_id, task_id)
+    if cancelled is None:
+        return None
+    if cancelled.status not in _TERMINAL_STATUSES:
+        await _set_task_state(task_id, status='failed', error_code='generation_cancelled')
+        async with creation_session() as fresh_session:
+            cancelled = await get_generation_task(fresh_session, user_id, task_id)
+    return cancelled
 
 
 async def fail_incomplete_generation_tasks() -> int:
@@ -254,15 +364,17 @@ async def fail_incomplete_generation_tasks() -> int:
 
 
 async def shutdown_generation_tasks(app) -> None:
-    running: set[asyncio.Task] = getattr(app.state, 'creation_generation_tasks', set())
-    for task in tuple(running):
+    running: dict[str, asyncio.Task] = getattr(app.state, 'creation_generation_tasks', {})
+    for task in tuple(running.values()):
         task.cancel()
     if running:
-        await asyncio.gather(*tuple(running), return_exceptions=True)
+        await asyncio.gather(*tuple(running.values()), return_exceptions=True)
     running.clear()
 
 
 __all__ = [
+    'GenerationTaskNotCancellable',
+    'cancel_generation_task',
     'create_generation_task',
     'delete_generation_task',
     'fail_incomplete_generation_tasks',

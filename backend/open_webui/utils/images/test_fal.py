@@ -5,7 +5,12 @@ import types
 from types import SimpleNamespace
 
 import pytest
-from open_webui.utils.images.fal import build_fal_image_payload, get_mock_fal_image_result
+from open_webui.utils.images.fal import (
+    FalImageSizeError,
+    build_fal_image_payload,
+    get_mock_fal_image_result,
+    validate_fal_image_size,
+)
 
 
 @pytest.mark.parametrize(
@@ -95,7 +100,7 @@ def test_payload_qwen2_has_no_guidance_or_steps():
     data = build_fal_image_payload(_form(), 'fal-ai/qwen-image-2/text-to-image')
     assert 'guidance_scale' not in data
     assert 'num_inference_steps' not in data
-    assert data['enable_safety_checker'] is True
+    assert data['enable_safety_checker'] is False
     assert data['enable_prompt_expansion'] is True
 
 
@@ -112,4 +117,32 @@ def test_payload_z_image_turbo_edit_uses_single_image_contract():
     assert data['num_inference_steps'] == 8
     assert data['image_size'] == {'width': 1024, 'height': 768}
     assert data['output_format'] == 'webp'
-    assert data['enable_safety_checker'] is True
+    assert data['enable_safety_checker'] is False
+
+
+def test_custom_size_validation_can_run_before_provider_payload_build(monkeypatch) -> None:
+    import open_webui.utils.images.fal as fal
+
+    monkeypatch.setattr(
+        fal,
+        'FAL_IMAGE_MODELS',
+        [
+            {
+                'id': 'fal-ai/custom-model',
+                'custom_size_field': 'image_size',
+                'custom_size': {
+                    'min_width': 512,
+                    'max_width': 2048,
+                    'min_height': 512,
+                    'max_height': 2048,
+                    'multiple_of': 16,
+                },
+            }
+        ],
+    )
+
+    validate_fal_image_size('fal-ai/custom-model', _form(size='1024x768'))
+    with pytest.raises(FalImageSizeError):
+        validate_fal_image_size('fal-ai/custom-model', _form(size='513x768'))
+    with pytest.raises(FalImageSizeError):
+        validate_fal_image_size('fal-ai/custom-model', _form(size='not-a-size'))

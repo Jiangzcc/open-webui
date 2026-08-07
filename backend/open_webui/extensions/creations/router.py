@@ -26,6 +26,8 @@ from open_webui.extensions.creations.discovery_service import (
     withdraw_creation,
 )
 from open_webui.extensions.creations.generation_tasks import (
+    GenerationTaskNotCancellable,
+    cancel_generation_task,
     create_generation_task,
     delete_generation_task,
     get_generation_task,
@@ -69,6 +71,12 @@ from open_webui.extensions.creations.service import (
     soft_delete_many,
     update_caption,
 )
+from open_webui.extensions.credits.errors import CreditError
+from open_webui.extensions.images.limits import (
+    acquire_image_generation_slot,
+    enforce_image_generation_rate,
+    release_image_generation_slot,
+)
 from open_webui.storage.provider import Storage
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from pydantic import ValidationError
@@ -110,21 +118,37 @@ async def create_image_generation_task(
     key = (idempotency_key or str(uuid4())).strip()
     if not key or len(key) > 128:
         raise HTTPException(status_code=422, detail='invalid idempotency key')
-    task, created = await create_generation_task(
-        session,
-        user_id=user.id,
-        idempotency_key=key,
-        kind=submission.kind,
-        payload=form.model_dump(exclude_none=True),
-    )
-    if created:
-        schedule_generation_task(
-            request,
-            task_id=task.id,
-            user=user,
-            form=form,
+    try:
+        enforce_image_generation_rate(user.id)
+        await acquire_image_generation_slot(user.id)
+    except CreditError as error:
+        return JSONResponse(status_code=error.status_code, content=error.to_envelope())
+    try:
+        task, created = await create_generation_task(
+            session,
+            user_id=user.id,
+            idempotency_key=key,
             kind=submission.kind,
+            payload=form.model_dump(exclude_none=True),
         )
+    except Exception:
+        await release_image_generation_slot(user.id)
+        raise
+    if created:
+        try:
+            schedule_generation_task(
+                request,
+                task_id=task.id,
+                user=user,
+                form=form,
+                kind=submission.kind,
+                on_finished=lambda: release_image_generation_slot(user.id),
+            )
+        except Exception:
+            await release_image_generation_slot(user.id)
+            raise
+    else:
+        await release_image_generation_slot(user.id)
     return task
 
 
@@ -159,9 +183,33 @@ async def delete_image_generation_task(
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
+    task = await get_generation_task(session, user.id, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail='generation task not found')
+    if task.status not in {'succeeded', 'failed'}:
+        raise HTTPException(status_code=409, detail='active generation task must be cancelled first')
     removed = await delete_generation_task(session, user.id, task_id)
     if not removed:
         raise HTTPException(status_code=404, detail='generation task not found')
+
+
+@router.post(
+    '/generation-tasks/{task_id}/cancel',
+    response_model=ImageGenerationTaskResponse,
+)
+async def cancel_image_generation_task(
+    request: Request,
+    task_id: str,
+    user=Depends(get_verified_user),
+    session: AsyncSession = Depends(get_creation_session),
+):
+    try:
+        task = await cancel_generation_task(request, session, user.id, task_id)
+    except GenerationTaskNotCancellable:
+        raise HTTPException(status_code=409, detail='generation task is not cancellable') from None
+    if task is None:
+        raise HTTPException(status_code=404, detail='generation task not found')
+    return task
 
 
 @router.get('/media', response_model=CreationListResponse)

@@ -50,6 +50,10 @@ class FalImageError(Exception):
     pass
 
 
+class FalImageSizeError(FalImageError):
+    """A client-supplied size violates the selected model's declared limits."""
+
+
 def _headers(api_key: str) -> dict[str, str]:
     if not api_key:
         raise FalImageError('FAL API key is not configured')
@@ -133,39 +137,63 @@ def _validate_custom_size(
     constraints: dict[str, Any] | None,
 ) -> str | None:
     """Return a localized reason string when a custom size violates the model's rules."""
+    if width <= 0 or height <= 0:
+        return 'width and height must be positive integers'
     if not constraints:
         return None
     min_w = constraints.get('min_width')
     max_w = constraints.get('max_width')
     min_h = constraints.get('min_height')
     max_h = constraints.get('max_height')
-    if min_w is not None and width < min_w:
-        return f'width {width} below minimum {min_w}'
-    if max_w is not None and width > max_w:
-        return f'width {width} above maximum {max_w}'
-    if min_h is not None and height < min_h:
-        return f'height {height} below minimum {min_h}'
-    if max_h is not None and height > max_h:
-        return f'height {height} above maximum {max_h}'
-    multiple_of = constraints.get('multiple_of')
-    if multiple_of and (width % multiple_of or height % multiple_of):
-        return f'dimensions must be multiples of {multiple_of}'
     pixels = width * height
     min_pixels = constraints.get('min_pixels')
     max_pixels = constraints.get('max_pixels')
-    if min_pixels is not None and pixels < min_pixels:
-        return f'total pixels {pixels} below minimum {min_pixels}'
-    if max_pixels is not None and pixels > max_pixels:
-        return f'total pixels {pixels} above maximum {max_pixels}'
+    ratio = width / height
     ar_min = constraints.get('aspect_ratio_min')
     ar_max = constraints.get('aspect_ratio_max')
-    if height > 0:
-        ratio = width / height
-        if ar_min is not None and ratio < ar_min:
-            return f'aspect ratio {ratio:.3f} below minimum {ar_min}'
-        if ar_max is not None and ratio > ar_max:
-            return f'aspect ratio {ratio:.3f} above maximum {ar_max}'
+    bounds = (
+        (min_w is None or width >= min_w, f'width {width} below minimum {min_w}'),
+        (max_w is None or width <= max_w, f'width {width} above maximum {max_w}'),
+        (min_h is None or height >= min_h, f'height {height} below minimum {min_h}'),
+        (max_h is None or height <= max_h, f'height {height} above maximum {max_h}'),
+        (min_pixels is None or pixels >= min_pixels, f'total pixels {pixels} below minimum {min_pixels}'),
+        (max_pixels is None or pixels <= max_pixels, f'total pixels {pixels} above maximum {max_pixels}'),
+        (ar_min is None or ratio >= ar_min, f'aspect ratio {ratio:.3f} below minimum {ar_min}'),
+        (ar_max is None or ratio <= ar_max, f'aspect ratio {ratio:.3f} above maximum {ar_max}'),
+    )
+    for valid, reason in bounds:
+        if not valid:
+            return reason
+
+    multiple_of = constraints.get('multiple_of')
+    if multiple_of and (width % multiple_of or height % multiple_of):
+        return f'dimensions must be multiples of {multiple_of}'
     return None
+
+
+def validate_fal_image_size(model: str | None, form_data: Any) -> None:
+    """Validate an explicit custom size before credit precharge/provider invocation."""
+    normalized_model = normalize_fal_image_model_id(model) or _normalize_model_id(model)
+    model_info = _get_fal_model_info(normalized_model)
+    if not model_info or not model_info.get('custom_size_field'):
+        return
+
+    sizes = model_info.get('image_size_whitelist') or model_info.get('aspect_ratio_sizes')
+    requested_size = getattr(form_data, 'size', None) or getattr(form_data, 'resolution', None)
+    if not requested_size:
+        requested_size = (sizes or {}).get(getattr(form_data, 'aspect_ratio', None))
+    if not requested_size or requested_size == 'auto':
+        return
+
+    parsed = _parse_pixel_size(requested_size)
+    if parsed is None:
+        raise FalImageSizeError(f'unsupported image size {requested_size}: expected WIDTHxHEIGHT')
+    if sizes and requested_size in sizes.values():
+        return
+
+    reason = _validate_custom_size(*parsed, model_info.get('custom_size'))
+    if reason is not None:
+        raise FalImageSizeError(f'unsupported image size {requested_size}: {reason}')
 
 
 def _set_custom_image_size(

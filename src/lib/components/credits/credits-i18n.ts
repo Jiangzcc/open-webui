@@ -194,7 +194,10 @@ const zh = {
 			credit_account_conflict: '积分账户已被并发更新，请重试',
 			invalid_adjustment: '积分调整无效',
 			credit_service_unavailable: '积分服务暂不可用',
-			provider_failed: '图片服务请求失败'
+			provider_failed: '图片服务请求失败',
+			invalid_image_size: '图片尺寸不符合模型要求',
+			generation_cancelled: '图片生成已取消',
+			rate_limited: '生成请求过于频繁，请稍后再试'
 		}
 	}
 };
@@ -394,7 +397,10 @@ const en = {
 			credit_account_conflict: 'Credit account was updated concurrently',
 			invalid_adjustment: 'Credit adjustment is invalid',
 			credit_service_unavailable: 'Credit service is unavailable',
-			provider_failed: 'Image provider request failed'
+			provider_failed: 'Image provider request failed',
+			invalid_image_size: 'Image size is invalid',
+			generation_cancelled: 'Image generation was cancelled',
+			rate_limited: 'Too many image generation requests'
 		}
 	}
 };
@@ -410,7 +416,10 @@ const creditErrorCodes = new Set([
 	'credit_account_conflict',
 	'invalid_adjustment',
 	'credit_service_unavailable',
-	'provider_failed'
+	'provider_failed',
+	'invalid_image_size',
+	'generation_cancelled',
+	'rate_limited'
 ]);
 
 export const registerCreditTranslations = (contextI18n: CreditI18n) => {

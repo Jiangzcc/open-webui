@@ -1,0 +1,449 @@
+[
+	{
+		"id": "fal-ai/pixverse/c1/image-to-video",
+		"public_id": "pixverse/c1/image-to-video",
+		"name": "PixVerse / C1 Image",
+		"provider": "pixverse",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pixverse/c1/reference-to-video",
+		"public_id": "pixverse/c1/reference-to-video",
+		"name": "PixVerse / C1 Reference",
+		"provider": "pixverse",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "2:3", "3:2", "21:9"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"json_fields": [
+			{
+				"field": "image_references",
+				"required": true,
+				"primary_input": true
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pixverse/c1/text-to-video",
+		"public_id": "pixverse/c1/text-to-video",
+		"name": "PixVerse / C1 Text",
+		"provider": "pixverse",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "2:3", "3:2", "21:9"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pixverse/c1/transition",
+		"public_id": "pixverse/c1/transition",
+		"name": "PixVerse / C1 Transition",
+		"provider": "pixverse",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "first_image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "end_image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "2:3", "3:2", "21:9"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pixverse/v6/extend",
+		"public_id": "pixverse/v6/extend",
+		"name": "PixVerse / V6 Extend",
+		"provider": "pixverse",
+		"task": "video-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "source_video",
+				"field": "video_url",
+				"required": true,
+				"mime_types": ["video/mp4", "video/quicktime", "video/webm"],
+				"max_bytes": 209715200
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"option_fields": [
+			{
+				"field": "style",
+				"options": ["anime", "3d_animation", "clay", "comic", "cyberpunk"]
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pixverse/v6/image-to-video",
+		"public_id": "pixverse/v6/image-to-video",
+		"name": "PixVerse / V6 Image",
+		"provider": "pixverse",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"option_fields": [
+			{
+				"field": "style",
+				"options": ["anime", "3d_animation", "clay", "comic", "cyberpunk"]
+			},
+			{
+				"field": "thinking_type",
+				"options": ["enabled", "disabled", "auto"]
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "generate_multi_clip_switch",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pixverse/v6/text-to-video",
+		"public_id": "pixverse/v6/text-to-video",
+		"name": "PixVerse / V6 Text",
+		"provider": "pixverse",
+		"task": "text-to-video",
+		"prompt_required": true,
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "2:3", "3:2", "21:9"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"option_fields": [
+			{
+				"field": "style",
+				"options": ["anime", "3d_animation", "clay", "comic", "cyberpunk"]
+			},
+			{
+				"field": "thinking_type",
+				"options": ["enabled", "disabled", "auto"]
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "generate_multi_clip_switch",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	},
+	{
+		"id": "fal-ai/pixverse/v6/transition",
+		"public_id": "pixverse/v6/transition",
+		"name": "PixVerse / V6 Transition",
+		"provider": "pixverse",
+		"task": "image-to-video",
+		"prompt_required": true,
+		"asset_inputs": [
+			{
+				"role": "start_image",
+				"field": "first_image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			},
+			{
+				"role": "end_image",
+				"field": "end_image_url",
+				"required": true,
+				"mime_types": ["image/jpeg", "image/png", "image/webp"],
+				"max_bytes": 31457280
+			}
+		],
+		"audio_options": [
+			{
+				"mode": "silent",
+				"values": {
+					"generate_audio_switch": false
+				}
+			},
+			{
+				"mode": "generate",
+				"values": {
+					"generate_audio_switch": true
+				}
+			}
+		],
+		"default_audio_mode": "silent",
+		"aspect_ratio_field": "aspect_ratio",
+		"aspect_ratios": ["16:9", "4:3", "1:1", "3:4", "9:16", "2:3", "3:2", "21:9"],
+		"default_aspect_ratio": "16:9",
+		"resolution_field": "resolution",
+		"resolutions": ["360p", "540p", "720p", "1080p"],
+		"default_resolution": "720p",
+		"duration_field": "duration",
+		"duration_min": 1,
+		"duration_max": 15,
+		"duration_step": 1,
+		"default_duration": "5",
+		"option_fields": [
+			{
+				"field": "style",
+				"options": ["anime", "3d_animation", "clay", "comic", "cyberpunk"]
+			},
+			{
+				"field": "thinking_type",
+				"options": ["enabled", "disabled", "auto"]
+			}
+		],
+		"boolean_fields": [
+			{
+				"field": "generate_multi_clip_switch",
+				"default": false
+			}
+		],
+		"integer_fields": [
+			{
+				"field": "seed"
+			}
+		],
+		"text_fields": [
+			{
+				"field": "negative_prompt",
+				"max_length": 2000
+			}
+		]
+	}
+]

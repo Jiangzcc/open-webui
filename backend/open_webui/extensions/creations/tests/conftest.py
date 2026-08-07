@@ -7,6 +7,7 @@ import pytest
 import pytest_asyncio
 from open_webui.extensions.creations.db import CreationBase
 from open_webui.extensions.creations.models import DiscoveryCategorySetting
+from open_webui.extensions.credits.models import CreditUsage
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -27,6 +28,8 @@ async def creation_sessions(tmp_path: Path):
     engine = create_async_engine(f'sqlite+aiosqlite:///{database_path}')
     async with engine.begin() as connection:
         await connection.run_sync(CreationBase.metadata.create_all)
+        # Generation-task deletion keeps legacy usage-backed batch IDs compatible.
+        await connection.run_sync(CreditUsage.__table__.create)
         await connection.execute(
             DiscoveryCategorySetting.__table__.insert(),
             [

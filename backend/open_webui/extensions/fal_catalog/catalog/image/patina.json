@@ -1,0 +1,68 @@
+[
+	{
+		"id": "fal-ai/patina/material",
+		"public_id": "patina-material",
+		"name": "Patina / Material",
+		"provider": "patina",
+		"task": "text-to-image",
+		"image_counts": [1, 2, 3, 4],
+		"count_field": "num_images",
+		"resolutions": ["512x512", "1024x1024", "768x1024", "576x1024", "1024x768", "1024x576"],
+		"default_resolution": "1024x1024",
+		"custom_size_field": "image_size",
+		"image_size_whitelist": {
+			"512x512": "512x512",
+			"1024x1024": "1024x1024",
+			"768x1024": "768x1024",
+			"576x1024": "576x1024",
+			"1024x768": "1024x768",
+			"1024x576": "1024x576"
+		},
+		"custom_size": {
+			"min_width": 256,
+			"max_width": 4096,
+			"min_height": 256,
+			"max_height": 4096,
+			"max_pixels": 4194304
+		},
+		"option_fields": [
+			{ "field": "tiling_mode", "options": ["both", "horizontal", "vertical"], "default": "both" }
+		],
+		"integer_fields": [
+			{ "field": "seed" },
+			{ "field": "num_inference_steps", "source": "steps", "min": 1, "max": 8 },
+			{ "field": "tile_size", "min": 32, "max": 256 },
+			{ "field": "tile_stride", "min": 16, "max": 128 }
+		],
+		"number_fields": [{ "field": "strength", "min": 0, "max": 1 }],
+		"boolean_fields": [
+			{ "field": "enable_prompt_expansion", "default": true },
+			{ "field": "enable_safety_checker", "default": true }
+		],
+		"output_formats": ["jpeg", "png", "webp"],
+		"default_output_format": "png",
+		"hosting": "serverless",
+		"edit_model": "fal-ai/patina"
+	},
+	{
+		"id": "fal-ai/patina",
+		"public_id": "patina-edit",
+		"name": "Patina / Edit",
+		"provider": "patina",
+		"task": "image-to-image",
+		"supports_prompt": false,
+		"image_counts": [1],
+		"count_field": null,
+		"integer_fields": [{ "field": "seed" }],
+		"boolean_fields": [
+			{ "field": "sync_mode", "default": false },
+			{ "field": "enable_safety_checker", "default": true }
+		],
+		"output_formats": ["jpeg", "png", "webp"],
+		"default_output_format": "png",
+		"image_input_field": "image_url",
+		"image_input_max_count": 1,
+		"hosting": "serverless",
+		"generation_model": "fal-ai/patina/material"
+	}
+]

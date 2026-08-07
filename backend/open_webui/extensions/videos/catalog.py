@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 
 from open_webui.extensions.credits.models import CreditPrice
@@ -8,6 +9,7 @@ from open_webui.extensions.fal_catalog.video_schemas import (
     FalVideoModelDefinition,
     VideoBooleanField,
     VideoIntegerField,
+    VideoJsonField,
     VideoNumberField,
     VideoOptionField,
     VideoTextField,
@@ -183,12 +185,15 @@ def build_video_provider_payload(  # noqa: C901
         definition.integer_fields,
         definition.number_fields,
         definition.text_fields,
+        definition.json_fields,
     ):
         for field in group or ():
             public_key = field.source or field.field
             consumed.add(public_key)
             value = params.get(public_key, field.default if hasattr(field, 'default') else None)
             if value is None:
+                if isinstance(field, VideoJsonField) and field.required:
+                    raise VideoInputError(f'missing_{public_key}')
                 continue
             if isinstance(field, VideoOptionField) and (not isinstance(value, str) or value not in field.options):
                 raise VideoInputError(f'invalid_{public_key}')
@@ -210,8 +215,20 @@ def build_video_provider_payload(  # noqa: C901
                 raise VideoInputError(f'invalid_{public_key}')
             if isinstance(field, VideoTextField) and (not isinstance(value, str) or len(value) > field.max_length):
                 raise VideoInputError(f'invalid_{public_key}')
-            payload[field.field] = value
-            safe_params[public_key] = value
+            if isinstance(field, VideoJsonField):
+                if not isinstance(value, str) or len(value) > field.max_length:
+                    raise VideoInputError(f'invalid_{public_key}')
+                try:
+                    parsed_value = json.loads(value)
+                except json.JSONDecodeError as error:
+                    raise VideoInputError(f'invalid_{public_key}') from error
+                if not isinstance(parsed_value, (dict, list)):
+                    raise VideoInputError(f'invalid_{public_key}')
+                payload[field.field] = parsed_value
+                safe_params[public_key] = parsed_value
+            else:
+                payload[field.field] = value
+                safe_params[public_key] = value
 
     unknown = set(params) - consumed
     if unknown:

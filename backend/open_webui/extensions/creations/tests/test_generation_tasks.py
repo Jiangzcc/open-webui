@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
 import pytest
+from open_webui.extensions.creations import generation_tasks
 from open_webui.extensions.creations.generation_tasks import (
+    cancel_generation_task,
     create_generation_task,
+    delete_generation_task,
     get_generation_task,
     list_generation_tasks,
+    schedule_generation_task,
 )
+from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.creations.schemas import decode_keyset_cursor
+from open_webui.extensions.credits.models import CreditUsage
+from sqlalchemy import select, update
 
 
 @pytest.mark.asyncio
@@ -123,3 +134,114 @@ async def test_list_generation_tasks_rejects_malformed_cursor(creation_sessions)
     async with creation_sessions() as session:
         with pytest.raises(ValueError):
             await list_generation_tasks(session, 'user-paged', 2, 'not-a-valid-cursor')
+
+
+@pytest.mark.asyncio
+async def test_cancel_generation_task_is_owner_scoped_and_terminal(creation_sessions, monkeypatch) -> None:
+    async with creation_sessions() as session:
+        task, _ = await create_generation_task(
+            session,
+            user_id='user-cancel',
+            idempotency_key='cancel-1',
+            kind='text-to-image',
+            payload={'prompt': 'long running'},
+        )
+
+    @asynccontextmanager
+    async def test_creation_session():
+        async with creation_sessions() as session:
+            yield session
+
+    started = asyncio.Event()
+
+    async def wait_until_cancelled(*_args):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(generation_tasks, 'creation_session', test_creation_session)
+    monkeypatch.setattr(generation_tasks, 'run_generation_task', wait_until_cancelled)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(creation_generation_tasks={})))
+    schedule_generation_task(
+        request,
+        task_id=task.id,
+        user=SimpleNamespace(id='user-cancel'),
+        form=SimpleNamespace(),
+        kind='text-to-image',
+    )
+    await started.wait()
+
+    async with creation_sessions() as session:
+        assert await cancel_generation_task(request, session, 'other-user', task.id) is None
+    async with creation_sessions() as session:
+        cancelled = await cancel_generation_task(request, session, 'user-cancel', task.id)
+
+    assert cancelled is not None
+    assert cancelled.status == 'failed'
+    assert cancelled.error_code == 'generation_cancelled'
+    assert task.id not in request.app.state.creation_generation_tasks
+
+
+@pytest.mark.asyncio
+async def test_delete_generation_task_soft_deletes_new_and_legacy_creation_batches(creation_sessions) -> None:
+    async with creation_sessions() as session:
+        task, _ = await create_generation_task(
+            session,
+            user_id='user-delete',
+            idempotency_key='delete-key',
+            kind='text-to-image',
+            payload={'prompt': 'delete this batch'},
+        )
+    async with creation_sessions() as session, session.begin():
+        await session.execute(
+            update(generation_tasks.ImageGenerationTask)
+            .where(generation_tasks.ImageGenerationTask.id == task.id)
+            .values(status='succeeded')
+        )
+        session.add(
+            CreditUsage(
+                id='legacy-usage',
+                user_id='user-delete',
+                idempotency_key='delete-key',
+                request_hash='a' * 64,
+                service_type='image',
+                resource_id='model',
+                action='text-to-image',
+                channel='web',
+                status='succeeded',
+                exempt=False,
+                charged_credits=0,
+                created_at=1,
+                updated_at=1,
+            )
+        )
+        for creation_id, batch_id in (('new-batch', task.id), ('legacy-batch', 'legacy-usage')):
+            session.add(
+                CreationMediaItem(
+                    id=creation_id,
+                    user_id='user-delete',
+                    kind='image',
+                    file_id=f'file-{creation_id}',
+                    prompt='p',
+                    model_id='model',
+                    task='text-to-image',
+                    source='web',
+                    batch_id=batch_id,
+                    soft_deleted=False,
+                    created_at=1,
+                    updated_at=1,
+                )
+            )
+
+    async with creation_sessions() as session:
+        assert await delete_generation_task(session, 'user-delete', task.id) is True
+    async with creation_sessions() as session:
+        assert await get_generation_task(session, 'user-delete', task.id) is None
+        creations = list(
+            (
+                await session.scalars(
+                    select(CreationMediaItem).where(CreationMediaItem.id.in_(('new-batch', 'legacy-batch')))
+                )
+            ).all()
+        )
+    assert {item.id for item in creations} == {'new-batch', 'legacy-batch'}
+    assert all(item.soft_deleted for item in creations)

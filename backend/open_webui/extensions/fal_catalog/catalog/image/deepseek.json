@@ -1,0 +1,38 @@
+[
+	{
+		"id": "fal-ai/janus",
+		"public_id": "deepseek-janus-pro",
+		"name": "DeepSeek / Janus Pro",
+		"provider": "deepseek",
+		"task": "text-to-image",
+		"image_counts": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+		"count_field": "num_images",
+		"resolutions": ["512x512", "1024x1024", "768x1024", "576x1024", "1024x768", "1024x576"],
+		"default_resolution": "1024x1024",
+		"custom_size_field": "image_size",
+		"image_size_whitelist": {
+			"512x512": "512x512",
+			"1024x1024": "1024x1024",
+			"768x1024": "768x1024",
+			"576x1024": "576x1024",
+			"1024x768": "1024x768",
+			"1024x576": "1024x576"
+		},
+		"custom_size": {
+			"min_width": 256,
+			"max_width": 4096,
+			"min_height": 256,
+			"max_height": 4096,
+			"max_pixels": 4194304
+		},
+		"number_fields": [
+			{ "field": "temperature", "min": 0.1, "max": 2 },
+			{ "field": "cfg_weight", "min": 1, "max": 20 }
+		],
+		"integer_fields": [{ "field": "seed" }],
+		"boolean_fields": [{ "field": "enable_safety_checker", "default": true }],
+		"output_formats": ["jpeg", "png"],
+		"default_output_format": "png",
+		"hosting": "serverless"
+	}
+]

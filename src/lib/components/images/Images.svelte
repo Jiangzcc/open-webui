@@ -4,8 +4,10 @@
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { quoteImageCredits, type ImageQuoteInput } from '$lib/apis/credits';
+	import type { CreationScope } from '$lib/utils/creations-library';
 	import { getImageGenerationErrorCode } from '$lib/apis/images/generation';
 	import {
+		cancelImageGenerationTask,
 		createImageGenerationTask,
 		deleteImageGenerationTask,
 		getImageGenerationTask,
@@ -89,6 +91,7 @@
 
 	let selection: 'generate' | 'mine' | 'all' = 'generate';
 	let libraryRevision = 0;
+	let libraryScope: CreationScope;
 
 	$: view = selection === 'generate' ? 'generate' : 'library';
 	$: libraryScope = selection === 'all' ? 'all' : 'mine';
@@ -119,6 +122,7 @@
 	let canHover = true;
 	// 批量下载中各 batch 的 id 集合，用 Set 支持多批并发，各批独立显示 loading 态。
 	let batchDownloadingIds: Set<string> = new Set();
+	let batchCancellingIds: Set<string> = new Set();
 	let batchDeletingIds: Set<string> = new Set();
 	let showBatchDeleteConfirm = false;
 	let batchToDelete: ImageGenerationBatch | null = null;
@@ -298,10 +302,10 @@
 						referenceImages: references.map((image) => image.url)
 					})
 				: buildImageGenerationPayload(commonPayload);
+		const image = 'image' in payload ? payload.image : undefined;
 		const {
 			model: resourceId,
 			prompt: normalizedPrompt,
-			image,
 			n,
 			size: normalizedSize,
 			resolution: normalizedResolution,
@@ -342,9 +346,20 @@
 			case 'price_not_configured':
 			case 'price_rule_incomplete':
 				return $i18n.t('credits.unconfigured');
+			case 'invalid_image_size':
+				return $i18n.t('Image size is invalid');
+			case 'rate_limited':
+				return $i18n.t('Too many image generation requests');
 			default:
 				return $i18n.t('credits.unavailable');
 		}
+	};
+
+	const generationErrorMessage = (batch: ImageGenerationBatch) => {
+		if (batch.errorCode === 'generation_cancelled') return $i18n.t('Cancelled');
+		if (batch.errorCode === 'invalid_image_size') return $i18n.t('Image size is invalid');
+		if (batch.errorCode === 'rate_limited') return $i18n.t('Too many image generation requests');
+		return batch.errorCode;
 	};
 
 	const modelBasePrice = (model: ImageGenerationModel) =>
@@ -400,7 +415,7 @@
 	// 每个 batch 是一条「消息记录」：消息头(模型短名+时间) → 全展开 prompt
 	// → pill 参数行 → 图网格(正方形) → 操作行(重新编辑 i2i / 重新生成 t2i)。
 	// 块最大宽与输入框同宽对齐；图片一律 aspect-square 占满格，统一网格高度。
-	// 桌面端 1×4 横排正方形；中屏 2 列；移动端单图占满、2–4 图横滚 strip。
+	// 桌面端最多 4 列；移动端固定 2 列，避免横向溢出。
 	// 用 flex flex-col gap-3 统一行间距，避免 space-y 的 margin 被 m-0 等覆盖导致行间塌陷。
 	const BATCH_ARTICLE_CLASS =
 		'rounded-2xl bg-gray-50/60 p-3 dark:bg-gray-900/30 sm:p-4 mx-auto w-full max-w-5xl flex flex-col gap-3';
@@ -428,6 +443,9 @@
 	const generationStatusLabel = (batch: ImageGenerationBatch) => {
 		if (batch.status === 'queued') return $i18n.t('Queued');
 		if (batch.status === 'running') return $i18n.t('Generating');
+		if (batch.status === 'failed' && batch.errorCode === 'generation_cancelled') {
+			return $i18n.t('Cancelled');
+		}
 		if (batch.status === 'failed') return $i18n.t('Generation failed');
 		return $i18n.t('Completed');
 	};
@@ -766,6 +784,26 @@
 		showBatchDeleteConfirm = true;
 	};
 
+	const cancelGenerationBatch = async (batch: ImageGenerationBatch) => {
+		if (isGenerationTaskTerminal(batch.status) || batchCancellingIds.has(batch.id)) return;
+		batchCancellingIds = new Set(batchCancellingIds).add(batch.id);
+		try {
+			const cancelled = await cancelImageGenerationTask(localStorage.token, batch.id);
+			generationBatches = mergeGenerationTask(generationBatches, cancelled);
+			toast.success(
+				$i18n.t(
+					cancelled.status === 'succeeded' ? 'Generation already completed' : 'Generation cancelled'
+				)
+			);
+		} catch {
+			toast.error($i18n.t('Failed to cancel generation'));
+		} finally {
+			const next = new Set(batchCancellingIds);
+			next.delete(batch.id);
+			batchCancellingIds = next;
+		}
+	};
+
 	const confirmDeleteBatch = async () => {
 		const batch = batchToDelete;
 		batchToDelete = null;
@@ -775,6 +813,7 @@
 		try {
 			await deleteImageGenerationTask(localStorage.token, batch.id);
 			generationBatches = generationBatches.filter((item) => item.id !== batch.id);
+			libraryRevision += 1;
 			toast.success($i18n.t('Record removed'));
 		} catch {
 			toast.error($i18n.t('Failed to remove record'));
@@ -1043,6 +1082,7 @@
 		<div
 			class="pointer-events-none absolute inset-x-0 top-14 z-30 flex justify-center px-3 sm:top-0 sm:pt-2"
 			role="tablist"
+			tabindex="-1"
 			aria-label={$i18n.t('Images')}
 			on:keydown={handleTabKeydown}
 		>
@@ -1133,12 +1173,13 @@
 						<!-- 连续流：每批一块极淡背景卡片。块内消息头→prompt→pill→图网格→操作行，space-y-3 统一间距。 -->
 						<section class="space-y-4 pb-6 pt-18 sm:pt-18" aria-live="polite">
 							{#each generationBatches as batch (batch.id)}
+								{@const batchModel = getBatchModel(batch, primaryModels)}
 								<article id={`image-task-${batch.id}`} class={BATCH_ARTICLE_CLASS}>
 									<!-- 消息头：厂商图标 + 模型短名 + 时间 -->
 									<div class="flex items-center gap-2">
-										{#if getBatchModel(batch, primaryModels)?.provider}
+										{#if batchModel?.provider}
 											<VendorLogo
-												provider={getBatchModel(batch, primaryModels).provider}
+												provider={batchModel.provider}
 												className="size-5 shrink-0 rounded-full object-cover"
 											/>
 										{:else}
@@ -1286,10 +1327,12 @@
 												class="flex w-full flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-4 py-5 text-center dark:border-red-900/60 dark:bg-red-950/20 sm:px-5 sm:py-6"
 											>
 												<p class="text-sm font-medium text-red-600 dark:text-red-300">
-													{$i18n.t('Generation failed')}
+													{generationStatusLabel(batch)}
 												</p>
-												{#if batch.errorCode}<p class="mt-1 text-xs text-red-500/80">
-														{batch.errorCode}
+												{#if batch.errorCode && batch.errorCode !== 'generation_cancelled'}<p
+														class="mt-1 text-xs text-red-500/80"
+													>
+														{generationErrorMessage(batch)}
 													</p>{/if}
 											</div>
 										{:else}
@@ -1319,51 +1362,91 @@
 
 									<!-- 操作行：再次编辑(i2i) + 重新生成(t2i) + 下载本批(ZIP)，紧凑次级按钮 -->
 									<div class="flex flex-wrap items-center gap-1.5">
-										<button
-											type="button"
-											class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-											on:click={() => reuseBatchEdit(batch)}
-											disabled={batch.images.length === 0}
-										>
-											<svg
-												class="size-3.5"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												aria-hidden="true"
-												><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg
-											>
-											{$i18n.t('Edit again')}
-										</button>
-										<button
-											type="button"
-											class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-											on:click={() => reuseBatchGenerate(batch)}
-										>
-											<svg
-												class="size-3.5"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
-											>
-											{$i18n.t('Regenerate')}
-										</button>
-										{#if batch.images.length > 1}
-											<!-- 本批批量下载：打包成 ZIP，复用 $lib/utils/download 的共享方案 -->
+										{#if !isGenerationTaskTerminal(batch.status)}
 											<button
 												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => downloadBatchImages(batch)}
-												disabled={batchDownloadingIds.has(batch.id)}
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-amber-50 px-3 text-xs font-medium text-amber-700 transition hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50"
+												on:click={() => cancelGenerationBatch(batch)}
+												disabled={batchCancellingIds.has(batch.id)}
+												aria-label={$i18n.t('Cancel generation')}
 											>
-												{#if batchDownloadingIds.has(batch.id)}
+												{#if batchCancellingIds.has(batch.id)}
+													<Spinner className="size-3.5" />
+												{/if}
+												{$i18n.t(
+													batchCancellingIds.has(batch.id) ? 'Cancelling...' : 'Cancel generation'
+												)}
+											</button>
+										{:else}
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => reuseBatchEdit(batch)}
+												disabled={batch.images.length === 0}
+											>
+												<svg
+													class="size-3.5"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"
+													><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg
+												>
+												{$i18n.t('Edit again')}
+											</button>
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => reuseBatchGenerate(batch)}
+											>
+												<svg
+													class="size-3.5"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
+												>
+												{$i18n.t('Regenerate')}
+											</button>
+											{#if batch.images.length > 1}
+												<!-- 本批批量下载：打包成 ZIP，复用 $lib/utils/download 的共享方案 -->
+												<button
+													type="button"
+													class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+													on:click={() => downloadBatchImages(batch)}
+													disabled={batchDownloadingIds.has(batch.id)}
+												>
+													{#if batchDownloadingIds.has(batch.id)}
+														<Spinner className="size-3.5" />
+													{:else}
+														<svg
+															class="size-3.5"
+															viewBox="0 0 24 24"
+															fill="none"
+															stroke="currentColor"
+															stroke-width="2"
+															stroke-linecap="round"
+															stroke-linejoin="round"
+															aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+														>
+													{/if}
+													{$i18n.t('Download all ({{count}})', { count: batch.images.length })}
+												</button>
+											{/if}
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => requestDeleteBatch(batch)}
+												disabled={batchDeletingIds.has(batch.id)}
+												aria-label={$i18n.t('Remove record')}
+											>
+												{#if batchDeletingIds.has(batch.id)}
 													<Spinner className="size-3.5" />
 												{:else}
 													<svg
@@ -1374,36 +1457,13 @@
 														stroke-width="2"
 														stroke-linecap="round"
 														stroke-linejoin="round"
-														aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+														aria-hidden="true"
+														><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
 													>
 												{/if}
-												{$i18n.t('Download all ({{count}})', { count: batch.images.length })}
+												{$i18n.t('Remove')}
 											</button>
 										{/if}
-										<button
-											type="button"
-											class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-2.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-											on:click={() => requestDeleteBatch(batch)}
-											disabled={batchDeletingIds.has(batch.id)}
-											aria-label={$i18n.t('Remove record')}
-										>
-											{#if batchDeletingIds.has(batch.id)}
-												<Spinner className="size-3.5" />
-											{:else}
-												<svg
-													class="size-3.5"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"
-													><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
-												>
-											{/if}
-											{$i18n.t('Remove')}
-										</button>
 									</div>
 								</article>
 							{/each}
@@ -1605,7 +1665,7 @@
 												/>
 												<button
 													type="button"
-													class="absolute -right-1.5 -top-1.5 rounded-full bg-white p-0.5 text-gray-900 shadow border border-gray-100 opacity-100 transition dark:border-gray-700 dark:bg-gray-800 dark:text-white md:opacity-0 md:group-hover:opacity-100"
+													class="absolute -right-2 -top-2 inline-flex size-11 items-center justify-center rounded-full border border-gray-100 bg-white text-gray-900 opacity-100 shadow transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 md:-right-1.5 md:-top-1.5 md:size-6 md:opacity-0 md:group-hover:opacity-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
 													on:click={() => removeImage(index)}
 													aria-label={$i18n.t('Remove image')}
 												>

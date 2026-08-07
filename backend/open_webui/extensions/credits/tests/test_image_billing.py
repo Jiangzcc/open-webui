@@ -346,6 +346,28 @@ async def test_cancelled_provider_call_propagates_without_failed_transition(bill
 
 
 @pytest.mark.asyncio
+async def test_user_cancelled_provider_call_restores_prepaid_usage(billing_module, monkeypatch) -> None:
+    module, _, _, _ = billing_module
+    monkeypatch.setattr(
+        module,
+        'begin_image_usage',
+        AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
+    )
+    invoke = AsyncMock(side_effect=asyncio.CancelledError('generation_cancelled'))
+
+    with pytest.raises(asyncio.CancelledError):
+        await call_bill(invoke=invoke)
+
+    safe_error = module.mark_usage_failed.await_args.args[1]
+    assert safe_error.code == 'generation_cancelled'
+    module.mark_usage_failed.assert_awaited_once_with(
+        'usage-1',
+        safe_error,
+        restore_prepaid=True,
+    )
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(('transition', 'side_effect'), [(0, None), (None, RuntimeError('db secret'))])
 async def test_invoking_transition_failure_blocks_provider(
     billing_module, monkeypatch, transition, side_effect
@@ -645,7 +667,7 @@ async def test_lazy_service_proxies_preserve_import_direction(monkeypatch) -> No
     begin.assert_awaited_once()
     invoking.assert_awaited_once_with('usage-1')
     succeeded.assert_awaited_once()
-    failed.assert_awaited_once_with('usage-1', safe_error)
+    failed.assert_awaited_once_with('usage-1', safe_error, restore_prepaid=False)
 
 
 @pytest.mark.asyncio
