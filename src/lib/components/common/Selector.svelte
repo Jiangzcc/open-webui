@@ -1,8 +1,13 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { Writable } from 'svelte/store';
+	import type { i18n as i18nType } from 'i18next';
 	import ChevronDown from '../icons/ChevronDown.svelte';
 	import Check from '../icons/Check.svelte';
 	import Search from '../icons/Search.svelte';
 	import Select from './Select.svelte';
+
+	const i18n = getContext<Writable<i18nType>>('i18n');
 
 	export let value = '';
 	export let placeholder = $i18n.t('Select a model');
