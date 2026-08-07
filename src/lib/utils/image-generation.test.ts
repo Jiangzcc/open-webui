@@ -10,6 +10,7 @@ import {
 	getPrimaryImageModels,
 	normalizeAspectRatio,
 	normalizeImageGenerationModels,
+	validateCustomSize,
 	normalizeImageResults,
 	normalizeReferenceImages,
 	resolveActiveImageModel,
@@ -285,7 +286,6 @@ describe('image generation utils', () => {
 			model: 'imagen',
 			size: '1792x1024',
 			aspect_ratio: '16:9',
-			output_format: 'png',
 			n: 2,
 			steps: 30,
 			negative_prompt: 'blurry'
@@ -306,8 +306,7 @@ describe('image generation utils', () => {
 		).toEqual({
 			prompt: 'portrait',
 			model: 'fal-ai/gpt-image-1.5',
-			resolution: '1024x1536',
-			output_format: 'png'
+			resolution: '1024x1536'
 		});
 	});
 
@@ -332,8 +331,7 @@ describe('image generation utils', () => {
 			prompt: 'landscape',
 			model: 'nano-banana-pro',
 			aspect_ratio: '16:9',
-			resolution: '2K',
-			output_format: 'png'
+			resolution: '2K'
 		});
 	});
 
@@ -359,8 +357,7 @@ describe('image generation utils', () => {
 		).toEqual({
 			prompt: 'landscape',
 			model: 'openai/gpt-image-2',
-			size: '1536x864',
-			output_format: 'png'
+			size: '1536x864'
 		});
 	});
 
@@ -382,8 +379,7 @@ describe('image generation utils', () => {
 		).toEqual({
 			prompt: 'wide shot',
 			model: 'z-image-turbo',
-			resolution: '1024x576',
-			output_format: 'png'
+			resolution: '1024x576'
 		});
 	});
 
@@ -398,8 +394,7 @@ describe('image generation utils', () => {
 			prompt: 'portrait',
 			size: '1024x1024',
 			aspect_ratio: '1:1',
-			resolution: '2K',
-			output_format: 'png'
+			resolution: '2K'
 		});
 	});
 
@@ -413,8 +408,7 @@ describe('image generation utils', () => {
 		).toEqual({
 			prompt: 'portrait',
 			size: '512x512',
-			aspect_ratio: '1:1',
-			output_format: 'png'
+			aspect_ratio: '1:1'
 		});
 	});
 
@@ -428,7 +422,48 @@ describe('image generation utils', () => {
 				steps: -1,
 				negative_prompt: ''
 			})
-		).toEqual({ prompt: 'portrait', aspect_ratio: 'auto', output_format: 'png' });
+		).toEqual({ prompt: 'portrait', aspect_ratio: 'auto' });
+	});
+
+	test('writes the model-declared default output format instead of hard-coding png', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'hidream-i1-dev',
+				output_formats: ['jpeg', 'png'],
+				default_output_format: 'jpeg'
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({ prompt: 'field', model })
+		).toMatchObject({ output_format: 'jpeg' });
+	});
+
+	test('falls back to png when a model declares output formats without a default', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'unspecified-default',
+				output_formats: ['jpeg', 'png', 'webp']
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({ prompt: 'field', model })
+		).toMatchObject({ output_format: 'png' });
+	});
+
+	test('omits output_format when the model declares no formats', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'no-formats',
+				aspect_ratios: ['1:1'],
+				resolutions: []
+			}
+		]);
+
+		expect(buildImageGenerationPayload({ prompt: 'field', model })).not.toHaveProperty(
+			'output_format'
+		);
 	});
 
 	test('normalizes reference images for edit requests', () => {
@@ -448,7 +483,6 @@ describe('image generation utils', () => {
 			prompt: 'turn it into ink art',
 			size: '1024x1024',
 			aspect_ratio: '1:1',
-			output_format: 'png',
 			image: 'data:image/png;base64,aaa'
 		});
 
@@ -486,7 +520,6 @@ describe('image generation utils', () => {
 			size: '768x1024',
 			aspect_ratio: '3:4',
 			resolution: '1K',
-			output_format: 'png',
 			image: ['a', 'b'],
 			background: 'transparent'
 		});
@@ -675,5 +708,89 @@ describe('imageInputMaxCount normalization', () => {
 		expect(zero.imageInputMaxCount).toBeUndefined();
 		const [frac] = normalizeImageGenerationModels([{ id: 'b', image_input_max_count: 2.5 }]);
 		expect(frac.imageInputMaxCount).toBeUndefined();
+	});
+});
+
+describe('custom size constraints', () => {
+	const constraints = {
+		min_width: 512,
+		max_width: 2048,
+		min_height: 512,
+		max_height: 2048,
+		multiple_of: 16,
+		max_pixels: 4_194_304
+	};
+
+	test('normalizes snake_case custom_size and presets onto the model', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'flux-2',
+				custom_size_field: 'image_size',
+				custom_size: constraints,
+				image_size_whitelist: {
+					'1024x1024': '1024x1024',
+					'1024x576': '1024x576',
+					'512x512': '512x512'
+				}
+			}
+		]);
+		expect(model.customSize).toMatchObject({
+			minWidth: 512,
+			maxWidth: 2048,
+			multipleOf: 16,
+			maxPixels: 4_194_304
+		});
+		expect(model.presetSizes).toEqual(['512x512', '1024x576', '1024x1024']);
+		expect(getImageModelCapability(model).customSize).toBeDefined();
+		expect(getImageModelCapability(model).presetSizes).toEqual([
+			'512x512',
+			'1024x576',
+			'1024x1024'
+		]);
+	});
+
+	test('passes a curated preset size straight through as payload.size', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'flux-2',
+				custom_size_field: 'image_size',
+				custom_size: constraints,
+				image_size_whitelist: { '1024x1024': '1024x1024' }
+			}
+		]);
+		expect(
+			buildImageGenerationPayload({ prompt: 'p', model, size: '1024x1024' })
+		).toMatchObject({ size: '1024x1024' });
+	});
+
+	test('validateCustomSize rejects violations and accepts valid sizes', () => {
+		const cs = {
+			minWidth: 512,
+			maxWidth: 2048,
+			minHeight: 512,
+			maxHeight: 2048,
+			multipleOf: 16,
+			maxPixels: 4_194_304
+		};
+		expect(validateCustomSize(1024, 1024, cs)).toBeNull();
+		expect(validateCustomSize(513, 1024, cs)?.field).toBe('width'); // not multiple of 16
+		expect(validateCustomSize(4096, 1024, cs)?.field).toBe('width'); // exceeds max
+		expect(validateCustomSize(512, 512, cs)?.field).toBeUndefined(); // 512 valid min
+	});
+
+	test('validateCustomSize enforces pixel and aspect-ratio bounds', () => {
+		const cs = { minPixels: 1_048_576, maxPixels: 4_194_304, aspectRatioMin: 0.0625, aspectRatioMax: 16 };
+		expect(validateCustomSize(1024, 1024, cs)).toBeNull();
+		expect(validateCustomSize(512, 512, cs)?.field).toBe('pixels'); // below min pixels
+		expect(validateCustomSize(4096, 2000, cs)?.field).toBe('pixels'); // above max pixels
+		expect(validateCustomSize(4096, 256, cs)).toBeNull(); // ratio exactly 16, min pixels satisfied
+	});
+
+	test('validateCustomSize flags aspect-ratio overflow independently', () => {
+		// Lower the pixel floor so a skinny size can reach the aspect-ratio check.
+		const cs = { aspectRatioMin: 0.5, aspectRatioMax: 2 };
+		expect(validateCustomSize(1024, 1024, cs)).toBeNull();
+		expect(validateCustomSize(2048, 512, cs)?.field).toBe('aspect'); // ratio 4 > 2
+		expect(validateCustomSize(512, 2048, cs)?.field).toBe('aspect'); // ratio 0.25 < 0.5
 	});
 });

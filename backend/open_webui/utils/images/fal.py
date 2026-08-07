@@ -117,14 +117,55 @@ def _set_option(
         data[field] = int(option) if field == 'max_image_size' and option.isdigit() else option
 
 
-def _safe_image_size(value: str | None, sizes: dict[str, str] | None) -> str | dict[str, int] | None:
-    if not isinstance(value, str) or not sizes or value not in sizes.values():
+def _parse_pixel_size(value: str) -> tuple[int, int] | None:
+    """Parse a ``"WxH"`` string into a ``(width, height)`` int tuple."""
+    if not isinstance(value, str):
         return None
-    if value == 'auto':
-        return value
+    match = re.fullmatch(r'(\d+)x(\d+)', value.strip())
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
 
-    width_value, height_value = value.split('x', 1)
-    return {'width': int(width_value), 'height': int(height_value)}
+
+def _validate_custom_size(
+    width: int,
+    height: int,
+    constraints: dict[str, Any] | None,
+) -> str | None:
+    """Return a localized reason string when a custom size violates the model's rules."""
+    if not constraints:
+        return None
+    min_w = constraints.get('min_width')
+    max_w = constraints.get('max_width')
+    min_h = constraints.get('min_height')
+    max_h = constraints.get('max_height')
+    if min_w is not None and width < min_w:
+        return f'width {width} below minimum {min_w}'
+    if max_w is not None and width > max_w:
+        return f'width {width} above maximum {max_w}'
+    if min_h is not None and height < min_h:
+        return f'height {height} below minimum {min_h}'
+    if max_h is not None and height > max_h:
+        return f'height {height} above maximum {max_h}'
+    multiple_of = constraints.get('multiple_of')
+    if multiple_of and (width % multiple_of or height % multiple_of):
+        return f'dimensions must be multiples of {multiple_of}'
+    pixels = width * height
+    min_pixels = constraints.get('min_pixels')
+    max_pixels = constraints.get('max_pixels')
+    if min_pixels is not None and pixels < min_pixels:
+        return f'total pixels {pixels} below minimum {min_pixels}'
+    if max_pixels is not None and pixels > max_pixels:
+        return f'total pixels {pixels} above maximum {max_pixels}'
+    ar_min = constraints.get('aspect_ratio_min')
+    ar_max = constraints.get('aspect_ratio_max')
+    if height > 0:
+        ratio = width / height
+        if ar_min is not None and ratio < ar_min:
+            return f'aspect ratio {ratio:.3f} below minimum {ar_min}'
+        if ar_max is not None and ratio > ar_max:
+            return f'aspect ratio {ratio:.3f} above maximum {ar_max}'
+    return None
 
 
 def _set_custom_image_size(
@@ -132,6 +173,7 @@ def _set_custom_image_size(
     field: str | None,
     form_data: Any,
     sizes: dict[str, str] | None,
+    constraints: dict[str, Any] | None,
 ) -> None:
     if not field:
         return
@@ -140,9 +182,30 @@ def _set_custom_image_size(
     if not requested_size:
         requested_size = (sizes or {}).get(getattr(form_data, 'aspect_ratio', None))
 
-    image_size = _safe_image_size(requested_size, sizes)
-    if image_size is not None:
-        data[field] = image_size
+    if not requested_size:
+        return
+
+    # 'auto' is a model-side hint ("infer from input"), not a dimension; pass through
+    # as the enum string. Every other value is normalized to a {width, height} object.
+    if requested_size == 'auto':
+        data[field] = 'auto'
+        return
+
+    parsed = _parse_pixel_size(requested_size)
+    if parsed is None:
+        return
+    width, height = parsed
+
+    # Curated presets (declared in image_size_whitelist) are known-good; skip the
+    # custom-rule check so legacy whitelists stay authoritative. Any other size must
+    # satisfy the model's custom_size constraints.
+    in_whitelist = bool(sizes) and requested_size in sizes.values()
+    if not in_whitelist:
+        reason = _validate_custom_size(width, height, constraints)
+        if reason is not None:
+            raise FalImageError(f'unsupported image size {requested_size}: {reason}')
+
+    data[field] = {'width': width, 'height': height}
 
 
 def _set_image_input(
@@ -385,6 +448,7 @@ def build_fal_image_payload(form_data: Any, model: str | None, image_urls: list[
                 model_info.get('custom_size_field'),
                 form_data,
                 image_size_whitelist,
+                model_info.get('custom_size'),
             )
         else:
             _set_option(

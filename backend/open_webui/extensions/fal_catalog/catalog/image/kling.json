@@ -64,7 +64,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "edit_model": "fal-ai/kling-image/o3/image-to-image"
+    "edit_model": "fal-ai/kling-image/o3/image-to-image",
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/kling-image/o3/image-to-image",
@@ -134,7 +135,8 @@
     "default_output_format": "png",
     "image_input_field": "image_urls",
     "image_input_max_count": 10,
-    "generation_model": "fal-ai/kling-image/o3/text-to-image"
+    "generation_model": "fal-ai/kling-image/o3/text-to-image",
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/kling-image/v3/text-to-image",
@@ -188,7 +190,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "edit_model": "fal-ai/kling-image/v3/image-to-image"
+    "edit_model": "fal-ai/kling-image/v3/image-to-image",
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/kling-image/v3/image-to-image",
@@ -239,7 +242,8 @@
     "default_output_format": "png",
     "image_input_field": "image_url",
     "image_input_max_count": 1,
-    "generation_model": "fal-ai/kling-image/v3/text-to-image"
+    "generation_model": "fal-ai/kling-image/v3/text-to-image",
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/kolors",
@@ -331,7 +335,14 @@
         "field": "negative_prompt"
       }
     ],
-    "edit_model": "fal-ai/kolors/image-to-image"
+    "edit_model": "fal-ai/kolors/image-to-image",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/kolors/image-to-image",
@@ -430,6 +441,14 @@
         "field": "negative_prompt"
       }
     ],
-    "generation_model": "fal-ai/kolors"
+    "generation_model": "fal-ai/kolors",
+    "default_resolution": "1024x1024",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   }
 ]

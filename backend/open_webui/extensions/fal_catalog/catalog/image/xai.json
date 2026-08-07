@@ -46,7 +46,8 @@
     ],
     "default_output_format": "jpeg",
     "aspect_ratio_field": "aspect_ratio",
-    "resolution_field": "resolution"
+    "resolution_field": "resolution",
+    "hosting": "proxy"
   },
   {
     "id": "xai/grok-imagine-image/quality/edit",
@@ -98,7 +99,8 @@
     "aspect_ratio_field": "aspect_ratio",
     "resolution_field": "resolution",
     "image_input_field": "image_urls",
-    "image_input_max_count": 3
+    "image_input_max_count": 3,
+    "hosting": "proxy"
   },
   {
     "id": "xai/grok-imagine-image",
@@ -147,7 +149,8 @@
     ],
     "default_output_format": "jpeg",
     "aspect_ratio_field": "aspect_ratio",
-    "resolution_field": "resolution"
+    "resolution_field": "resolution",
+    "hosting": "proxy"
   },
   {
     "id": "xai/grok-imagine-image/edit",
@@ -199,6 +202,7 @@
     "aspect_ratio_field": "aspect_ratio",
     "resolution_field": "resolution",
     "image_input_field": "image_urls",
-    "image_input_max_count": 3
+    "image_input_max_count": 3,
+    "hosting": "proxy"
   }
 ]

@@ -70,6 +70,7 @@ _FAL_PUBLIC_MODEL_FIELDS = {
     'output_formats',
     'default_output_format',
     'image_input_max_count',
+    'custom_size',
     'quality_options',
     'default_quality',
     'hosting',

@@ -78,7 +78,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v3/text-to-image",
@@ -208,7 +215,14 @@
         "default": false
       }
     ],
-    "edit_model": "fal-ai/recraft/v3/image-to-image"
+    "edit_model": "fal-ai/recraft/v3/image-to-image",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v3/image-to-image",
@@ -370,7 +384,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4/text-to-image",
@@ -406,7 +427,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4.1/pro/text-to-image",
@@ -442,7 +470,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4.1/text-to-image",
@@ -478,7 +513,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4.1/utility/pro/text-to-image",
@@ -514,7 +556,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4.1/utility/text-to-image",
@@ -550,7 +599,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4/pro/text-to-vector",
@@ -586,7 +642,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4/text-to-vector",
@@ -622,7 +685,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4.1/pro/text-to-vector",
@@ -658,7 +728,14 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/recraft/v4.1/text-to-vector",
@@ -694,6 +771,13 @@
         "field": "enable_safety_checker",
         "default": false
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   }
 ]

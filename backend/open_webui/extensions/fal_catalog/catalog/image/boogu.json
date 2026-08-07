@@ -70,7 +70,14 @@
         "field": "negative_prompt"
       }
     ],
-    "edit_model": "fal-ai/boogu-image/edit"
+    "edit_model": "fal-ai/boogu-image/edit",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 2048,
+      "min_height": 256,
+      "max_height": 2048,
+      "multiple_of": 16
+    }
   },
   {
     "id": "fal-ai/boogu-image/edit",
@@ -150,6 +157,14 @@
         "field": "negative_prompt"
       }
     ],
-    "generation_model": "fal-ai/boogu-image"
+    "generation_model": "fal-ai/boogu-image",
+    "default_resolution": "1024x1024",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 2048,
+      "min_height": 256,
+      "max_height": 2048,
+      "multiple_of": 16
+    }
   }
 ]

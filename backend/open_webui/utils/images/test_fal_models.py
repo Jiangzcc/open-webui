@@ -325,6 +325,18 @@ ALIBABA_I2I_PAIRS = [
     ('fal-ai/wan-v2.5/text-to-image', 'fal-ai/wan-25-preview/image-to-image', 'image_urls'),
 ]
 
+# 多图派 i2i 端点参考图上限,取自 fal 文档("1-3 images required" 等)。
+# 单图派固定为 1(下面按 image_input_field=='image_url' 分支断言),不在此表登记。
+ALIBABA_I2I_MAX_COUNT = {
+    'fal-ai/qwen-image-2/edit': 3,
+    'fal-ai/qwen-image-2/pro/edit': 3,
+    'fal-ai/qwen-image-max/edit': 3,
+    'wan/v2.6/image-to-image': 3,
+    'fal-ai/wan/v2.7/edit': 4,
+    'fal-ai/wan/v2.7/pro/edit': 4,
+    'fal-ai/wan-25-preview/image-to-image': 2,
+}
+
 
 # --- Task #11: supported t2i twins advertise their edit_model -----------------
 def test_each_supported_alibaba_t2i_declares_edit_model_pointing_to_real_sibling():
@@ -371,8 +383,12 @@ def test_each_alibaba_i2i_sibling_is_registered_with_correct_shape():
                 f'{edit_id} image_input_max_count expected 1, got {sibling.get("image_input_max_count")!r}'
             )
         else:
-            # 多图派不下发 max_count,沿用上层默认容量(MultiImageUploader 的 4)
-            assert 'image_input_max_count' not in sibling, f'{edit_id} should not clamp image_input_max_count'
+            # 多图派按 fal 文档声明的参考图上限收紧上传器,避免用户上传第 N+1
+            # 张时被 fal 端拒绝(qwen "1-3 images"、wan v2.7 "1-4 images" 等)。
+            expected = ALIBABA_I2I_MAX_COUNT[edit_id]
+            assert sibling['image_input_max_count'] == expected, (
+                f'{edit_id} image_input_max_count expected {expected}, got {sibling.get("image_input_max_count")!r}'
+            )
         # 能力维度(hosting/resolutions/output_formats)应当与 t2i twin 对齐
         twin = by_id[t2i_id]
         assert sibling['hosting'] == twin['hosting'], (

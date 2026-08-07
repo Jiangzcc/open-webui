@@ -31,6 +31,7 @@
 		resolveActiveImageModel,
 		resolveImageEditModel,
 		supportsImageEditing,
+		validateCustomSize,
 		validateImagePrompt,
 		type GeneratedImage,
 		type ImageAspectRatio,
@@ -103,6 +104,10 @@
 	let imageCount = 1;
 	let negativePrompt = '';
 	let steps: number | null = null;
+	// 自定义宽高输入(WxH),仅对声明 custom_size 的模型启用。空串表示未输入。
+	let customWidth = '';
+	let customHeight = '';
+	let useCustomSize = false;
 	let imageQuoteState: ImageQuoteState = { status: 'loading' };
 	let quoteInput: ImageQuoteInput | null = null;
 
@@ -194,7 +199,8 @@
 		imageCount,
 		steps,
 		negativePrompt,
-		referenceImages
+		referenceImages,
+		customSizeValue
 	);
 	$: if (loaded && quoteInput) {
 		imageQuoteStateMachine.schedule(quoteInput);
@@ -237,6 +243,34 @@
 	) {
 		imageCount = imageCountOptions[0];
 	}
+	$: customSizeConstraints = selectedModelCapability.customSize;
+	$: supportsCustomSize = Boolean(customSizeConstraints);
+	// 切到不支持自定义的模型时,关闭自定义态并清空输入,避免残留 size 污染后续请求。
+	$: if (loaded && !supportsCustomSize && useCustomSize) {
+		useCustomSize = false;
+		customWidth = '';
+		customHeight = '';
+	}
+	// 选中分辨率变化时同步预填自定义宽高(仅 WxH 格式),
+	// 启用自定义尺寸后可直接在上面的预设基础上微调,无需另列一份预设。
+	$: if (loaded && selectedResolution) {
+		const match = selectedResolution.match(/^(\d+)x(\d+)$/);
+		if (match) {
+			customWidth = match[1];
+			customHeight = match[2];
+		}
+	}
+	$: customWidthNum = Number(customWidth);
+	$: customHeightNum = Number(customHeight);
+	$: customSizeError =
+		useCustomSize && customWidth && customHeight
+			? validateCustomSize(customWidthNum, customHeightNum, customSizeConstraints)
+			: null;
+	// 仅当启用自定义且输入合法时,才产出 "WxH" 作为 payload.size;后端据此发送 {width,height}。
+	$: customSizeValue =
+		useCustomSize && customWidth && customHeight && !customSizeError
+			? `${customWidthNum}x${customHeightNum}`
+			: null;
 
 	const buildImageQuoteInput = (
 		aspectRatio: ImageAspectRatio,
@@ -246,7 +280,8 @@
 		count: number,
 		stepCount: number | null,
 		negative: string,
-		references: ReferenceImage[]
+		references: ReferenceImage[],
+		size: string | null
 	): ImageQuoteInput | null => {
 		const commonPayload = {
 			prompt: CREDIT_QUOTE_PLACEHOLDER_PROMPT,
@@ -256,7 +291,8 @@
 			model,
 			n: count,
 			steps: stepCount,
-			negative_prompt: negative
+			negative_prompt: negative,
+			size
 		};
 		const payload =
 			references.length > 0
@@ -270,7 +306,7 @@
 			prompt: normalizedPrompt,
 			image,
 			n,
-			size,
+			size: normalizedSize,
 			resolution: normalizedResolution,
 			quality: normalizedQuality,
 			aspect_ratio
@@ -286,7 +322,7 @@
 			prompt: normalizedPrompt,
 			...(image ? { image } : {}),
 			dimensions: {
-				...(size ? { size } : {}),
+				...(normalizedSize ? { size: normalizedSize } : {}),
 				...(normalizedResolution ? { resolution: normalizedResolution } : {}),
 				...(aspect_ratio ? { aspect_ratio } : {}),
 				...(normalizedQuality ? { quality: normalizedQuality } : {}),
@@ -660,6 +696,10 @@
 		selectedAspectRatio = capability.defaultAspectRatio;
 		selectedResolution = capability.defaultResolution ?? '';
 		imageCount = capability.imageCounts[0] ?? 1;
+		// 切换模型时清空自定义宽高,避免上一个模型的尺寸/约束残留。
+		useCustomSize = false;
+		customWidth = '';
+		customHeight = '';
 	};
 
 	const selectModelIfEnabled = (model: ImageGenerationModel) => {
@@ -913,7 +953,8 @@
 				model: activeModelConfig ?? selectedModelConfig ?? selectedModel,
 				n: imageCount,
 				steps,
-				negative_prompt: negativePrompt
+				negative_prompt: negativePrompt,
+				size: customSizeValue
 			};
 			const payload =
 				referenceImages.length > 0
@@ -1699,6 +1740,66 @@
 														</section>
 													{/if}
 
+													{#if supportsCustomSize}
+														<section class="mt-5">
+															<div class="flex items-center justify-between px-1 pb-2">
+																<h3
+																	class="text-sm font-medium text-gray-900 dark:text-gray-100"
+																>
+																	{$i18n.t('Custom Size')}
+																</h3>
+																<label
+																	class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+																>
+																	<input
+																		type="checkbox"
+																		class="size-3.5 rounded border-gray-300 dark:border-gray-600"
+																		bind:checked={useCustomSize}
+																	/>
+																	{$i18n.t('Enable')}
+																</label>
+															</div>
+															{#if useCustomSize}
+																<div class="flex items-center gap-2">
+																	<input
+																		type="number"
+																		inputmode="numeric"
+																		min="1"
+																		bind:value={customWidth}
+																		placeholder="1024"
+																		aria-label={$i18n.t('Width')}
+																		class="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100"
+																	/>
+																	<span class="text-sm text-gray-400">×</span>
+																	<input
+																		type="number"
+																		inputmode="numeric"
+																		min="1"
+																		bind:value={customHeight}
+																		placeholder="1024"
+																		aria-label={$i18n.t('Height')}
+																		class="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100"
+																	/>
+																</div>
+																{#if customSizeError}
+																	<p
+																		class="mt-2 px-1 text-xs text-red-600 dark:text-red-400"
+																	>
+																		{customSizeError.message}
+																	</p>
+																{:else if customWidth && customHeight}
+																	<p
+																		class="mt-2 px-1 text-xs text-gray-400 dark:text-gray-500"
+																	>
+																		{customWidthNum * customHeightNum >= 0
+																			? (customWidthNum * customHeightNum).toLocaleString()
+																			: ''} px · {customWidthNum || 0}:{customHeightNum || 0}
+																	</p>
+																{/if}
+															{/if}
+														</section>
+													{/if}
+
 													{#if qualityOptions.length > 0}
 														<section class={hasImageSizingOptions ? 'mt-5' : ''}>
 															<h3
@@ -1768,6 +1869,7 @@
 												: 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500'}"
 											disabled={!prompt.trim() ||
 												!isImageQuoteSubmittable(imageQuoteState) ||
+												(useCustomSize && Boolean(customSizeError)) ||
 												loading}
 											aria-label={referenceImages.length > 0
 												? $i18n.t('Edit Image')

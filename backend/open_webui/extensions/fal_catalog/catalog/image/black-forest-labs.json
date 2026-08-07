@@ -76,7 +76,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-1/dev/image-to-image",
@@ -157,7 +164,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-1/krea",
@@ -236,7 +250,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-1/krea/image-to-image",
@@ -317,7 +338,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-1/schnell",
@@ -395,7 +423,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-1/srpo",
@@ -474,7 +509,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-1/srpo/image-to-image",
@@ -555,7 +597,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2",
@@ -639,7 +688,13 @@
         ],
         "default": "regular"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 512,
+      "max_width": 2048,
+      "min_height": 512,
+      "max_height": 2048
+    }
   },
   {
     "id": "fal-ai/flux-2/edit",
@@ -725,7 +780,13 @@
         ],
         "default": "regular"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 512,
+      "max_width": 2048,
+      "min_height": 512,
+      "max_height": 2048
+    }
   },
   {
     "id": "fal-ai/flux-2/flash",
@@ -792,7 +853,13 @@
         "min": 0,
         "max": 20
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 512,
+      "max_width": 2048,
+      "min_height": 512,
+      "max_height": 2048
+    }
   },
   {
     "id": "fal-ai/flux-2/flash/edit",
@@ -861,7 +928,13 @@
         "min": 0,
         "max": 20
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 512,
+      "max_width": 2048,
+      "min_height": 512,
+      "max_height": 2048
+    }
   },
   {
     "id": "fal-ai/flux-2-flex",
@@ -939,7 +1012,14 @@
         ],
         "default": "5"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2-flex/edit",
@@ -1019,7 +1099,14 @@
         ],
         "default": "5"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/4b",
@@ -1082,7 +1169,14 @@
       "1024x576": "1024x576"
     },
     "number_fields": [],
-    "option_fields": []
+    "option_fields": [],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/4b/edit",
@@ -1147,7 +1241,14 @@
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [],
-    "option_fields": []
+    "option_fields": [],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/4b/base",
@@ -1232,7 +1333,14 @@
       {
         "field": "negative_prompt"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/4b/base/edit",
@@ -1319,7 +1427,14 @@
       {
         "field": "negative_prompt"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/9b",
@@ -1382,7 +1497,14 @@
       "1024x576": "1024x576"
     },
     "number_fields": [],
-    "option_fields": []
+    "option_fields": [],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/9b/edit",
@@ -1447,7 +1569,14 @@
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [],
-    "option_fields": []
+    "option_fields": [],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/9b/base",
@@ -1532,7 +1661,14 @@
       {
         "field": "negative_prompt"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/klein/9b/base/edit",
@@ -1619,7 +1755,14 @@
       {
         "field": "negative_prompt"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2-max",
@@ -1683,7 +1826,14 @@
         ],
         "default": "5"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2-max/edit",
@@ -1749,7 +1899,14 @@
         ],
         "default": "5"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2-pro",
@@ -1813,7 +1970,14 @@
         ],
         "default": "5"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2-pro/edit",
@@ -1879,7 +2043,14 @@
         ],
         "default": "5"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-2/turbo",
@@ -1946,7 +2117,13 @@
         "min": 0,
         "max": 20
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 512,
+      "max_width": 2048,
+      "min_height": 512,
+      "max_height": 2048
+    }
   },
   {
     "id": "fal-ai/flux-2/turbo/edit",
@@ -2015,7 +2192,13 @@
         "min": 0,
         "max": 20
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 512,
+      "max_width": 2048,
+      "min_height": 512,
+      "max_height": 2048
+    }
   },
   {
     "id": "fal-ai/flux/dev",
@@ -2094,7 +2277,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux/dev/image-to-image",
@@ -2175,7 +2365,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux/krea",
@@ -2254,7 +2451,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux/krea/image-to-image",
@@ -2335,7 +2539,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-pro/kontext",
@@ -2656,7 +2867,14 @@
         ],
         "default": "6"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux-pro/v1.1-ultra",
@@ -2747,9 +2965,9 @@
       },
       {
         "field": "raw",
-        "default": false  
+        "default": false
       },
-      {   
+      {
         "field": "sync_mode"
       }
     ],
@@ -2866,7 +3084,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux/srpo",
@@ -2945,7 +3170,14 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/flux/srpo/image-to-image",
@@ -3026,6 +3258,13 @@
         ],
         "default": "none"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   }
 ]

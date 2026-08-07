@@ -56,7 +56,15 @@
         ],
         "default": "low"
       }
-    ]
+    ],
+    "hosting": "proxy",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "openai/gpt-image-2/edit",
@@ -123,7 +131,16 @@
       {
         "field": "mask_url"
       }
-    ]
+    ],
+    "image_input_max_count": 16,
+    "hosting": "proxy",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/gpt-image-1.5",
@@ -178,7 +195,8 @@
         ],
         "default": "auto"
       }
-    ]
+    ],
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/gpt-image-1.5/edit",
@@ -247,7 +265,8 @@
       {
         "field": "mask_image_url"
       }
-    ]
+    ],
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/gpt-image-1/text-to-image",
@@ -303,7 +322,8 @@
         ],
         "default": "auto"
       }
-    ]
+    ],
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/gpt-image-1/edit-image",
@@ -367,7 +387,8 @@
           "high"
         ]
       }
-    ]
+    ],
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/gpt-image-1-mini",
@@ -423,7 +444,8 @@
         ],
         "default": "auto"
       }
-    ]
+    ],
+    "hosting": "proxy"
   },
   {
     "id": "fal-ai/gpt-image-1-mini/edit",
@@ -480,6 +502,7 @@
         ],
         "default": "auto"
       }
-    ]
+    ],
+    "hosting": "proxy"
   }
 ]

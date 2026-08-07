@@ -93,6 +93,37 @@ class TextField(_InputField):
     pass
 
 
+class CustomSizeConstraints(_StrictModel):
+    """受约束的自由尺寸规则。
+
+    支持自由 ``{width, height}`` 的模型用此块声明前端自定义输入的校验规则。
+    所有字段可选,缺省表示该维度不做本地校验。取值来自 fal 文档;无文档约束的
+    模型套用通用护栏(min 256 / max 4096 / max_pixels 4MP),fal 端可能进一步限制。
+    """
+
+    min_width: int | None = Field(default=None, ge=1)
+    max_width: int | None = Field(default=None, ge=1)
+    min_height: int | None = Field(default=None, ge=1)
+    max_height: int | None = Field(default=None, ge=1)
+    multiple_of: int | None = Field(default=None, ge=1)
+    min_pixels: int | None = Field(default=None, ge=1)
+    max_pixels: int | None = Field(default=None, ge=1)
+    aspect_ratio_min: float | None = Field(default=None, gt=0)
+    aspect_ratio_max: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode='after')
+    def validate_ranges(self) -> 'CustomSizeConstraints':
+        for label, lo, hi in (
+            ('width', self.min_width, self.max_width),
+            ('height', self.min_height, self.max_height),
+            ('pixels', self.min_pixels, self.max_pixels),
+            ('aspect_ratio', self.aspect_ratio_min, self.aspect_ratio_max),
+        ):
+            if lo is not None and hi is not None and lo > hi:
+                raise ValueError(f'custom_size {label} min must not exceed max')
+        return self
+
+
 class FalImageModelDefinition(_StrictModel):
     id: str = Field(min_length=1, max_length=256)
     public_id: str = Field(min_length=1, max_length=128)
@@ -111,6 +142,7 @@ class FalImageModelDefinition(_StrictModel):
     default_resolution: str | None = None
     resolution_field: str | None = Field(default=None, min_length=1)
     custom_size_field: str | None = Field(default=None, min_length=1)
+    custom_size: CustomSizeConstraints | None = None
     image_size_whitelist: dict[str, str] | None = None
     output_formats: list[str] | None = None
     default_output_format: str | None = None
@@ -187,6 +219,8 @@ class FalImageModelDefinition(_StrictModel):
         ):
             if default is not None and options and default not in options:
                 raise ValueError(f'default {label} must be included in non-empty options')
+        if self.custom_size is not None and self.custom_size_field is None:
+            raise ValueError('custom_size requires custom_size_field to target the request field')
         return self
 
     def to_legacy_dict(self) -> dict[str, object]:

@@ -91,6 +91,25 @@ export type ImageGenerationModel = {
 	 * the frontend mirrors it to tighten the uploader’s slot budget.
 	 */
 	imageInputMaxCount?: number;
+	/**
+	 * Per-model rules for free-form {width, height} input. Present only on models
+	 * whose backend declares `custom_size`. The frontend uses these to validate
+	 * user-typed dimensions; the backend re-validates authoritatively.
+	 */
+	customSize?: CustomSizeConstraints;
+	presetSizes?: string[];
+};
+
+export type CustomSizeConstraints = {
+	minWidth?: number;
+	maxWidth?: number;
+	minHeight?: number;
+	maxHeight?: number;
+	multipleOf?: number;
+	minPixels?: number;
+	maxPixels?: number;
+	aspectRatioMin?: number;
+	aspectRatioMax?: number;
 };
 
 export type ImageModelCapability = {
@@ -102,8 +121,12 @@ export type ImageModelCapability = {
 	aspectRatioSizes: Partial<Record<ImageAspectRatio, string>>;
 	sizeField?: string;
 	supportsAspectRatioField?: boolean;
+	outputFormats: string[];
+	defaultOutputFormat?: string;
 	qualityOptions: string[];
 	defaultQuality?: string;
+	customSize?: CustomSizeConstraints;
+	presetSizes: string[];
 };
 
 type ImagePayloadInput = {
@@ -183,7 +206,9 @@ const DEFAULT_MODEL_CAPABILITY: ImageModelCapability = {
 	imageCounts: [...DEFAULT_IMAGE_COUNT_OPTIONS],
 	defaultAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
 	aspectRatioSizes: DEFAULT_IMAGE_ASPECT_RATIO_SIZES,
-	qualityOptions: []
+	outputFormats: [],
+	qualityOptions: [],
+	presetSizes: []
 };
 
 const isPositiveInteger = (value?: number | null) => {
@@ -292,6 +317,100 @@ const normalizeAspectRatioSizeMap = (value: unknown) => {
 
 const hasOwn = (value: object, key: string) => {
 	return Object.prototype.hasOwnProperty.call(value, key);
+};
+
+const isPositiveNumber = (value: unknown): value is number =>
+	typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+const normalizeCustomSizeConstraints = (value: unknown): CustomSizeConstraints | undefined => {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return undefined;
+	}
+	const src = value as Record<string, unknown>;
+	const pick = (key: string, isInt = true): number | undefined => {
+		const v = src[key];
+		if (!isPositiveNumber(v)) {
+			return undefined;
+		}
+		return isInt ? Math.floor(v as number) : (v as number);
+	};
+	const result: CustomSizeConstraints = {};
+	const minWidth = pick('min_width');
+	const maxWidth = pick('max_width');
+	const minHeight = pick('min_height');
+	const maxHeight = pick('max_height');
+	const multipleOf = pick('multiple_of');
+	const minPixels = pick('min_pixels');
+	const maxPixels = pick('max_pixels');
+	const aspectRatioMin = pick('aspect_ratio_min', false);
+	const aspectRatioMax = pick('aspect_ratio_max', false);
+	if (minWidth !== undefined) result.minWidth = minWidth;
+	if (maxWidth !== undefined) result.maxWidth = maxWidth;
+	if (minHeight !== undefined) result.minHeight = minHeight;
+	if (maxHeight !== undefined) result.maxHeight = maxHeight;
+	if (multipleOf !== undefined) result.multipleOf = multipleOf;
+	if (minPixels !== undefined) result.minPixels = minPixels;
+	if (maxPixels !== undefined) result.maxPixels = maxPixels;
+	if (aspectRatioMin !== undefined) result.aspectRatioMin = aspectRatioMin;
+	if (aspectRatioMax !== undefined) result.aspectRatioMax = aspectRatioMax;
+	return Object.keys(result).length > 0 ? result : undefined;
+};
+
+const normalizePresetSizes = (value: unknown): string[] => {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return [];
+	}
+	return Object.keys(value as Record<string, unknown>)
+		.filter((key) => /^\d+x\d+$/.test(key))
+		.sort((a, b) => {
+			const [aw, ah] = a.split('x').map(Number);
+			const [bw, bh] = b.split('x').map(Number);
+			return aw * ah - bw * bh;
+		});
+};
+
+export type CustomSizeValidationError = { field: 'width' | 'height' | 'pixels' | 'aspect'; message: string };
+
+export const validateCustomSize = (
+	width: number,
+	height: number,
+	constraints?: CustomSizeConstraints
+): CustomSizeValidationError | null => {
+	if (!constraints) {
+		return null;
+	}
+	if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+		return { field: 'width', message: '宽高必须是正整数' };
+	}
+	if (constraints.minWidth !== undefined && width < constraints.minWidth) {
+		return { field: 'width', message: `宽度不能小于 ${constraints.minWidth}` };
+	}
+	if (constraints.maxWidth !== undefined && width > constraints.maxWidth) {
+		return { field: 'width', message: `宽度不能大于 ${constraints.maxWidth}` };
+	}
+	if (constraints.minHeight !== undefined && height < constraints.minHeight) {
+		return { field: 'height', message: `高度不能小于 ${constraints.minHeight}` };
+	}
+	if (constraints.maxHeight !== undefined && height > constraints.maxHeight) {
+		return { field: 'height', message: `高度不能大于 ${constraints.maxHeight}` };
+	}
+	if (constraints.multipleOf !== undefined && (width % constraints.multipleOf || height % constraints.multipleOf)) {
+		return { field: 'width', message: `宽高必须是 ${constraints.multipleOf} 的倍数` };
+	}
+	const pixels = width * height;
+	if (constraints.minPixels !== undefined && pixels < constraints.minPixels) {
+		return { field: 'pixels', message: `总像素不能少于 ${constraints.minPixels.toLocaleString()}` };
+	}
+	if (constraints.maxPixels !== undefined && pixels > constraints.maxPixels) {
+		return { field: 'pixels', message: `总像素不能超过 ${constraints.maxPixels.toLocaleString()}` };
+	}
+	if (constraints.aspectRatioMin !== undefined && width / height < constraints.aspectRatioMin) {
+		return { field: 'aspect', message: `宽高比超出范围（最小 ${constraints.aspectRatioMin}）` };
+	}
+	if (constraints.aspectRatioMax !== undefined && width / height > constraints.aspectRatioMax) {
+		return { field: 'aspect', message: `宽高比超出范围（最大 ${constraints.aspectRatioMax}）` };
+	}
+	return null;
 };
 
 const getImageCountsFromMax = (maxImages?: number) => {
@@ -403,8 +522,12 @@ const getExplicitModelCapability = (model?: ImageGenerationModel | string | null
 		aspectRatioSizes: model.aspectRatioSizes,
 		sizeField: model.sizeField,
 		supportsAspectRatioField: model.supportsAspectRatioField,
+		outputFormats: model.outputFormats,
+		defaultOutputFormat: model.defaultOutputFormat,
 		qualityOptions: model.qualityOptions,
-		defaultQuality: model.defaultQuality
+		defaultQuality: model.defaultQuality,
+		customSize: model.customSize,
+		presetSizes: model.presetSizes ?? []
 	};
 };
 
@@ -469,6 +592,19 @@ export const getImageModelCapability = (
 
 	const qualityOptions = explicit.qualityOptions ?? [];
 
+	const outputFormats = explicit.outputFormats?.length
+		? explicit.outputFormats
+		: preset.outputFormats?.length
+			? preset.outputFormats
+			: [];
+	const defaultOutputFormat =
+		(outputFormats.length > 0 && explicit.defaultOutputFormat) ||
+		(outputFormats.length > 0 && preset.defaultOutputFormat) ||
+		undefined;
+
+	const customSize = explicit.customSize;
+	const presetSizes = explicit.presetSizes ?? [];
+
 	return {
 		aspectRatios,
 		resolutions,
@@ -478,6 +614,10 @@ export const getImageModelCapability = (
 		sizeField: explicit.sizeField,
 		supportsAspectRatioField: explicit.supportsAspectRatioField,
 		aspectRatioSizes,
+		outputFormats,
+		defaultOutputFormat,
+		customSize,
+		presetSizes,
 		qualityOptions,
 		defaultQuality: explicit.defaultQuality
 	};
@@ -650,6 +790,11 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 		const aspectRatioSizes = normalizeAspectRatioSizeMap(
 			model.aspectRatioSizes ?? model.aspect_ratio_sizes
 		);
+		const customSize = normalizeCustomSizeConstraints(model.customSize ?? model.custom_size);
+		// Preset chips for the custom-size input come from the model's curated
+		// image_size_whitelist keys (already WxH strings).
+		const rawPresets = model.image_size_whitelist ?? model.imageSizeWhitelist;
+		const presetSizes = normalizePresetSizes(rawPresets);
 		const qualityOptions = normalizeStringList(model.qualityOptions ?? model.quality_options);
 		const defaultQuality = trimOptional(
 			typeof model.defaultQuality === 'string'
@@ -706,7 +851,9 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 				...(outputFormats.length && { outputFormats }),
 				...(defaultOutputFormat && { defaultOutputFormat }),
 				...(qualityOptions.length && { qualityOptions }),
-				...(defaultQuality && { defaultQuality })
+				...(defaultQuality && { defaultQuality }),
+				...(customSize && { customSize }),
+				...(presetSizes.length && { presetSizes })
 			}
 		];
 	});
@@ -801,7 +948,12 @@ export const buildImageGenerationPayload = ({
 	if (trimmedQuality && capability.qualityOptions.includes(trimmedQuality)) {
 		payload.quality = trimmedQuality;
 	}
-	payload.output_format = 'png';
+	// 只在模型声明了可选输出格式时才写入，默认值取模型声明的 defaultOutputFormat，
+	// 没有声明时回退 png（fal 后端亦以 png 为兜底）。避免对无 output_formats 能力的
+	// 模型强写一个它不接受或非首选的格式。
+	if (capability.outputFormats.length > 0) {
+		payload.output_format = trimOptional(capability.defaultOutputFormat) ?? 'png';
+	}
 	if (isPositiveInteger(n)) {
 		payload.n = Number(n);
 	}

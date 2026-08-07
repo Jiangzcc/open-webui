@@ -78,7 +78,14 @@
       {
         "field": "negative_prompt"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/hunyuan-image/v3/text-to-image",
@@ -155,7 +162,14 @@
       {
         "field": "negative_prompt"
       }
-    ]
+    ],
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/hunyuan-image/v3/instruct/text-to-image",
@@ -224,7 +238,14 @@
       "png"
     ],
     "default_output_format": "png",
-    "edit_model": "fal-ai/hunyuan-image/v3/instruct/edit"
+    "edit_model": "fal-ai/hunyuan-image/v3/instruct/edit",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   },
   {
     "id": "fal-ai/hunyuan-image/v3/instruct/edit",
@@ -295,6 +316,13 @@
     "default_output_format": "png",
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
-    "generation_model": "fal-ai/hunyuan-image/v3/instruct/text-to-image"
+    "generation_model": "fal-ai/hunyuan-image/v3/instruct/text-to-image",
+    "custom_size": {
+      "min_width": 256,
+      "max_width": 1024,
+      "min_height": 256,
+      "max_height": 1024,
+      "max_pixels": 1048576
+    }
   }
 ]
