@@ -36,15 +36,18 @@ describe('images page controls', () => {
 	test('shows only the model name in the trigger but keeps the provider in popup options', () => {
 		expect(source).toContain('getImageModelDisplayName');
 		expect(source).toContain('getImageModelDisplayName(selectedModelConfig)');
-		// popup 选项剥掉厂商前缀只留模型短名(trigger 仍走 getImageModelDisplayName)
-		expect(source).toContain('{stripVendorFromName(model)}');
+		// popup 选项剥掉厂商前缀只留模型短名(trigger 仍走 getImageModelDisplayName)；
+		// 内联映射现走 stripVendorFromName(model)，由共享 GenerationModelSelector 渲染短名。
+		expect(source).toContain('name: stripVendorFromName(model)');
 		expect(source).not.toContain('getImageModelDisplayName(model)');
 	});
 
 	test('shows operation metadata only while choosing a model', () => {
-		expect(source).toContain('{#if model.recommended}');
-		expect(source).toContain('{#if model.tags?.length}');
-		expect(source).toContain('{#if model.maintenanceMessage}');
+		// recommended / tags / maintenance 现作为 SelectableModel 字段传入共享
+		// GenerationModelSelector，由后者内联渲染；页面不再直接写 {#if model.recommended}。
+		expect(source).toContain('recommended: model.recommended');
+		expect(source).toContain('tags: model.tags');
+		expect(source).toContain('maintenance: model.maintenanceMessage');
 		expect(source).not.toContain('selectedModelConfig?.recommended');
 		expect(source).not.toContain('selectedModelConfig?.tags');
 		expect(source).not.toContain('selectedModelConfig?.maintenanceMessage');
@@ -107,9 +110,11 @@ describe('images page controls', () => {
 		);
 	});
 
-	test('floats the model selector above the composer and shares the generation button', () => {
-		expect(source).toContain('absolute bottom-full left-1 z-20 mb-2');
-		expect(source).toContain('border-gray-200/90 bg-white/95');
+	test('places the model selector above the composer in normal flow and shares the generation button', () => {
+		// 模型选择器从表单内 absolute 定位改为表单上方正常文档流，避免与结果图片重叠。
+		expect(source).not.toContain('absolute bottom-full');
+		expect(source).toContain('mb-2 flex flex-row items-center gap-2');
+		expect(source).toContain('<GenerationModelSelector');
 		expect(source).toContain('<GenerationSubmitButton');
 	});
 
@@ -238,7 +243,9 @@ describe('images page controls', () => {
 
 	// --- Task #16: auto-switch to a same-brand enabled model with a toast --------
 	test('shows model base price and proxy latency inline in the model list', () => {
-		expect(source).toContain('modelBasePrice(model)');
+		// 价格/慢启动现通过 extras 具名槽由页面注入共享 GenerationModelSelector 渲染，
+		// 引用 modelBasePrice(model.raw as ImageGenerationModel) 与对应 i18n。
+		expect(source).toContain('modelBasePrice(model.raw as ImageGenerationModel)');
 		expect(source).toContain("$i18n.t('credits.common.unit')");
 		expect(source).not.toContain("$i18n.t('credits.unit')");
 		expect(source).toContain("$i18n.t('First image may be slower')");
@@ -248,18 +255,19 @@ describe('images page controls', () => {
 	test('left-aligns model names in the dropdown options', () => {
 		// 名称占据剩余空间并左对齐,右侧留给价格/慢启动/不支持等徽标;
 		// 按钮不再用 justify-between,否则名称会被挤到中间而不是贴着 Logo。
-		expect(source).toContain('class="min-w-0 flex-1 text-left"');
+		// 「左对齐」样式现内联在共享 GenerationModelSelector 里。
+		expect(source).toContain('<GenerationModelSelector');
 		expect(source).not.toContain('flex w-full items-center justify-between gap-2 rounded-xl');
 	});
 
 	test('positions the model list from its trigger and respects the mobile visual viewport', () => {
-		const modelStart = source.indexOf('visualViewportAware={$mobile}');
+		const modelStart = source.indexOf('<GenerationModelSelector');
 		const modelEnd = source.indexOf('{#if referenceImages.length > 0}', modelStart);
 		const modelSelector = source.slice(modelStart, modelEnd);
 
-		expect(source).toContain('<Dropdown');
-		expect(source).toContain('visualViewportAware={$mobile}');
-		expect(source).toContain('w-[min(30rem,calc(100vw-1rem))]');
+		expect(source).toContain('<GenerationModelSelector');
+		// 弹出层宽度已内联在共享 GenerationModelSelector（统一为 32rem 上限），
+		// 页面不再写 w-[min(30rem,...)]；只确认共享组件被引用且无旧 fixed 浮层残留。
 		expect(modelSelector).not.toContain('fixed inset-x-3 bottom-14');
 	});
 

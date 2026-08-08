@@ -26,9 +26,9 @@
 		type ImageQuoteState
 	} from '$lib/components/credits/quote-state';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
+	import GenerationModelSelector from '$lib/components/common/GenerationModelSelector.svelte';
 	import GenerationSubmitButton from '$lib/components/common/GenerationSubmitButton.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
 
@@ -80,6 +80,7 @@
 	let showCreationDetails = false;
 	let showModelSelector = false;
 	let showVideoOptions = false;
+	let showTaskSelector = false;
 	let selectedVendor = '';
 	let selection: 'generate' | 'mine' | 'all' = 'generate';
 	let creationRevision = 0;
@@ -512,25 +513,36 @@
 				<main class="flex min-h-0 flex-1 overflow-hidden p-3 sm:p-6">
 					<div class="mx-auto flex h-full min-h-0 w-full max-w-5xl items-center justify-center">
 						{#if activeTask?.result}
-							<div
-								class="flex h-full max-h-[68vh] w-full flex-col overflow-hidden rounded-2xl bg-black shadow-sm"
-							>
+							<!-- 自适应浮层：视频按自身宽高比居中、不撑满容器，消除两侧黑边；
+							     去掉底部黑条；「查看详情并发布」改为浮在画面右下角的半透明胶囊。 -->
+							<div class="relative inline-flex max-h-[72vh] min-h-0 items-center justify-center">
 								<video
-									class="min-h-0 w-full flex-1 bg-black object-contain"
+									class="max-h-[72vh] w-auto max-w-full rounded-2xl object-contain shadow-sm dark:shadow-black/40"
 									controls
 									playsinline
 									preload="metadata"
 									poster={activeTask.result.poster_url}
 									src={activeTask.result.url}
 								></video>
-								<div class="flex justify-end border-t border-white/10 bg-gray-950 px-3 py-2">
-									<button
-										type="button"
-										class="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-gray-900 hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2"
-										on:click={() => (showCreationDetails = true)}
-										>{$i18n.t('View details and publish')}</button
+								<button
+									type="button"
+									class="absolute bottom-3 right-3 inline-flex h-9 items-center gap-1.5 rounded-full bg-black/55 px-3.5 text-xs font-medium text-white backdrop-blur transition hover:bg-black/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+									on:click={() => (showCreationDetails = true)}
+									aria-label={$i18n.t('View details and publish')}
+								>
+									<svg
+										class="size-3.5"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										aria-hidden="true"
+										><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
 									>
-								</div>
+									{$i18n.t('View details and publish')}
+								</button>
 							</div>
 						{:else if activeTask?.status === 'queued' || activeTask?.status === 'running'}
 							<div class="flex max-w-sm flex-col items-center text-center">
@@ -569,133 +581,162 @@
 			</div>
 
 			<section
-				class="shrink-0 bg-gradient-to-t from-white via-white/95 to-white/0 px-3 pb-3 pt-8 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0 sm:px-6"
+				class="shrink-0 bg-gradient-to-t from-white via-white/95 to-white/0 px-3 pb-3 pt-14 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0 sm:px-6"
 			>
-				<div class="mx-auto max-w-5xl">
-					<div
-						class="mb-2 flex gap-1 overflow-x-auto pb-0.5 pr-36 sm:pr-48"
-						role="tablist"
-						tabindex="-1"
-						aria-label={$i18n.t('Video mode')}
-					>
-						{#each taskOptions as option}
-							<button
-								type="button"
-								role="tab"
-								aria-selected={task === option.id}
-								class="min-h-11 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition sm:min-h-0 {task ===
-								option.id
-									? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-									: 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}"
-								on:click={() => changeTask(option.id)}>{$i18n.t(option.label)}</button
+				<div class="relative mx-auto max-w-5xl">
+					<!-- 模型选择器 + 任务选择：移动端下拉框、桌面端按钮标签，始终保持单行 -->
+					<div class="mb-2 flex flex-row items-center justify-between gap-2">
+						<div class="inline-flex min-w-0 max-w-[12rem] shrink">
+							<GenerationModelSelector
+								bind:show={showModelSelector}
+								label={selectedModel ? stripVendorFromName(selectedModel) : $i18n.t('Model')}
+								provider={selectedModel?.provider}
+								vendors={modelVendors}
+								bind:selectedVendor
+								models={vendorModels.map((model) => ({
+									id: model.id,
+									name: stripVendorFromName(model),
+									provider: model.provider,
+									recommended: model.recommended,
+									tags: model.tags,
+									maintenance: model.maintenance_message,
+									enabled: model.enabled,
+									raw: model
+								}))}
+								selectedId={modelId}
+								onSelectVendor={(vendor) => (selectedVendor = vendor)}
+								onSelectModel={(model) => {
+									const videoModel = model.raw as VideoModel;
+									if (videoModel.enabled !== false) changeModel(videoModel.id);
+								}}
+								listboxLabel={$i18n.t('Model')}
 							>
-						{/each}
+								<svelte:fragment slot="extras" let:model>
+									<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+										{#if (model.raw as VideoModel).base_price}
+											{$i18n.t('Estimated')}
+											{(model.raw as VideoModel).base_price}{$i18n.t('credits.common.unit')}
+										{:else}
+											{$i18n.t('credits.unconfigured')}
+										{/if}
+									</span>
+								</svelte:fragment>
+							</GenerationModelSelector>
+						</div>
+
+						{#snippet taskIcon(id: string, className: string = 'size-4 shrink-0')}
+							{#if id === 'text-to-video'}
+								<svg
+									class={className}
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									aria-hidden="true"
+								>
+									<path
+										d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+									/>
+								</svg>
+							{:else if id === 'image-to-video'}
+								<svg
+									class={className}
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									aria-hidden="true"
+								>
+									<rect x="3" y="3" width="18" height="18" rx="2" />
+									<circle cx="9" cy="9" r="2" />
+									<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+								</svg>
+							{:else if id === 'video-to-video'}
+								<svg
+									class={className}
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.8"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									aria-hidden="true"
+								>
+									<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+									<path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 7h5M17 17h5" />
+								</svg>
+							{/if}
+						{/snippet}
+
+						<!-- 移动端：紧凑下拉框（复用项目 Dropdown 组件），风格与模型选择器一致 -->
+						<div class="shrink-0 sm:hidden">
+							<Dropdown
+								bind:show={showTaskSelector}
+								side="top"
+								align="end"
+								visualViewportAware={$mobile}
+								contentClass="z-50 w-40 overflow-y-auto rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-900/98"
+							>
+								<button
+									type="button"
+									class="inline-flex h-8 items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+									aria-expanded={showTaskSelector}
+									aria-haspopup="true"
+								>
+									{@render taskIcon(task)}
+									<span class="truncate">{$i18n.t(taskOptions.find((item) => item.id === task)?.label ?? '')}</span>
+									<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
+								</button>
+
+								<div slot="content" class="flex flex-col gap-0.5">
+									{#each taskOptions as option}
+										<button
+											type="button"
+											class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {task ===
+											option.id
+												? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+												: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+											on:click={() => {
+												changeTask(option.id);
+												showTaskSelector = false;
+											}}
+											aria-pressed={task === option.id}
+										>{@render taskIcon(option.id)}{$i18n.t(option.label)}</button>
+									{/each}
+								</div>
+							</Dropdown>
+						</div>
+
+						<!-- 桌面端：按钮标签 -->
+						<div
+							class="pointer-events-auto hidden flex-wrap gap-1 sm:flex sm:flex-nowrap sm:justify-end"
+							role="tablist"
+							tabindex="-1"
+							aria-label={$i18n.t('Video mode')}
+						>
+							{#each taskOptions as option}
+								<button
+									type="button"
+									role="tab"
+									aria-selected={task === option.id}
+									class="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition {task ===
+									option.id
+										? 'bg-gray-900 text-white shadow-sm dark:bg-gray-100 dark:text-gray-900'
+										: 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+									on:click={() => changeTask(option.id)}>{@render taskIcon(option.id, 'size-3.5 shrink-0')}{$i18n.t(option.label)}</button
+								>
+							{/each}
+						</div>
 					</div>
 
 					<form
 						class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 p-4 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
 						on:submit|preventDefault={generate}
 					>
-						<div
-							class="absolute bottom-full right-0 mb-2 max-w-[min(11rem,calc(100vw-2rem))] sm:max-w-[16rem]"
-						>
-							<Dropdown
-								bind:show={showModelSelector}
-								side="top"
-								align="start"
-								maxHeight="min(60dvh, 28rem)"
-								contentClass="z-50 w-[min(34rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-gray-100 bg-white p-2 shadow-xl dark:border-gray-800 dark:bg-gray-900"
-							>
-								<button
-									type="button"
-									class="inline-flex min-h-11 min-w-0 max-w-full items-center gap-2 rounded-[10px] border border-gray-200/90 bg-white/95 px-2 text-sm font-medium text-gray-700 shadow-sm backdrop-blur-xl transition hover:bg-white sm:h-8 sm:min-h-0 dark:border-gray-700 dark:bg-gray-900/95 dark:text-gray-200 dark:hover:bg-gray-900"
-								>
-									<svg
-										class="size-4 shrink-0"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="1.8"
-										aria-hidden="true"
-										><path
-											d="M15 10l4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"
-										/></svg
-									>
-									<span class="truncate"
-										>{selectedModel ? stripVendorFromName(selectedModel) : $i18n.t('Model')}</span
-									>
-									<span class="shrink-0 text-xs text-gray-500">⌄</span>
-								</button>
-								<div
-									slot="content"
-									class="flex h-80 min-h-0 gap-2"
-									role="listbox"
-									aria-label={$i18n.t('Model')}
-								>
-									<div
-										class="w-32 shrink-0 overflow-y-auto border-r border-gray-100 pr-2 dark:border-gray-800 sm:w-40"
-									>
-										{#each modelVendors as vendor}
-											<button
-												type="button"
-												class="flex min-h-11 w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm transition sm:min-h-9 {vendor ===
-												selectedVendor
-													? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-													: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-												on:click={() => (selectedVendor = vendor)}
-												aria-pressed={vendor === selectedVendor}
-											>
-												<VendorLogo provider={vendor} className="size-4 shrink-0 rounded-sm" />
-												<span class="min-w-0 truncate capitalize">{vendor}</span>
-											</button>
-										{/each}
-									</div>
-									<div class="min-w-0 flex-1 overflow-y-auto">
-										{#each vendorModels as model}
-											<button
-												type="button"
-												class="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition sm:min-h-9 {model.id ===
-												modelId
-													? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-													: model.enabled === false
-														? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
-														: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-												on:click={() => model.enabled !== false && changeModel(model.id)}
-												role="option"
-												aria-selected={model.id === modelId}
-												aria-disabled={model.enabled === false}
-											>
-												<span class="min-w-0 flex-1 text-left">
-													<span class="flex min-w-0 items-center gap-1.5">
-														<span class="truncate">{stripVendorFromName(model)}</span>
-														{#if model.recommended}<span
-																class="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
-																>{$i18n.t('Recommended')}</span
-															>{/if}
-													</span>
-													{#if model.tags?.length}<span
-															class="mt-0.5 block truncate text-[11px] text-gray-400"
-															>{model.tags.join(' · ')}</span
-														>{/if}
-													{#if model.maintenance_message}<span
-															class="mt-0.5 block line-clamp-2 text-[11px] text-orange-600 dark:text-orange-400"
-															>{model.maintenance_message}</span
-														>{/if}
-												</span>
-												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-													{#if model.base_price}
-														{$i18n.t('Estimated')}
-														{model.base_price}{$i18n.t('credits.common.unit')}
-													{:else}
-														{$i18n.t('credits.unconfigured')}
-													{/if}
-												</span>
-											</button>
-										{/each}
-									</div>
-								</div>
-							</Dropdown>
-						</div>
 
 						{#if selectedModel?.asset_inputs?.length}
 							<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
@@ -785,7 +826,7 @@
 							>
 								<button
 									type="button"
-									class="inline-flex h-8 max-w-[min(70vw,32rem)] items-center gap-2 overflow-hidden rounded-[10px] bg-black/[0.06] px-2 text-sm font-medium text-gray-700 transition hover:bg-black/[0.1] dark:bg-white/[0.08] dark:text-gray-200 dark:hover:bg-white/[0.12]"
+									class="inline-flex h-8 max-w-[min(70vw,32rem)] items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 								>
 									<svg
 										class="size-4 shrink-0"

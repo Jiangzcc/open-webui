@@ -13,10 +13,16 @@ describe('video creation page', () => {
 	});
 
 	test('keeps modes and the model on one toolbar and shows short names with pricing', () => {
-		expect(source).toContain('pb-0.5 pr-36 sm:pr-48');
-		expect(source).toContain('absolute bottom-full right-0 mb-2');
-		expect(source).toContain('stripVendorFromName(model)');
-		expect(source).toContain('model.base_price');
+		// 模式标签栏改为移动端换行、不再依赖固定右内边距给模型留位
+		expect(source).toContain('hidden flex-wrap gap-1 sm:flex sm:flex-nowrap sm:justify-end');
+		// 模型选择器从 absolute 定位改为表单上方正常文档流
+		expect(source).toContain('mb-2 flex flex-row items-center justify-between gap-2');
+		expect(source).not.toContain('absolute bottom-full');
+		// 模型短名与价格现在通过共享 GenerationModelSelector 渲染：
+		// 页面把 VideoModel 归一化为 SelectableModel，name 走 stripVendorFromName；
+		// 价格在 extras 槽里读 (model.raw as VideoModel).base_price。
+		expect(source).toContain('name: stripVendorFromName(model)');
+		expect(source).toContain('(model.raw as VideoModel).base_price');
 		expect(source).not.toContain('<span class="min-w-0 flex-1 truncate">{model.name}</span>');
 	});
 
