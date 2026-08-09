@@ -1162,8 +1162,7 @@
 
 									<textarea
 										bind:value={prompt}
-										rows="3"
-										class="max-h-44 min-h-20 w-full resize-none bg-transparent py-2 text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+										class="min-h-20 max-h-44 w-full resize-none bg-transparent py-2 text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
 										placeholder={$i18n.t(taskOptions.find((item) => item.id === task)?.hint ?? '')}
 									></textarea>
 
