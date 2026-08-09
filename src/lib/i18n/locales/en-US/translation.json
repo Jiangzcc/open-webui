@@ -3146,6 +3146,7 @@
 	"No creations have been shared yet.": "",
 	"Failed to load discovery feed": "",
 	"View creation": "",
+	"View details": "",
 	"View details and publish": "",
 	"Creator": "",
 	"Like": "",
@@ -3170,5 +3171,7 @@
 	"Failed to load more generations": "",
 	"Remix": "",
 	"Generate from this prompt": "",
-	"Enter a JSON array or object": ""
+	"Enter a JSON array or object": "",
+	"Parameters loaded": "",
+	"Failed to download video": ""
 }

@@ -3257,6 +3257,7 @@
 	"No creations have been shared yet.": "还没有人分享作品。",
 	"Failed to load discovery feed": "加载发现内容失败",
 	"View creation": "查看作品",
+	"View details": "查看详情",
 	"View details and publish": "查看详情并发布",
 	"Creator": "创作者",
 	"Like": "点赞",
@@ -3360,5 +3361,7 @@
 	"is required": "为必填项",
 	"Video price is not configured": "该视频模型尚未配置积分价格",
 	"Insufficient credits": "积分不足",
-	"Enter a JSON array or object": "请输入 JSON 数组或对象"
+	"Enter a JSON array or object": "请输入 JSON 数组或对象",
+	"Parameters loaded": "参数已带入",
+	"Failed to download video": "视频下载失败"
 }

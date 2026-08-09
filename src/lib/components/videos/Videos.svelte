@@ -9,6 +9,7 @@
 		getVideoModels,
 		getVideoTask,
 		listVideoTasks,
+		deleteVideoTask,
 		submitVideoTask,
 		type VideoAssetCapability,
 		type VideoAssetRole,
@@ -28,9 +29,12 @@
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import GenerationModelSelector from '$lib/components/common/GenerationModelSelector.svelte';
 	import GenerationSubmitButton from '$lib/components/common/GenerationSubmitButton.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
+	import { downloadBlob } from '$lib/utils/download';
 
 	const i18n = getContext('i18n');
 	const taskOptions: { id: VideoTask; label: string; hint: string }[] = [
@@ -81,6 +85,10 @@
 	let showModelSelector = false;
 	let showVideoOptions = false;
 	let showTaskSelector = false;
+	let showDeleteConfirm = false;
+	let taskToDelete: VideoGenerationTask | null = null;
+	let downloadingIds: Set<string> = new Set();
+	let deletingIds: Set<string> = new Set();
 	let selectedVendor = '';
 	let selection: 'generate' | 'mine' | 'all' = 'generate';
 	let creationRevision = 0;
@@ -435,6 +443,73 @@
 			for (const item of items ?? []) URL.revokeObjectURL(item.url);
 		}
 	});
+
+	// 复用某条历史任务：把 task/model/prompt/params 带回表单，并通过
+	// localStorage 草稿在跨页面跳转回来后恢复（与 CreationDetailsModal 写入的
+	// 'video-creation-draft' 同键，这里只做应用，不持久化跨刷新草稿）。
+	const reuseTask = (record: VideoGenerationTask) => {
+		task = record.task;
+		modelId = preferredModelId(record.task, record.model_id);
+		resetForModel(models.find((model) => model.id === modelId) ?? null);
+		prompt = record.prompt ?? '';
+		if (record.params && typeof record.params === 'object' && !Array.isArray(record.params)) {
+			params = {
+				...params,
+				...(record.params as Record<string, string | number | boolean | null>)
+			};
+		}
+		selection = 'generate';
+		toast.success($i18n.t('Parameters loaded'));
+	};
+
+	// 下载生成结果：把视频文件以 creation-<id>.mp4 落到本地。
+	const downloadResult = async (record: VideoGenerationTask) => {
+		const url = record.result?.url;
+		if (!url) return;
+		if (downloadingIds.has(record.id)) return;
+		downloadingIds = new Set(downloadingIds).add(record.id);
+		try {
+			const response = await fetch(url);
+			if (!response.ok) throw new Error('download failed');
+			const blob = await response.blob();
+			downloadBlob(blob, `creation-${record.id}.mp4`);
+		} catch {
+			toast.error($i18n.t('Failed to download video'));
+		} finally {
+			const next = new Set(downloadingIds);
+			next.delete(record.id);
+			downloadingIds = next;
+		}
+	};
+
+	// 删除任务：带二次确认，删除后切换 activeTask 到下一条可用结果。
+	const requestDeleteTask = (record: VideoGenerationTask) => {
+		if (deletingIds.has(record.id)) return;
+		taskToDelete = record;
+		showDeleteConfirm = true;
+	};
+
+	const confirmDeleteTask = async () => {
+		const record = taskToDelete;
+		taskToDelete = null;
+		if (!record) return;
+		deletingIds = new Set(deletingIds).add(record.id);
+		try {
+			await deleteVideoTask(localStorage.token, record.id);
+			history = history.filter((item) => item.id !== record.id);
+			if (activeTask?.id === record.id) {
+				activeTask = history.find((item) => item.result) ?? history[0] ?? null;
+			}
+			creationRevision += 1;
+			toast.success($i18n.t('Record removed'));
+		} catch {
+			toast.error($i18n.t('Failed to remove record'));
+		} finally {
+			const next = new Set(deletingIds);
+			next.delete(record.id);
+			deletingIds = next;
+		}
+	};
 </script>
 
 <svelte:head>
@@ -511,24 +586,65 @@
 		{:else}
 			<div class="flex min-h-0 flex-1 pt-14">
 				<main class="flex min-h-0 flex-1 overflow-hidden p-3 sm:p-6">
-					<div class="mx-auto flex h-full min-h-0 w-full max-w-5xl items-center justify-center">
+					<div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col items-center justify-center gap-3">
 						{#if activeTask?.result}
-							<!-- 自适应浮层：视频按自身宽高比居中、不撑满容器，消除两侧黑边；
-							     去掉底部黑条；「查看详情并发布」改为浮在画面右下角的半透明胶囊。 -->
-							<div class="relative inline-flex max-h-[72vh] min-h-0 items-center justify-center">
-								<video
-									class="max-h-[72vh] w-auto max-w-full rounded-2xl object-contain shadow-sm dark:shadow-black/40"
-									controls
-									playsinline
-									preload="metadata"
-									poster={activeTask.result.poster_url}
-									src={activeTask.result.url}
-								></video>
+							<!-- 结果区：视频按自身宽高比居中，不撑满容器，消除两侧黑边与底部黑条。 -->
+							<video
+								class="max-h-[68vh] w-auto max-w-full rounded-2xl object-contain shadow-sm dark:shadow-black/40"
+								controls
+								playsinline
+								preload="metadata"
+								poster={activeTask.result.poster_url}
+								src={activeTask.result.url}
+							></video>
+							<!-- 操作行：再次生成 · 下载 · 查看详情 · 移除，紧凑次级按钮，触屏常驻可见 -->
+							<div class="flex flex-wrap items-center justify-center gap-1.5">
 								<button
 									type="button"
-									class="absolute bottom-3 right-3 inline-flex h-9 items-center gap-1.5 rounded-full bg-black/55 px-3.5 text-xs font-medium text-white backdrop-blur transition hover:bg-black/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+									on:click={() => activeTask && reuseTask(activeTask)}
+									aria-label={$i18n.t('Regenerate')}
+								>
+									<svg
+										class="size-3.5"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
+									>
+									{$i18n.t('Regenerate')}
+								</button>
+								<button
+									type="button"
+									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+									on:click={() => activeTask && downloadResult(activeTask)}
+									disabled={activeTask ? downloadingIds.has(activeTask.id) : true}
+									aria-label={$i18n.t('Download')}
+								>
+									{#if downloadingIds.has(activeTask.id)}
+										<Spinner className="size-3.5" />
+									{:else}
+										<svg
+											class="size-3.5"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+										>
+									{/if}
+									{$i18n.t('Download')}
+								</button>
+								<button
+									type="button"
+									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 									on:click={() => (showCreationDetails = true)}
-									aria-label={$i18n.t('View details and publish')}
+									aria-label={$i18n.t('View details')}
 								>
 									<svg
 										class="size-3.5"
@@ -541,7 +657,31 @@
 										aria-hidden="true"
 										><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
 									>
-									{$i18n.t('View details and publish')}
+									{$i18n.t('View details')}
+								</button>
+								<button
+									type="button"
+									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+									on:click={() => activeTask && requestDeleteTask(activeTask)}
+									disabled={activeTask ? deletingIds.has(activeTask.id) : true}
+									aria-label={$i18n.t('Remove record')}
+								>
+									{#if activeTask && deletingIds.has(activeTask.id)}
+										<Spinner className="size-3.5" />
+									{:else}
+										<svg
+											class="size-3.5"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											aria-hidden="true"
+											><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
+										>
+									{/if}
+									{$i18n.t('Remove')}
 								</button>
 							</div>
 						{:else if activeTask?.status === 'queued' || activeTask?.status === 'running'}
@@ -1032,4 +1172,12 @@
 	bind:show={showCreationDetails}
 	creationId={activeTask?.result?.creation_id ?? null}
 	scope="mine"
+/>
+
+<ConfirmDialog
+	bind:show={showDeleteConfirm}
+	title={$i18n.t('Remove record?')}
+	message={$i18n.t('Remove this record from your history?')}
+	confirmLabel={$i18n.t('Remove')}
+	onConfirm={confirmDeleteTask}
 />

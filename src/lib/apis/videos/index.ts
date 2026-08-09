@@ -139,3 +139,6 @@ export const listVideoTasks = (token: string, limit = 20, cursor?: string | null
 		`/tasks?${search}`
 	);
 };
+
+export const deleteVideoTask = (token: string, taskId: string) =>
+	request<void>(token, `/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });

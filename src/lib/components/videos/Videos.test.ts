@@ -35,6 +35,20 @@ describe('video creation page', () => {
 		expect(source).toContain('updateAdvancedInput(field, event)');
 	});
 
+	test('renders result action row with regenerate, download, details and remove', () => {
+		// 结果区操作按钮放在视频下方独立行，不再用绝对定位浮层盖住播放器控件
+		expect(source).not.toContain('absolute bottom-3 right-3');
+		expect(source).toContain("reuseTask(activeTask)");
+		expect(source).toContain("downloadResult(activeTask)");
+		expect(source).toContain("requestDeleteTask(activeTask)");
+		expect(source).toContain("$i18n.t('Regenerate')");
+		expect(source).toContain("$i18n.t('Download')");
+		expect(source).toContain("$i18n.t('View details')");
+		expect(source).toContain("$i18n.t('Remove')");
+		// 「查看详情并发布」文案改为单纯的「查看详情」
+		expect(source).not.toContain("$i18n.t('View details and publish')");
+	});
+
 	test('provides creation and video-only library tabs', () => {
 		expect(source).toContain("let selection: 'generate' | 'mine' | 'all' = 'generate';");
 		expect(source).toContain("['generate', 'Create art']");
