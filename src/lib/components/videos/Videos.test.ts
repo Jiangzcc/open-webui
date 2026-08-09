@@ -26,8 +26,10 @@ describe('video creation page', () => {
 		expect(source).not.toContain('<span class="min-w-0 flex-1 truncate">{model.name}</span>');
 	});
 
-	test('uses a single non-scrolling result and renders uploaded asset previews', () => {
-		expect(source).toContain('flex min-h-0 flex-1 overflow-hidden');
+	test('uses a scrollable task list and renders uploaded asset previews', () => {
+		// 结果区从「单一非滚动活动任务」改为「可滚动任务列表流」，新任务插顶并轮询刷新。
+		expect(source).toContain('flex-1 min-h-0 overflow-y-auto');
+		expect(source).toContain('{#each history as taskItem (taskItem.id)}');
 		expect(source).not.toContain("$i18n.t('Recent')");
 		expect(source).toContain("item.mime_type.startsWith('image/')");
 		expect(source).toContain("item.mime_type.startsWith('video/')");
@@ -38,15 +40,26 @@ describe('video creation page', () => {
 	test('renders result action row with regenerate, download, details and remove', () => {
 		// 结果区操作按钮放在视频下方独立行，不再用绝对定位浮层盖住播放器控件
 		expect(source).not.toContain('absolute bottom-3 right-3');
-		expect(source).toContain("reuseTask(activeTask)");
-		expect(source).toContain("downloadResult(activeTask)");
-		expect(source).toContain("requestDeleteTask(activeTask)");
+		// 操作对象由单一 activeTask 改为列表项 taskItem
+		expect(source).toContain('reuseTask(taskItem)');
+		expect(source).toContain('downloadResult(taskItem)');
+		expect(source).toContain('requestDeleteTask(taskItem)');
 		expect(source).toContain("$i18n.t('Regenerate')");
 		expect(source).toContain("$i18n.t('Download')");
 		expect(source).toContain("$i18n.t('View details')");
 		expect(source).toContain("$i18n.t('Remove')");
 		// 「查看详情并发布」文案改为单纯的「查看详情」
 		expect(source).not.toContain("$i18n.t('View details and publish')");
+	});
+
+	test('renders a result card with model header, prompt, meta pills and action row', () => {
+		// 学习图片结果区：消息头（厂商图标 + 模型短名 + 时间）+ prompt + pill 参数行 + 操作行
+		expect(source).toContain('VIDEO_TASK_ARTICLE_CLASS');
+		expect(source).toContain('getTaskModelLabel');
+		expect(source).toContain('getTaskMetaPills');
+		expect(source).toContain('getTaskTime');
+		expect(source).toContain('videoTaskStatusLabel');
+		expect(source).toContain('VendorLogo');
 	});
 
 	test('provides creation and video-only library tabs', () => {

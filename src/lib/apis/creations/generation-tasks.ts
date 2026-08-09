@@ -45,9 +45,15 @@ export const createImageGenerationTask = (
 		body: JSON.stringify({ kind, payload })
 	});
 
-export const listImageGenerationTasks = async (token: string, limit = 10, cursor?: string) => {
+export const listImageGenerationTasks = async (
+	token: string,
+	limit = 10,
+	cursor?: string,
+	since?: number | null
+) => {
 	const params = new URLSearchParams({ limit: String(limit) });
 	if (cursor) params.set('cursor', cursor);
+	if (since !== undefined && since !== null) params.set('since', String(since));
 	const response = await requestJson<{ items: ImageGenerationTask[]; next_cursor: string | null }>(
 		`/creations/generation-tasks?${params.toString()}`,
 		token

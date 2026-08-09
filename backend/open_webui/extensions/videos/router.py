@@ -70,11 +70,12 @@ async def submit_video_task(
 async def get_video_tasks(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     cursor: str | None = None,
+    since: Annotated[int | None, Query(ge=0)] = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_video_tasks(session, user.id, limit, cursor)
+        return await list_video_tasks(session, user.id, limit, cursor, since)
     except ValueError:
         return JSONResponse(status_code=422, content={'detail': 'invalid cursor'})
 

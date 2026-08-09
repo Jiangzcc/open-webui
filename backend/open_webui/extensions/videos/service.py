@@ -168,8 +168,18 @@ async def list_video_tasks(
     user_id: str,
     limit: int,
     cursor: str | None = None,
+    since: int | None = None,
 ) -> VideoTaskListResponse:
     statement = select(VideoGenerationTask).where(VideoGenerationTask.user_id == user_id)
+    # 创作页只展示最近 7 天的任务，更早的需到「我的作品」里查看。
+    # 进行中的任务（queued/running）不受时间窗限制，避免轮询时被过滤掉而看不到进度。
+    if since is not None:
+        statement = statement.where(
+            or_(
+                VideoGenerationTask.created_at >= since,
+                VideoGenerationTask.status.in_(['queued', 'running']),
+            )
+        )
     if cursor:
         cursor_created_at, cursor_id = decode_keyset_cursor(cursor)
         statement = statement.where(

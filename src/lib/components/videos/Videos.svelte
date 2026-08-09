@@ -29,10 +29,12 @@
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import GenerationModelSelector from '$lib/components/common/GenerationModelSelector.svelte';
 	import GenerationSubmitButton from '$lib/components/common/GenerationSubmitButton.svelte';
+	import Loader from '$lib/components/common/Loader.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
 	import { downloadBlob } from '$lib/utils/download';
 
@@ -72,8 +74,9 @@
 	let params: Record<string, string | number | boolean | null> = {};
 	let assets: Partial<Record<VideoAssetRole, UploadedVideoAsset[]>> = {};
 	let history: VideoGenerationTask[] = [];
-	let activeTask: VideoGenerationTask | null = null;
 	let loading = true;
+	let recentCursor: string | null = null;
+	let loadingMore = false;
 	let submitting = false;
 	let showAdvanced = false;
 	let pollingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -82,6 +85,7 @@
 	let quoteTimer: ReturnType<typeof setTimeout> | null = null;
 	let quoteGeneration = 0;
 	let showCreationDetails = false;
+	let detailsTask: VideoGenerationTask | null = null;
 	let showModelSelector = false;
 	let showVideoOptions = false;
 	let showTaskSelector = false;
@@ -271,12 +275,18 @@
 		resetForModel(models.find((model) => model.id === next) ?? null);
 	};
 
+	// 创作页只展示最近 7 天的任务，更早的需到「我的作品」里查看。
+	// 时间窗以「当前时间 - 7 天」的秒级时间戳传给后端 since；进行中任务不受窗限制。
+	const RECENT_TASKS_PAGE_SIZE = 20;
+	const RECENT_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+	const recentSince = () => Math.floor(Date.now() / 1000) - RECENT_WINDOW_SECONDS;
+
 	const load = async () => {
 		loading = true;
 		try {
 			const [catalog, tasks] = await Promise.all([
 				getVideoModels(localStorage.token),
-				listVideoTasks(localStorage.token, 20)
+				listVideoTasks(localStorage.token, RECENT_TASKS_PAGE_SIZE, null, recentSince())
 			]);
 			models = catalog.models;
 			defaults = catalog.defaults;
@@ -305,7 +315,7 @@
 				}
 			}
 			history = tasks.items;
-			activeTask = tasks.items.find((item) => item.result) ?? tasks.items[0] ?? null;
+			recentCursor = tasks.next_cursor ?? null;
 		} catch {
 			toast.error(videoRequestErrorMessage('Failed to load video generation'));
 		} finally {
@@ -313,6 +323,26 @@
 		}
 	};
 
+	const loadMoreTasks = async () => {
+		if (loadingMore || !recentCursor) return;
+		loadingMore = true;
+		try {
+			const tasks = await listVideoTasks(
+				localStorage.token,
+				RECENT_TASKS_PAGE_SIZE,
+				recentCursor,
+				recentSince()
+			);
+			// 去重合并，按 created_at 降序保持稳定；新页靠后追加，避免全量重排。
+			const seen = new Set(history.map((item) => item.id));
+			history = [...history, ...tasks.items.filter((item) => !seen.has(item.id))];
+			recentCursor = tasks.next_cursor ?? null;
+		} catch {
+			toast.error(videoRequestErrorMessage('Failed to load more videos'));
+		} finally {
+			loadingMore = false;
+		}
+	};
 	const uploadAsset = async (capability: VideoAssetCapability, files: FileList | null) => {
 		if (!files?.length) return;
 		const existing = assets[capability.role] ?? [];
@@ -366,7 +396,7 @@
 		if (pollingTimer) clearTimeout(pollingTimer);
 		try {
 			const next = await getVideoTask(localStorage.token, taskId);
-			activeTask = next;
+			// 任务列表流：把更新后的任务插回列表顶部，保持最新任务可见。
 			history = [next, ...history.filter((item) => item.id !== next.id)];
 			if (next.status === 'queued' || next.status === 'running') {
 				pollingTimer = setTimeout(() => pollTask(taskId), 900);
@@ -423,7 +453,7 @@
 				},
 				uuidv4()
 			);
-			activeTask = created;
+			// 新任务插入列表顶部，立刻可见其生成进度。
 			history = [created, ...history];
 			await pollTask(created.id);
 		} catch {
@@ -482,7 +512,7 @@
 		}
 	};
 
-	// 删除任务：带二次确认，删除后切换 activeTask 到下一条可用结果。
+	// 删除任务：带二次确认，删除后从列表移除该条记录。
 	const requestDeleteTask = (record: VideoGenerationTask) => {
 		if (deletingIds.has(record.id)) return;
 		taskToDelete = record;
@@ -497,9 +527,6 @@
 		try {
 			await deleteVideoTask(localStorage.token, record.id);
 			history = history.filter((item) => item.id !== record.id);
-			if (activeTask?.id === record.id) {
-				activeTask = history.find((item) => item.result) ?? history[0] ?? null;
-			}
 			creationRevision += 1;
 			toast.success($i18n.t('Record removed'));
 		} catch {
@@ -510,6 +537,85 @@
 			deletingIds = next;
 		}
 	};
+	// 视频任务文案：复用图片结果区的状态标签口径，保持一致。
+	const videoTaskStatusLabel = (record: VideoGenerationTask) => {
+		if (record.status === 'queued') return $i18n.t('Queued');
+		if (record.status === 'running') return $i18n.t('Generating');
+		if (record.status === 'failed') return $i18n.t('Generation failed');
+		return $i18n.t('Completed');
+	};
+
+	// 按任务类型查回对应模型（含 provider），供消息头厂商图标与模型短名使用。
+	const getTaskModel = (record: VideoGenerationTask) =>
+		models.find((m) => m.id === record.model_id) ?? null;
+
+	// 模型短名：剥厂商前缀，回退到「默认模型」。
+	const getTaskModelLabel = (record: VideoGenerationTask) => {
+		const model = getTaskModel(record);
+		return model ? stripVendorFromName(model) : $i18n.t('Default Model');
+	};
+
+	// 关键参数 pill 行：模型 · 任务 · 时长 · 比例 · 分辨率 · 音频；与图片结果区口径一致。
+	const getTaskMetaPills = (record: VideoGenerationTask) => {
+		const model = getTaskModel(record);
+		const pills: string[] = [getTaskModelLabel(record)];
+		// 任务类型中文名
+		const taskLabelMap: Record<VideoTask, string> = {
+			'text-to-video': $i18n.t('Text to Video'),
+			'image-to-video': $i18n.t('Image to Video'),
+			'video-to-video': $i18n.t('Video to Video')
+		};
+		pills.push(taskLabelMap[record.task]);
+		const durationStr = record.params?.duration;
+		if (durationStr !== undefined && durationStr !== null && durationStr !== '') {
+			pills.push(
+				durationStr === 'auto'
+					? $i18n.t('Auto')
+					: durationStr === '0'
+						? $i18n.t('Match source duration')
+						: `${durationStr}s`
+			);
+		}
+		if (record.params?.aspect_ratio) pills.push(String(record.params.aspect_ratio));
+		if (record.params?.resolution) pills.push(String(record.params.resolution));
+		if (record.params?.audio_mode) {
+			pills.push($i18n.t(audioLabels[String(record.params.audio_mode)] ?? String(record.params.audio_mode)));
+		}
+		return pills;
+	};
+
+	// 时间：优先 completed_at，其次 started_at，回退 created_at（秒级时间戳）。
+	// 与图片结果区 formatBatchTime 口径一致：今天只显示 HH:MM；今年其它天补 M/D；跨年带年份。
+	const formatTaskTime = (ts: number | null) => {
+		if (!ts) return '';
+		const date = new Date(ts * 1000);
+		if (Number.isNaN(date.getTime())) return '';
+		const now = new Date();
+		const hh = String(date.getHours()).padStart(2, '0');
+		const mm = String(date.getMinutes()).padStart(2, '0');
+		const time = `${hh}:${mm}`;
+		const sameDay =
+			date.getFullYear() === now.getFullYear() &&
+			date.getMonth() === now.getMonth() &&
+			date.getDate() === now.getDate();
+		if (sameDay) return time;
+		const md = `${date.getMonth() + 1}/${date.getDate()}`;
+		if (date.getFullYear() === now.getFullYear()) return `${md} ${time}`;
+		return `${date.getFullYear()}/${md} ${time}`;
+	};
+	const getTaskTime = (record: VideoGenerationTask) =>
+		formatTaskTime(record.completed_at ?? record.started_at ?? record.created_at);
+
+	// 打开任务详情弹窗：复用 CreationDetailsModal，指定该任务的 creation_id。
+	const openTaskDetails = (record: VideoGenerationTask) => {
+		detailsTask = record;
+		showCreationDetails = true;
+	};
+
+	// 视频结果卡片样式：与图片结果区 BATCH_ARTICLE_CLASS 同构，保持视觉统一。
+	// 任务列表流式布局，卡片自然高度，新任务在顶部；播放器在卡片内靠左、固定 16:9 宽度。
+	const VIDEO_TASK_ARTICLE_CLASS =
+		'rounded-2xl bg-gray-50/60 p-3 dark:bg-gray-900/30 sm:p-4 mx-auto w-full max-w-5xl flex flex-col gap-3';
 </script>
 
 <svelte:head>
@@ -584,582 +690,690 @@
 				{$i18n.t('Loading...')}
 			</div>
 		{:else}
-			<div class="flex min-h-0 flex-1 pt-14">
-				<main class="flex min-h-0 flex-1 overflow-hidden p-3 sm:p-6">
-					<div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col items-center justify-center gap-3">
-						{#if activeTask?.result}
-							<!-- 结果区：视频按自身宽高比居中，不撑满容器，消除两侧黑边与底部黑条。 -->
-							<video
-								class="max-h-[68vh] w-auto max-w-full rounded-2xl object-contain shadow-sm dark:shadow-black/40"
-								controls
-								playsinline
-								preload="metadata"
-								poster={activeTask.result.poster_url}
-								src={activeTask.result.url}
-							></video>
-							<!-- 操作行：再次生成 · 下载 · 查看详情 · 移除，紧凑次级按钮，触屏常驻可见 -->
-							<div class="flex flex-wrap items-center justify-center gap-1.5">
-								<button
-									type="button"
-									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-									on:click={() => activeTask && reuseTask(activeTask)}
-									aria-label={$i18n.t('Regenerate')}
-								>
-									<svg
-										class="size-3.5"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
+			<div class="flex min-h-0 flex-1 flex-col">
+				<main class="flex-1 min-h-0 overflow-y-auto px-4 pt-20 sm:px-6 lg:px-8 sm:pt-20">
+					<div class="mx-auto w-full max-w-5xl min-h-full flex flex-col sm:px-2">
+						{#if history.length === 0}
+							<section class="flex min-h-[calc(100dvh-22rem)] items-center justify-center py-12">
+								<div class="max-w-md text-center">
+									<div
+										class="mx-auto mb-4 flex aspect-video w-56 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
 									>
-									{$i18n.t('Regenerate')}
-								</button>
-								<button
-									type="button"
-									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-									on:click={() => activeTask && downloadResult(activeTask)}
-									disabled={activeTask ? downloadingIds.has(activeTask.id) : true}
-									aria-label={$i18n.t('Download')}
-								>
-									{#if downloadingIds.has(activeTask.id)}
-										<Spinner className="size-3.5" />
-									{:else}
 										<svg
-											class="size-3.5"
+											class="size-10 text-gray-300 dark:text-gray-600"
 											viewBox="0 0 24 24"
 											fill="none"
 											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+											stroke-width="1.5"
+											><path
+												d="M15 10l4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"
+											/></svg
 										>
-									{/if}
-									{$i18n.t('Download')}
-								</button>
-								<button
-									type="button"
-									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-									on:click={() => (showCreationDetails = true)}
-									aria-label={$i18n.t('View details')}
-								>
-									<svg
-										class="size-3.5"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										aria-hidden="true"
-										><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
-									>
-									{$i18n.t('View details')}
-								</button>
-								<button
-									type="button"
-									class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-									on:click={() => activeTask && requestDeleteTask(activeTask)}
-									disabled={activeTask ? deletingIds.has(activeTask.id) : true}
-									aria-label={$i18n.t('Remove record')}
-								>
-									{#if activeTask && deletingIds.has(activeTask.id)}
-										<Spinner className="size-3.5" />
-									{:else}
-										<svg
-											class="size-3.5"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											aria-hidden="true"
-											><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
-										>
-									{/if}
-									{$i18n.t('Remove')}
-								</button>
-							</div>
-						{:else if activeTask?.status === 'queued' || activeTask?.status === 'running'}
-							<div class="flex max-w-sm flex-col items-center text-center">
-								<div
-									class="mb-4 size-12 animate-pulse rounded-full bg-gray-100 dark:bg-gray-800"
-								></div>
-								<div class="font-medium">{$i18n.t('Creating your video')}</div>
-								<div class="mt-1 text-sm text-gray-500">
-									{$i18n.t('The result will appear here shortly')}
+									</div>
+									<h2 class="font-medium">{$i18n.t('Start with a video idea')}</h2>
+									<p class="mt-1 text-sm text-gray-500">
+										{$i18n.t('Choose a mode, add material when needed, then describe the motion')}
+									</p>
 								</div>
-							</div>
+							</section>
 						{:else}
-							<div class="max-w-md text-center">
-								<div
-									class="mx-auto mb-4 flex aspect-video w-56 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
-								>
-									<svg
-										class="size-10 text-gray-300 dark:text-gray-600"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="1.5"
-										><path
-											d="M15 10l4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"
-										/></svg
-									>
-								</div>
-								<h2 class="font-medium">{$i18n.t('Start with a video idea')}</h2>
-								<p class="mt-1 text-sm text-gray-500">
-									{$i18n.t('Choose a mode, add material when needed, then describe the motion')}
-								</p>
-							</div>
+							<!-- 任务列表流：每个任务一块卡片，消息头→prompt→pill→播放器→操作行 -->
+							<section class="flex flex-col gap-3" aria-live="polite">
+								{#each history as taskItem (taskItem.id)}
+									{@const taskModel = getTaskModel(taskItem)}
+									<article id={`video-task-${taskItem.id}`} class={VIDEO_TASK_ARTICLE_CLASS}>
+										<!-- 消息头：厂商图标 + 模型短名 + 时间 -->
+										<div class="flex items-center gap-2">
+											{#if taskModel?.provider}
+												<VendorLogo
+													provider={taskModel.provider}
+													className="size-5 shrink-0 rounded-full object-cover"
+												/>
+											{:else}
+												<span
+													class="size-5 shrink-0 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700"
+												></span>
+											{/if}
+											<span
+												class="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100"
+												>{getTaskModelLabel(taskItem)}</span
+											>
+											<span class="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500"
+												>{getTaskTime(taskItem)}</span
+											>
+										</div>
+
+										<!-- prompt：全展开，不折叠 -->
+										{#if taskItem.prompt}
+											<p
+												class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200"
+											>
+												{taskItem.prompt}
+											</p>
+										{/if}
+
+										<!-- pill 参数行：模型 · 任务 · 时长 · 比例 · 分辨率 · 音频 -->
+										<div class="flex flex-wrap items-center gap-1.5">
+											{#each getTaskMetaPills(taskItem) as pill, index (`${index}-${pill}`)}
+												<span
+													class="inline-flex min-h-6 items-center rounded-md bg-gray-100 px-2 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+													>{pill}</span
+												>
+											{/each}
+											{#if taskItem.status === 'queued' || taskItem.status === 'running'}
+												<span
+													class="inline-flex min-h-6 items-center gap-1 rounded-md bg-amber-50 px-2 text-[11px] text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+												>
+													<Spinner className="size-3" />
+													{videoTaskStatusLabel(taskItem)}
+												</span>
+											{/if}
+										</div>
+
+										{#if taskItem.result}
+											<!-- 结果区：固定 16:9 宽度的播放器盒子，靠左对齐；视频 object-contain。
+											     盒子尺寸与 poster/video 内在比例解耦，消除 poster→播放的高度跳变；
+											     横屏/竖屏视频共用同一播放器宽度，竖屏视频自动 letterbox。 -->
+											<div class="flex w-full justify-start overflow-hidden">
+												<div class="relative aspect-video w-full max-w-[36rem]">
+													<video
+														class="absolute inset-0 h-full w-full rounded-2xl object-contain shadow-sm dark:shadow-black/40"
+														controls
+														playsinline
+														preload="metadata"
+														poster={taskItem.result.poster_url}
+														src={taskItem.result.url}
+													></video>
+												</div>
+											</div>
+										{:else if taskItem.status === 'queued' || taskItem.status === 'running'}
+											<!-- 生成中：占位骨架 + 提示 -->
+											<div
+												class="flex w-full justify-start overflow-hidden"
+											>
+												<div
+													class="flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center dark:border-gray-700 dark:bg-gray-900 sm:px-5 sm:py-10"
+												>
+													<Spinner className="size-6" />
+													<p class="mt-3 text-sm font-medium text-gray-600 dark:text-gray-300">
+														{$i18n.t('Creating your video')}
+													</p>
+													<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+														{$i18n.t('The result will appear here shortly')}
+													</p>
+												</div>
+											</div>
+										{:else if taskItem.status === 'failed'}
+											<div
+												class="flex w-full justify-start overflow-hidden"
+											>
+												<div
+													class="flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-4 py-5 text-center dark:border-red-900/60 dark:bg-red-950/20 sm:px-5 sm:py-6"
+												>
+													<p class="text-sm font-medium text-red-600 dark:text-red-300">
+														{videoTaskStatusLabel(taskItem)}
+													</p>
+												</div>
+											</div>
+										{/if}
+
+										<!-- 操作行：再次生成 · 下载 · 查看详情 · 移除，紧凑次级按钮，触屏常驻可见 -->
+										<div class="flex flex-wrap items-center gap-1.5">
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => reuseTask(taskItem)}
+												aria-label={$i18n.t('Regenerate')}
+											>
+												<svg
+													class="size-3.5"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
+												>
+												{$i18n.t('Regenerate')}
+											</button>
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => downloadResult(taskItem)}
+												disabled={downloadingIds.has(taskItem.id)}
+												aria-label={$i18n.t('Download')}
+											>
+												{#if downloadingIds.has(taskItem.id)}
+													<Spinner className="size-3.5" />
+												{:else}
+													<svg
+														class="size-3.5"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+													>
+												{/if}
+												{$i18n.t('Download')}
+											</button>
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => openTaskDetails(taskItem)}
+												aria-label={$i18n.t('View details')}
+											>
+												<svg
+													class="size-3.5"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="2"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													aria-hidden="true"
+													><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
+												>
+												{$i18n.t('View details')}
+											</button>
+											<button
+												type="button"
+												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+												on:click={() => requestDeleteTask(taskItem)}
+												disabled={deletingIds.has(taskItem.id)}
+												aria-label={$i18n.t('Remove record')}
+											>
+												{#if deletingIds.has(taskItem.id)}
+													<Spinner className="size-3.5" />
+												{:else}
+													<svg
+														class="size-3.5"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="2"
+														stroke-linecap="round"
+														stroke-linejoin="round"
+														aria-hidden="true"
+														><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
+												>
+												{/if}
+												{$i18n.t('Remove')}
+											</button>
+										</div>
+									</article>
+								{/each}
+
+								{#if recentCursor}
+									<!-- 加载更早的任务：无限滚动哨兵 + 加载态 Spinner -->
+									<div class="flex justify-center py-4">
+										{#if loadingMore}
+											<Spinner className="size-5" />
+										{:else}
+											<Loader on:visible={() => void loadMoreTasks()} />
+										{/if}
+									</div>
+								{:else}
+									<!-- 已无可加载的更早任务（7 天窗口内全部展示完）；提示去「我的作品」查看更早记录 -->
+									<div class="flex justify-center py-4">
+										<button
+											type="button"
+											class="text-xs text-gray-400 transition hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+											on:click={() => (selection = 'mine')}
+										>
+											{$i18n.t('View older creations in My Creations')}
+										</button>
+									</div>
+								{/if}
+							</section>
 						{/if}
+
+						<section
+							class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
+						>
+							<div class="mx-auto w-full max-w-5xl sm:px-2">
+								<!-- 模型选择器 + 任务选择：移动端下拉框、桌面端按钮标签，始终保持单行 -->
+								<div class="mb-2 flex flex-row items-center justify-between gap-2">
+									<div class="inline-flex min-w-0 max-w-[12rem] shrink">
+										<GenerationModelSelector
+											bind:show={showModelSelector}
+											label={selectedModel ? stripVendorFromName(selectedModel) : $i18n.t('Model')}
+											provider={selectedModel?.provider}
+											vendors={modelVendors}
+											bind:selectedVendor
+											models={vendorModels.map((model) => ({
+												id: model.id,
+												name: stripVendorFromName(model),
+												provider: model.provider,
+												recommended: model.recommended,
+												tags: model.tags,
+												maintenance: model.maintenance_message,
+												enabled: model.enabled,
+												raw: model
+											}))}
+											selectedId={modelId}
+											onSelectVendor={(vendor) => (selectedVendor = vendor)}
+											onSelectModel={(model) => {
+												const videoModel = model.raw as VideoModel;
+												if (videoModel.enabled !== false) changeModel(videoModel.id);
+											}}
+											listboxLabel={$i18n.t('Model')}
+										>
+											<svelte:fragment slot="extras" let:model>
+												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+													{#if (model.raw as VideoModel).base_price}
+														{$i18n.t('Estimated')}
+														{(model.raw as VideoModel).base_price}{$i18n.t('credits.common.unit')}
+													{:else}
+														{$i18n.t('credits.unconfigured')}
+													{/if}
+												</span>
+											</svelte:fragment>
+										</GenerationModelSelector>
+									</div>
+
+									{#snippet taskIcon(id: string, className: string = 'size-4 shrink-0')}
+										{#if id === 'text-to-video'}
+											<svg
+												class={className}
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="1.8"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												aria-hidden="true"
+											>
+												<path
+													d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+												/>
+											</svg>
+										{:else if id === 'image-to-video'}
+											<svg
+												class={className}
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="1.8"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												aria-hidden="true"
+											>
+												<rect x="3" y="3" width="18" height="18" rx="2" />
+												<circle cx="9" cy="9" r="2" />
+												<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+											</svg>
+										{:else if id === 'video-to-video'}
+											<svg
+												class={className}
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="1.8"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												aria-hidden="true"
+											>
+												<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+												<path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 7h5M17 17h5" />
+											</svg>
+										{/if}
+									{/snippet}
+
+									<!-- 移动端：紧凑下拉框（复用项目 Dropdown 组件），风格与模型选择器一致 -->
+									<div class="shrink-0 sm:hidden">
+										<Dropdown
+											bind:show={showTaskSelector}
+											side="top"
+											align="end"
+											visualViewportAware={$mobile}
+											contentClass="z-50 w-40 overflow-y-auto rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-900/98"
+										>
+											<button
+												type="button"
+												class="inline-flex h-8 items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+												aria-expanded={showTaskSelector}
+												aria-haspopup="true"
+											>
+												{@render taskIcon(task)}
+												<span class="truncate">{$i18n.t(taskOptions.find((item) => item.id === task)?.label ?? '')}</span>
+												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
+											</button>
+
+											<div slot="content" class="flex flex-col gap-0.5">
+												{#each taskOptions as option}
+													<button
+														type="button"
+														class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {task ===
+														option.id
+															? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+															: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
+														on:click={() => {
+															changeTask(option.id);
+															showTaskSelector = false;
+														}}
+														aria-pressed={task === option.id}
+													>{@render taskIcon(option.id)}{$i18n.t(option.label)}</button>
+												{/each}
+											</div>
+										</Dropdown>
+									</div>
+
+									<!-- 桌面端：按钮标签 -->
+									<div
+										class="pointer-events-auto hidden flex-wrap gap-1 sm:flex sm:flex-nowrap sm:justify-end"
+										role="tablist"
+										tabindex="-1"
+										aria-label={$i18n.t('Video mode')}
+									>
+										{#each taskOptions as option}
+											<button
+												type="button"
+												role="tab"
+												aria-selected={task === option.id}
+												class="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition {task ===
+												option.id
+													? 'bg-gray-900 text-white shadow-sm dark:bg-gray-100 dark:text-gray-900'
+													: 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+												on:click={() => changeTask(option.id)}>{@render taskIcon(option.id, 'size-3.5 shrink-0')}{$i18n.t(option.label)}</button
+											>
+										{/each}
+									</div>
+								</div>
+
+								<form
+									class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 p-4 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
+									on:submit|preventDefault={generate}
+								>
+
+									{#if selectedModel?.asset_inputs?.length}
+										<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
+											{#each selectedModel.asset_inputs as capability}
+												<label
+													class="flex h-14 min-w-36 cursor-pointer items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-3 text-xs text-gray-600 transition hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850"
+												>
+													<span
+														class="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-lg text-gray-500 shadow-sm dark:bg-gray-800"
+														>+</span
+													>
+													<span class="truncate"
+														>{$i18n.t(assetLabels[capability.role])}{capability.required
+															? ' *'
+															: ''}</span
+													>
+													<span class="ml-2 text-gray-400"
+														>{assets[capability.role]?.length ?? 0}/{capability.max_count}</span
+													>
+													<input
+														class="sr-only"
+														type="file"
+														accept={capability.mime_types.join(',')}
+														multiple={capability.multiple}
+														on:change={(event) => uploadAsset(capability, event.currentTarget.files)}
+													/>
+												</label>
+											{/each}
+										</div>
+										{#if Object.values(assets).some((items) => items?.length)}
+											<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
+												{#each Object.entries(assets) as [role, items]}
+													{#each items ?? [] as item (item.id)}
+														<div
+															class="group relative flex w-44 shrink-0 items-center gap-2 overflow-hidden rounded-xl border border-gray-100 bg-gray-50 p-1.5 text-[11px] dark:border-gray-800 dark:bg-gray-900"
+														>
+															<div
+																class="flex aspect-video w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-200 text-gray-500 dark:bg-gray-800"
+															>
+																{#if item.mime_type.startsWith('image/')}<img
+																		class="size-full object-cover"
+																		src={item.url}
+																		alt={item.name}
+																	/>{:else if item.mime_type.startsWith('video/')}<video
+																		class="size-full object-cover"
+																		src={item.url}
+																		muted
+																		playsinline
+																		preload="metadata"
+																	></video>{:else}<span aria-hidden="true">♪</span>{/if}
+															</div>
+															<div class="min-w-0 flex-1">
+																<div class="truncate font-medium text-gray-700 dark:text-gray-200">
+																	{$i18n.t(assetLabels[role as VideoAssetRole])}
+																</div>
+																<div class="mt-0.5 truncate text-gray-400" title={item.name}>
+																	{item.name}
+																</div>
+															</div>
+															<button
+																type="button"
+																class="absolute right-1 top-1 flex size-11 items-center justify-center rounded-full bg-white/90 text-sm text-gray-600 shadow-sm transition hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-8 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:text-white"
+																aria-label={$i18n.t('Remove')}
+																on:click={() => removeAsset(role as VideoAssetRole, item.id)}>×</button
+															>
+														</div>
+													{/each}
+												{/each}
+											</div>
+										{/if}
+									{/if}
+
+									<textarea
+										bind:value={prompt}
+										rows="3"
+										class="max-h-44 min-h-20 w-full resize-none bg-transparent py-2 text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
+										placeholder={$i18n.t(taskOptions.find((item) => item.id === task)?.hint ?? '')}
+									></textarea>
+
+									<div class="mt-2 flex min-w-0 items-center justify-between gap-2">
+										<Dropdown
+											bind:show={showVideoOptions}
+											side="top"
+											align="start"
+											maxHeight="min(75dvh, 36rem)"
+											contentClass="z-50 w-[min(30rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-gray-100 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900"
+										>
+											<button
+												type="button"
+												class="inline-flex h-8 max-w-[min(70vw,32rem)] items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+											>
+												<svg
+													class="size-4 shrink-0"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="1.8"
+													aria-hidden="true"
+													><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" /></svg
+												>
+												<span class="truncate">{videoOptionsLabel}</span>
+											</button>
+
+											<div slot="content" class="space-y-4">
+												{#if durationChoices.length}
+													<section>
+														<div class="mb-2 flex items-center justify-between gap-3">
+															<h3 class="text-sm font-medium">{$i18n.t('Duration')}</h3>
+															<output
+																class="rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium tabular-nums dark:bg-gray-800"
+																>{durationLabel(durationChoices[durationIndex])}</output
+															>
+														</div>
+														<div class="px-1">
+															<input
+																type="range"
+																class="h-8 w-full cursor-pointer accent-gray-900 dark:accent-gray-100"
+																min="0"
+																max={durationChoices.length - 1}
+																step="1"
+																value={durationIndex}
+																on:input={(event) =>
+																	(params = {
+																		...params,
+																		duration: durationChoices[Number(event.currentTarget.value)]
+																	})}
+																aria-label={$i18n.t('Duration')}
+															/>
+															<div class="flex justify-between text-[10px] text-gray-400">
+																<span>{durationLabel(durationChoices[0])}</span>
+																<span>{durationLabel(durationChoices[durationChoices.length - 1])}</span>
+															</div>
+														</div>
+													</section>
+												{/if}
+												{#if selectedModel?.aspect_ratios}
+													<section>
+														<h3 class="mb-2 text-sm font-medium">{$i18n.t('Aspect ratio')}</h3>
+														<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+															{#each selectedModel.aspect_ratios as value}<button
+																	type="button"
+																	class="h-10 rounded-xl border text-xs transition {params.aspect_ratio ===
+																	value
+																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
+																	on:click={() => (params = { ...params, aspect_ratio: value })}
+																	aria-pressed={params.aspect_ratio === value}>{value}</button
+																>{/each}
+														</div>
+													</section>
+												{/if}
+												<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+													{#if selectedModel?.resolutions}<section>
+															<h3 class="mb-2 text-sm font-medium">{$i18n.t('Resolution')}</h3>
+															<div class="grid grid-cols-2 gap-1.5">
+																{#each selectedModel.resolutions as value}<button
+																		type="button"
+																		class="h-9 rounded-xl border text-xs transition {params.resolution ===
+																		value
+																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
+																		on:click={() => (params = { ...params, resolution: value })}
+																		aria-pressed={params.resolution === value}>{value}</button
+																	>{/each}
+															</div>
+														</section>{/if}
+													{#if selectedModel?.audio_options}<section>
+															<h3 class="mb-2 text-sm font-medium">{$i18n.t('Audio')}</h3>
+															<div class="grid grid-cols-2 gap-1.5">
+																{#each selectedModel.audio_options as value}<button
+																		type="button"
+																		class="h-9 rounded-xl border px-2 text-xs transition {params.audio_mode ===
+																		value.mode
+																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
+																		on:click={() => (params = { ...params, audio_mode: value.mode })}
+																		aria-pressed={params.audio_mode === value.mode}
+																		>{$i18n.t(audioLabels[value.mode] ?? value.mode)}</button
+																	>{/each}
+															</div>
+														</section>{/if}
+												</div>
+												{#if advancedFields.length}
+													<section class="border-t border-gray-100 pt-3 dark:border-gray-800">
+														<button
+															type="button"
+															class="min-h-11 rounded-lg px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 sm:min-h-0 dark:hover:bg-gray-800"
+															aria-expanded={showAdvanced}
+															on:click={() => (showAdvanced = !showAdvanced)}
+															>{$i18n.t('Advanced')} {showAdvanced ? '↑' : '↓'}</button
+														>
+														{#if showAdvanced}<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+																{#each advancedFields as field}<div
+																		class="text-xs text-gray-500 {field.format === 'json'
+																			? 'sm:col-span-2'
+																			: ''}"
+																	>
+																		<span class="mb-1.5 block"
+																			>{$i18n.t(fieldKey(field).replaceAll('_', ' '))}{field.required
+																				? ' *'
+																				: ''}</span
+																		>{#if field.format === 'json'}<textarea
+																				class="min-h-24 w-full resize-y rounded-xl bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900 outline-none dark:bg-gray-800 dark:text-gray-100"
+																				rows="4"
+																				value={String(fieldValue(field, params))}
+																				placeholder={$i18n.t('Enter a JSON array or object')}
+																				aria-label={$i18n.t(fieldKey(field).replaceAll('_', ' '))}
+																				on:input={(event) =>
+																					setAdvancedParam(field, event.currentTarget.value)}
+																			></textarea>{:else if field.options}<div
+																				class="flex flex-wrap gap-1.5"
+																			>
+																				{#each field.options as option}<button
+																						type="button"
+																						class="rounded-xl border px-3 py-2 text-xs {fieldValue(
+																							field,
+																							params
+																						) === option
+																							? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																							: 'border-gray-100 bg-gray-50 text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
+																						on:click={() => setAdvancedParam(field, option)}
+																						aria-pressed={fieldValue(field, params) === option}
+																						>{option}</button
+																					>{/each}
+																			</div>{:else if typeof field.default === 'boolean'}<button
+																				type="button"
+																				class="flex w-full items-center justify-between rounded-xl bg-gray-100 px-3 py-2 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+																				on:click={() =>
+																					setAdvancedParam(field, !Boolean(fieldValue(field, params)))}
+																				><span
+																					>{Boolean(fieldValue(field, params))
+																						? $i18n.t('On')
+																						: $i18n.t('Off')}</span
+																				><span
+																					class="h-5 w-9 rounded-full p-0.5 transition {Boolean(
+																						fieldValue(field, params)
+																					)
+																						? 'bg-gray-900 dark:bg-gray-100'
+																						: 'bg-gray-300 dark:bg-gray-600'}"
+																					><span
+																						class="block size-4 rounded-full bg-white transition {Boolean(
+																							fieldValue(field, params)
+																						)
+																							? 'translate-x-4 dark:bg-gray-900'
+																							: ''}"
+																					></span></span
+																				></button
+																			>{:else}<input
+																				class="w-full rounded-xl bg-gray-100 px-3 py-2 text-gray-900 outline-none dark:bg-gray-800 dark:text-gray-100"
+																				type={field.min !== undefined ? 'number' : 'text'}
+																				min={field.min ?? undefined}
+																				max={field.max ?? undefined}
+																				step={field.step ?? undefined}
+																				value={fieldValue(field, params)}
+																				on:input={(event) => updateAdvancedInput(field, event)}
+																			/>{/if}
+																	</div>{/each}
+															</div>{/if}
+													</section>
+												{/if}
+											</div>
+										</Dropdown>
+
+										<div class="flex shrink-0 items-center gap-2">
+											<ImageCreditQuoteBadge {quoteState} />
+											<GenerationSubmitButton
+												loading={submitting}
+												disabled={submitting ||
+													!selectedModel ||
+													selectedModel.enabled === false ||
+													!isImageQuoteSubmittable(quoteState)}
+												label={$i18n.t('Generate video')}
+											/>
+										</div>
+									</div>
+								</form>
+							</div>
+						</section>
 					</div>
 				</main>
 			</div>
-
-			<section
-				class="shrink-0 bg-gradient-to-t from-white via-white/95 to-white/0 px-3 pb-3 pt-14 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0 sm:px-6"
-			>
-				<div class="relative mx-auto max-w-5xl">
-					<!-- 模型选择器 + 任务选择：移动端下拉框、桌面端按钮标签，始终保持单行 -->
-					<div class="mb-2 flex flex-row items-center justify-between gap-2">
-						<div class="inline-flex min-w-0 max-w-[12rem] shrink">
-							<GenerationModelSelector
-								bind:show={showModelSelector}
-								label={selectedModel ? stripVendorFromName(selectedModel) : $i18n.t('Model')}
-								provider={selectedModel?.provider}
-								vendors={modelVendors}
-								bind:selectedVendor
-								models={vendorModels.map((model) => ({
-									id: model.id,
-									name: stripVendorFromName(model),
-									provider: model.provider,
-									recommended: model.recommended,
-									tags: model.tags,
-									maintenance: model.maintenance_message,
-									enabled: model.enabled,
-									raw: model
-								}))}
-								selectedId={modelId}
-								onSelectVendor={(vendor) => (selectedVendor = vendor)}
-								onSelectModel={(model) => {
-									const videoModel = model.raw as VideoModel;
-									if (videoModel.enabled !== false) changeModel(videoModel.id);
-								}}
-								listboxLabel={$i18n.t('Model')}
-							>
-								<svelte:fragment slot="extras" let:model>
-									<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-										{#if (model.raw as VideoModel).base_price}
-											{$i18n.t('Estimated')}
-											{(model.raw as VideoModel).base_price}{$i18n.t('credits.common.unit')}
-										{:else}
-											{$i18n.t('credits.unconfigured')}
-										{/if}
-									</span>
-								</svelte:fragment>
-							</GenerationModelSelector>
-						</div>
-
-						{#snippet taskIcon(id: string, className: string = 'size-4 shrink-0')}
-							{#if id === 'text-to-video'}
-								<svg
-									class={className}
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="1.8"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"
-								>
-									<path
-										d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
-									/>
-								</svg>
-							{:else if id === 'image-to-video'}
-								<svg
-									class={className}
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="1.8"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"
-								>
-									<rect x="3" y="3" width="18" height="18" rx="2" />
-									<circle cx="9" cy="9" r="2" />
-									<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-								</svg>
-							{:else if id === 'video-to-video'}
-								<svg
-									class={className}
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="1.8"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"
-								>
-									<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
-									<path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 7h5M17 17h5" />
-								</svg>
-							{/if}
-						{/snippet}
-
-						<!-- 移动端：紧凑下拉框（复用项目 Dropdown 组件），风格与模型选择器一致 -->
-						<div class="shrink-0 sm:hidden">
-							<Dropdown
-								bind:show={showTaskSelector}
-								side="top"
-								align="end"
-								visualViewportAware={$mobile}
-								contentClass="z-50 w-40 overflow-y-auto rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-900/98"
-							>
-								<button
-									type="button"
-									class="inline-flex h-8 items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-									aria-expanded={showTaskSelector}
-									aria-haspopup="true"
-								>
-									{@render taskIcon(task)}
-									<span class="truncate">{$i18n.t(taskOptions.find((item) => item.id === task)?.label ?? '')}</span>
-									<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
-								</button>
-
-								<div slot="content" class="flex flex-col gap-0.5">
-									{#each taskOptions as option}
-										<button
-											type="button"
-											class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {task ===
-											option.id
-												? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-												: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-											on:click={() => {
-												changeTask(option.id);
-												showTaskSelector = false;
-											}}
-											aria-pressed={task === option.id}
-										>{@render taskIcon(option.id)}{$i18n.t(option.label)}</button>
-									{/each}
-								</div>
-							</Dropdown>
-						</div>
-
-						<!-- 桌面端：按钮标签 -->
-						<div
-							class="pointer-events-auto hidden flex-wrap gap-1 sm:flex sm:flex-nowrap sm:justify-end"
-							role="tablist"
-							tabindex="-1"
-							aria-label={$i18n.t('Video mode')}
-						>
-							{#each taskOptions as option}
-								<button
-									type="button"
-									role="tab"
-									aria-selected={task === option.id}
-									class="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition {task ===
-									option.id
-										? 'bg-gray-900 text-white shadow-sm dark:bg-gray-100 dark:text-gray-900'
-										: 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-									on:click={() => changeTask(option.id)}>{@render taskIcon(option.id, 'size-3.5 shrink-0')}{$i18n.t(option.label)}</button
-								>
-							{/each}
-						</div>
-					</div>
-
-					<form
-						class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 p-4 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
-						on:submit|preventDefault={generate}
-					>
-
-						{#if selectedModel?.asset_inputs?.length}
-							<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
-								{#each selectedModel.asset_inputs as capability}
-									<label
-										class="flex h-14 min-w-36 cursor-pointer items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-3 text-xs text-gray-600 transition hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850"
-									>
-										<span
-											class="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-lg text-gray-500 shadow-sm dark:bg-gray-800"
-											>+</span
-										>
-										<span class="truncate"
-											>{$i18n.t(assetLabels[capability.role])}{capability.required
-												? ' *'
-												: ''}</span
-										>
-										<span class="ml-2 text-gray-400"
-											>{assets[capability.role]?.length ?? 0}/{capability.max_count}</span
-										>
-										<input
-											class="sr-only"
-											type="file"
-											accept={capability.mime_types.join(',')}
-											multiple={capability.multiple}
-											on:change={(event) => uploadAsset(capability, event.currentTarget.files)}
-										/>
-									</label>
-								{/each}
-							</div>
-							{#if Object.values(assets).some((items) => items?.length)}
-								<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
-									{#each Object.entries(assets) as [role, items]}
-										{#each items ?? [] as item (item.id)}
-											<div
-												class="group relative flex w-44 shrink-0 items-center gap-2 overflow-hidden rounded-xl border border-gray-100 bg-gray-50 p-1.5 text-[11px] dark:border-gray-800 dark:bg-gray-900"
-											>
-												<div
-													class="flex aspect-video w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-200 text-gray-500 dark:bg-gray-800"
-												>
-													{#if item.mime_type.startsWith('image/')}<img
-															class="size-full object-cover"
-															src={item.url}
-															alt={item.name}
-														/>{:else if item.mime_type.startsWith('video/')}<video
-															class="size-full object-cover"
-															src={item.url}
-															muted
-															playsinline
-															preload="metadata"
-														></video>{:else}<span aria-hidden="true">♪</span>{/if}
-												</div>
-												<div class="min-w-0 flex-1">
-													<div class="truncate font-medium text-gray-700 dark:text-gray-200">
-														{$i18n.t(assetLabels[role as VideoAssetRole])}
-													</div>
-													<div class="mt-0.5 truncate text-gray-400" title={item.name}>
-														{item.name}
-													</div>
-												</div>
-												<button
-													type="button"
-													class="absolute right-1 top-1 flex size-11 items-center justify-center rounded-full bg-white/90 text-sm text-gray-600 shadow-sm transition hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-8 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:text-white"
-													aria-label={$i18n.t('Remove')}
-													on:click={() => removeAsset(role as VideoAssetRole, item.id)}>×</button
-												>
-											</div>
-										{/each}
-									{/each}
-								</div>
-							{/if}
-						{/if}
-
-						<textarea
-							bind:value={prompt}
-							rows="3"
-							class="max-h-44 min-h-20 w-full resize-none bg-transparent py-2 text-base outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500"
-							placeholder={$i18n.t(taskOptions.find((item) => item.id === task)?.hint ?? '')}
-						></textarea>
-
-						<div class="mt-2 flex min-w-0 items-center justify-between gap-2">
-							<Dropdown
-								bind:show={showVideoOptions}
-								side="top"
-								align="start"
-								maxHeight="min(75dvh, 36rem)"
-								contentClass="z-50 w-[min(30rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-gray-100 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900"
-							>
-								<button
-									type="button"
-									class="inline-flex h-8 max-w-[min(70vw,32rem)] items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-								>
-									<svg
-										class="size-4 shrink-0"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="1.8"
-										aria-hidden="true"
-										><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" /></svg
-									>
-									<span class="truncate">{videoOptionsLabel}</span>
-								</button>
-
-								<div slot="content" class="space-y-4">
-									{#if durationChoices.length}
-										<section>
-											<div class="mb-2 flex items-center justify-between gap-3">
-												<h3 class="text-sm font-medium">{$i18n.t('Duration')}</h3>
-												<output
-													class="rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium tabular-nums dark:bg-gray-800"
-													>{durationLabel(durationChoices[durationIndex])}</output
-												>
-											</div>
-											<div class="px-1">
-												<input
-													type="range"
-													class="h-8 w-full cursor-pointer accent-gray-900 dark:accent-gray-100"
-													min="0"
-													max={durationChoices.length - 1}
-													step="1"
-													value={durationIndex}
-													on:input={(event) =>
-														(params = {
-															...params,
-															duration: durationChoices[Number(event.currentTarget.value)]
-														})}
-													aria-label={$i18n.t('Duration')}
-												/>
-												<div class="flex justify-between text-[10px] text-gray-400">
-													<span>{durationLabel(durationChoices[0])}</span>
-													<span>{durationLabel(durationChoices[durationChoices.length - 1])}</span>
-												</div>
-											</div>
-										</section>
-									{/if}
-									{#if selectedModel?.aspect_ratios}
-										<section>
-											<h3 class="mb-2 text-sm font-medium">{$i18n.t('Aspect ratio')}</h3>
-											<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
-												{#each selectedModel.aspect_ratios as value}<button
-														type="button"
-														class="h-10 rounded-xl border text-xs transition {params.aspect_ratio ===
-														value
-															? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-															: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
-														on:click={() => (params = { ...params, aspect_ratio: value })}
-														aria-pressed={params.aspect_ratio === value}>{value}</button
-													>{/each}
-											</div>
-										</section>
-									{/if}
-									<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-										{#if selectedModel?.resolutions}<section>
-												<h3 class="mb-2 text-sm font-medium">{$i18n.t('Resolution')}</h3>
-												<div class="grid grid-cols-2 gap-1.5">
-													{#each selectedModel.resolutions as value}<button
-															type="button"
-															class="h-9 rounded-xl border text-xs transition {params.resolution ===
-															value
-																? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
-															on:click={() => (params = { ...params, resolution: value })}
-															aria-pressed={params.resolution === value}>{value}</button
-														>{/each}
-												</div>
-											</section>{/if}
-										{#if selectedModel?.audio_options}<section>
-												<h3 class="mb-2 text-sm font-medium">{$i18n.t('Audio')}</h3>
-												<div class="grid grid-cols-2 gap-1.5">
-													{#each selectedModel.audio_options as value}<button
-															type="button"
-															class="h-9 rounded-xl border px-2 text-xs transition {params.audio_mode ===
-															value.mode
-																? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
-															on:click={() => (params = { ...params, audio_mode: value.mode })}
-															aria-pressed={params.audio_mode === value.mode}
-															>{$i18n.t(audioLabels[value.mode] ?? value.mode)}</button
-														>{/each}
-												</div>
-											</section>{/if}
-									</div>
-									{#if advancedFields.length}
-										<section class="border-t border-gray-100 pt-3 dark:border-gray-800">
-											<button
-												type="button"
-												class="min-h-11 rounded-lg px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 sm:min-h-0 dark:hover:bg-gray-800"
-												aria-expanded={showAdvanced}
-												on:click={() => (showAdvanced = !showAdvanced)}
-												>{$i18n.t('Advanced')} {showAdvanced ? '↑' : '↓'}</button
-											>
-											{#if showAdvanced}<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-													{#each advancedFields as field}<div
-															class="text-xs text-gray-500 {field.format === 'json'
-																? 'sm:col-span-2'
-																: ''}"
-														>
-															<span class="mb-1.5 block"
-																>{$i18n.t(fieldKey(field).replaceAll('_', ' '))}{field.required
-																	? ' *'
-																	: ''}</span
-															>{#if field.format === 'json'}<textarea
-																	class="min-h-24 w-full resize-y rounded-xl bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900 outline-none dark:bg-gray-800 dark:text-gray-100"
-																	rows="4"
-																	value={String(fieldValue(field, params))}
-																	placeholder={$i18n.t('Enter a JSON array or object')}
-																	aria-label={$i18n.t(fieldKey(field).replaceAll('_', ' '))}
-																	on:input={(event) =>
-																		setAdvancedParam(field, event.currentTarget.value)}
-																></textarea>{:else if field.options}<div
-																	class="flex flex-wrap gap-1.5"
-																>
-																	{#each field.options as option}<button
-																			type="button"
-																			class="rounded-xl border px-3 py-2 text-xs {fieldValue(
-																				field,
-																				params
-																			) === option
-																				? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																				: 'border-gray-100 bg-gray-50 text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
-																			on:click={() => setAdvancedParam(field, option)}
-																			aria-pressed={fieldValue(field, params) === option}
-																			>{option}</button
-																		>{/each}
-																</div>{:else if typeof field.default === 'boolean'}<button
-																	type="button"
-																	class="flex w-full items-center justify-between rounded-xl bg-gray-100 px-3 py-2 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-																	on:click={() =>
-																		setAdvancedParam(field, !Boolean(fieldValue(field, params)))}
-																	><span
-																		>{Boolean(fieldValue(field, params))
-																			? $i18n.t('On')
-																			: $i18n.t('Off')}</span
-																	><span
-																		class="h-5 w-9 rounded-full p-0.5 transition {Boolean(
-																			fieldValue(field, params)
-																		)
-																			? 'bg-gray-900 dark:bg-gray-100'
-																			: 'bg-gray-300 dark:bg-gray-600'}"
-																		><span
-																			class="block size-4 rounded-full bg-white transition {Boolean(
-																				fieldValue(field, params)
-																			)
-																				? 'translate-x-4 dark:bg-gray-900'
-																				: ''}"
-																		></span></span
-																	></button
-																>{:else}<input
-																	class="w-full rounded-xl bg-gray-100 px-3 py-2 text-gray-900 outline-none dark:bg-gray-800 dark:text-gray-100"
-																	type={field.min !== undefined ? 'number' : 'text'}
-																	min={field.min ?? undefined}
-																	max={field.max ?? undefined}
-																	step={field.step ?? undefined}
-																	value={fieldValue(field, params)}
-																	on:input={(event) => updateAdvancedInput(field, event)}
-																/>{/if}
-														</div>{/each}
-												</div>{/if}
-										</section>
-									{/if}
-								</div>
-							</Dropdown>
-
-							<div class="flex shrink-0 items-center gap-2">
-								<ImageCreditQuoteBadge {quoteState} />
-								<GenerationSubmitButton
-									loading={submitting}
-									disabled={submitting ||
-										!selectedModel ||
-										selectedModel.enabled === false ||
-										!isImageQuoteSubmittable(quoteState)}
-									label={$i18n.t('Generate video')}
-								/>
-							</div>
-						</div>
-					</form>
-				</div>
-			</section>
 		{/if}
 	{:else}
 		<div class="min-h-0 flex-1 overflow-y-auto pt-18">
 			<CreationsLibrary
-				active={selection !== 'generate'}
+				active={selection !== 'generate' as 'generate' | 'mine' | 'all'}
 				scope={selection === 'all' ? 'all' : 'mine'}
 				revision={creationRevision}
 				mediaKind="video"
@@ -1170,7 +1384,7 @@
 
 <CreationDetailsModal
 	bind:show={showCreationDetails}
-	creationId={activeTask?.result?.creation_id ?? null}
+	creationId={detailsTask?.result?.creation_id ?? null}
 	scope="mine"
 />
 

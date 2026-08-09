@@ -186,12 +186,21 @@ async def delete_generation_task(session: AsyncSession, user_id: str, task_id: s
 
 
 async def list_generation_tasks(
-    session: AsyncSession, user_id: str, limit: int, cursor: str | None = None
+    session: AsyncSession, user_id: str, limit: int, cursor: str | None = None, since: int | None = None
 ) -> ImageGenerationTaskListResponse:
     # keyset 分页：cursor 锁定上一页末条 (created_at, id)，取更旧的记录。
     # 多查 1 条用 hasNext 判断，避免总条数恰为页大小整数倍时多返回一个空页游标
     # （与 service.list_personal_creations 的 limit+1 模式一致）。
     stmt = select(ImageGenerationTask).where(ImageGenerationTask.user_id == user_id)
+    # 创作页只展示最近 7 天的任务，更早的需到「我的作品」里查看。
+    # 进行中的任务（queued/running）不受时间窗限制，避免轮询时被过滤掉而看不到进度。
+    if since is not None:
+        stmt = stmt.where(
+            or_(
+                ImageGenerationTask.created_at >= since,
+                ImageGenerationTask.status.in_(['queued', 'running']),
+            )
+        )
     if cursor:
         cursor_created_at, cursor_id = decode_keyset_cursor(cursor)
         stmt = stmt.where(

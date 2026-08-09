@@ -118,6 +118,10 @@
 	// 最近生成流的 keyset 分页游标。null 表示没有更早的批次可加载。
 	let recentTasksCursor: string | null = null;
 	let loadingMoreTasks = false;
+	// 创作页只展示最近 7 天的任务，更早的需到「我的作品」里查看。
+	// 时间窗以「当前时间 - 7 天」的秒级时间戳传给后端 since；进行中任务不受窗限制。
+	const RECENT_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+	const recentSince = () => Math.floor(Date.now() / 1000) - RECENT_WINDOW_SECONDS;
 	// 是否为可悬停指针（鼠标）。触屏设备为 false，浮层按钮需常驻可见，不得仅依赖 hover。
 	let canHover = true;
 	// 批量下载中各 batch 的 id 集合，用 Set 支持多批并发，各批独立显示 loading 态。
@@ -905,7 +909,9 @@
 		try {
 			const { items, next_cursor } = await listImageGenerationTasks(
 				localStorage.token,
-				RECENT_TASKS_PAGE_SIZE
+				RECENT_TASKS_PAGE_SIZE,
+				undefined,
+				recentSince()
 			);
 			for (const task of items) generationBatches = mergeGenerationTask(generationBatches, task);
 			recentTasksCursor = next_cursor ?? null;
@@ -921,7 +927,8 @@
 			const { items, next_cursor } = await listImageGenerationTasks(
 				localStorage.token,
 				RECENT_TASKS_PAGE_SIZE,
-				recentTasksCursor
+				recentTasksCursor,
+				recentSince()
 			);
 			for (const task of items) generationBatches = mergeGenerationTask(generationBatches, task);
 			recentTasksCursor = next_cursor ?? null;
@@ -1476,6 +1483,17 @@
 									{:else}
 										<Loader on:visible={() => void loadMoreRecentTasks()} />
 									{/if}
+								</div>
+							{:else}
+								<!-- 已无可加载的更早批次（7 天窗口内全部展示完）；提示去「我的作品」查看更早记录 -->
+								<div class="flex justify-center py-4">
+									<button
+										type="button"
+										class="text-xs text-gray-400 transition hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+										on:click={() => selectSelection('mine')}
+									>
+										{$i18n.t('View older creations in My Creations')}
+									</button>
 								</div>
 							{/if}
 						</section>

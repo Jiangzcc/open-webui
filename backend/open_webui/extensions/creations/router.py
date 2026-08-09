@@ -156,11 +156,12 @@ async def create_image_generation_task(
 async def list_image_generation_tasks(
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
     cursor: str | None = None,
+    since: Annotated[int | None, Query(ge=0)] = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
     try:
-        return await list_generation_tasks(session, user.id, limit, cursor)
+        return await list_generation_tasks(session, user.id, limit, cursor, since)
     except ValueError:
         return _invalid_cursor_response()
 

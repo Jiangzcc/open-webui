@@ -131,9 +131,15 @@ export const submitVideoTask = (
 export const getVideoTask = (token: string, taskId: string) =>
 	request<VideoGenerationTask>(token, `/tasks/${encodeURIComponent(taskId)}`);
 
-export const listVideoTasks = (token: string, limit = 20, cursor?: string | null) => {
+export const listVideoTasks = (
+	token: string,
+	limit = 20,
+	cursor?: string | null,
+	since?: number | null
+) => {
 	const search = new URLSearchParams({ limit: String(limit) });
 	if (cursor) search.set('cursor', cursor);
+	if (since !== undefined && since !== null) search.set('since', String(since));
 	return request<{ items: VideoGenerationTask[]; next_cursor: string | null }>(
 		token,
 		`/tasks?${search}`
