@@ -13,7 +13,8 @@
 		submitVideoTask,
 		type VideoAssetCapability,
 		type VideoAssetRole,
-		type VideoField,
+		type VideoAdvancedField,
+		type VideoAdvancedFieldKey,
 		type VideoGenerationTask,
 		type VideoModel,
 		type VideoTask
@@ -37,6 +38,12 @@
 	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
 	import { downloadBlob } from '$lib/utils/download';
+	import {
+		firstVideoAdvancedError,
+		normalizeVideoParamsForModel,
+		videoAdvancedFieldError,
+		videoAdvancedFieldValue
+	} from '$lib/utils/video-generation';
 
 	const i18n = getContext('i18n');
 	const taskOptions: { id: VideoTask; label: string; hint: string }[] = [
@@ -58,6 +65,55 @@
 		upload: 'Use uploaded audio',
 		preserve: 'Preserve audio',
 		auto: 'Auto'
+	};
+	const advancedFieldLabels: Record<VideoAdvancedFieldKey, string> = {
+		seed: 'Seed',
+		negative_prompt: 'Negative Prompt',
+		prompt_enhancement: 'Prompt enhancement',
+		motion_amplitude: 'Motion amplitude',
+		guidance_scale: 'Prompt adherence',
+		fps: 'Frame rate',
+		output_quality: 'Output quality',
+		loop: 'Loop video',
+		edit_strength: 'Edit strength',
+		retake_mode: 'Retake mode',
+		start_time: 'Start time',
+		ingredients_mode: 'Reference mode'
+	};
+	const advancedFieldDescriptions: Partial<Record<VideoAdvancedFieldKey, string>> = {
+		seed: 'Leave empty to use a random seed.',
+		negative_prompt: 'Describe what should not appear in the video.',
+		prompt_enhancement: 'The model may rewrite or expand your prompt.',
+		motion_amplitude: 'Controls the overall amount of subject and scene motion.',
+		guidance_scale: 'Higher values follow the prompt more closely.',
+		fps: 'Higher frame rates look smoother and may create larger files.',
+		output_quality: 'Higher quality may create a larger file.',
+		edit_strength: 'Controls how closely the edit preserves the source video.',
+		start_time: 'Where the retake begins in the source video.'
+	};
+	const advancedOptionLabels: Record<string, string> = {
+		auto: 'Auto',
+		on: 'On',
+		off: 'Off',
+		small: 'Small',
+		medium: 'Medium',
+		large: 'Large',
+		standard: 'Standard',
+		high: 'High',
+		precise: 'Precise',
+		creative: 'Creative',
+		replace_audio: 'Replace audio',
+		replace_video: 'Replace video',
+		replace_audio_and_video: 'Replace audio and video',
+		adhere_1: 'Preserve · Low',
+		adhere_2: 'Preserve · Medium',
+		adhere_3: 'Preserve · High',
+		flex_1: 'Balanced · Low',
+		flex_2: 'Balanced · Medium',
+		flex_3: 'Balanced · High',
+		reimagine_1: 'Reimagine · Low',
+		reimagine_2: 'Reimagine · Medium',
+		reimagine_3: 'Reimagine · High'
 	};
 	type UploadedVideoAsset = {
 		id: string;
@@ -105,16 +161,8 @@
 		selectedVendor = selectedModel?.provider ?? modelVendors[0] ?? '';
 	}
 	$: vendorModels = taskModels.filter((item) => item.provider === selectedVendor);
-	$: advancedFields = selectedModel
-		? [
-				...(selectedModel.option_fields ?? []),
-				...(selectedModel.boolean_fields ?? []),
-				...(selectedModel.integer_fields ?? []),
-				...(selectedModel.number_fields ?? []),
-				...(selectedModel.text_fields ?? []),
-				...(selectedModel.json_fields ?? [])
-			].filter((field) => field.advanced)
-		: [];
+	$: advancedFields = selectedModel?.advanced_fields ?? [];
+	$: advancedError = firstVideoAdvancedError(selectedModel, params);
 	$: durationChoices = (() => {
 		if (selectedModel?.durations?.length) return selectedModel.durations;
 		if (selectedModel?.duration_min === null || selectedModel?.duration_min === undefined)
@@ -139,7 +187,9 @@
 				params.duration,
 				params.resolution,
 				params.aspect_ratio,
-				params.audio_mode
+				params.audio_mode,
+				params.fps,
+				params.output_quality
 			])
 		: '';
 	$: if (!loading && quoteKey) scheduleQuote();
@@ -164,7 +214,10 @@
 		duration: String(params.duration ?? selectedModel?.default_duration ?? '1'),
 		resolution: String(params.resolution ?? selectedModel?.default_resolution ?? 'default'),
 		aspect_ratio: String(params.aspect_ratio ?? selectedModel?.default_aspect_ratio ?? 'default'),
-		audio_mode: String(params.audio_mode ?? selectedModel?.default_audio_mode ?? 'default')
+		audio_mode: String(params.audio_mode ?? selectedModel?.default_audio_mode ?? 'default'),
+		...(params.fps !== null && params.fps !== undefined && { fps: String(params.fps) }),
+		...(params.output_quality !== null &&
+			params.output_quality !== undefined && { output_quality: String(params.output_quality) })
 	});
 
 	const refreshQuote = async (): Promise<VideoQuote | null> => {
@@ -204,18 +257,20 @@
 		quoteTimer = setTimeout(refreshQuote, 250);
 	};
 
-	const fieldKey = (field: VideoField) => field.source || field.field;
-	const fieldValue = (field: VideoField, values = params) =>
-		values[fieldKey(field)] ?? field.default ?? '';
-	const setAdvancedParam = (field: VideoField, value: string | number | boolean) => {
-		params = { ...params, [fieldKey(field)]: value };
+	const fieldValue = (field: VideoAdvancedField, values = params) =>
+		videoAdvancedFieldValue(field, values);
+	const setAdvancedParam = (field: VideoAdvancedField, value: string | number | boolean) => {
+		params = { ...params, [field.key]: value };
 	};
 	const updateAdvancedInput = (
-		field: VideoField,
+		field: VideoAdvancedField,
 		event: Event & { currentTarget: HTMLInputElement }
 	) => {
-		const input = event.currentTarget;
-		setAdvancedParam(field, input.type === 'number' ? Number(input.value) : input.value);
+		setAdvancedParam(field, event.currentTarget.value);
+	};
+	const advancedErrorLabel = (field: VideoAdvancedField) => {
+		const error = videoAdvancedFieldError(field, params[field.key] ?? field.default);
+		return error ? $i18n.t(error.key, error.value === undefined ? {} : { value: error.value }) : '';
 	};
 	const durationLabel = (value: string) =>
 		value === 'auto'
@@ -223,28 +278,40 @@
 			: value === '0'
 				? $i18n.t('Match source duration')
 				: `${value}s`;
+	const advancedRangeLabel = (field: VideoAdvancedField) => {
+		if (field.min === undefined && field.max === undefined) return $i18n.t('Model default');
+		if (field.min !== undefined && field.max !== undefined) return `${field.min}–${field.max}`;
+		if (field.min !== undefined) return `≥ ${field.min}`;
+		return `≤ ${field.max}`;
+	};
+	const aspectRatioPreviewClass = (ratio: string) =>
+		ratio === 'auto' ? 'size-5 rounded-full' : 'rounded-[3px]';
+	const aspectRatioPreviewStyle = (ratio: string) => {
+		if (ratio === 'auto') return '';
+		const [width, height] = ratio.split(':').map(Number);
+		if (!width || !height) return '';
+		const previewSize = 20;
+		const minimumPreviewSize = 12;
+		return width >= height
+			? `width: ${previewSize}px; height: ${Math.max(minimumPreviewSize, (previewSize * height) / width)}px;`
+			: `width: ${Math.max(minimumPreviewSize, (previewSize * width) / height)}px; height: ${previewSize}px;`;
+	};
 
 	const videoRequestErrorMessage = (fallback: string) => $i18n.t(fallback);
 
 	const resetForModel = (model: VideoModel | null) => {
-		params = {};
+		const next: Record<string, string | number | boolean | null> = {};
 		assets = {};
 		showAdvanced = false;
-		if (!model) return;
-		if (model.default_duration) params.duration = model.default_duration;
-		if (model.default_aspect_ratio) params.aspect_ratio = model.default_aspect_ratio;
-		if (model.default_resolution) params.resolution = model.default_resolution;
-		if (model.default_audio_mode) params.audio_mode = model.default_audio_mode;
-		for (const field of [
-			...(model.option_fields ?? []),
-			...(model.boolean_fields ?? []),
-			...(model.integer_fields ?? []),
-			...(model.number_fields ?? [])
-		]) {
-			if (field.default !== null && field.default !== undefined) {
-				params[fieldKey(field)] = field.default;
-			}
+		if (!model) {
+			params = next;
+			return;
 		}
+		if (model.default_duration) next.duration = model.default_duration;
+		if (model.default_aspect_ratio) next.aspect_ratio = model.default_aspect_ratio;
+		if (model.default_resolution) next.resolution = model.default_resolution;
+		if (model.default_audio_mode) next.audio_mode = model.default_audio_mode;
+		params = normalizeVideoParamsForModel(model, next);
 	};
 
 	const preferredModelId = (nextTask: VideoTask, preferred?: string | null) =>
@@ -308,7 +375,8 @@
 					resetForModel(models.find((model) => model.id === modelId) ?? null);
 					prompt = typeof draft.prompt === 'string' ? draft.prompt : '';
 					if (draft.params && typeof draft.params === 'object' && !Array.isArray(draft.params)) {
-						params = { ...params, ...draft.params };
+						const model = models.find((item) => item.id === modelId);
+						if (model) params = normalizeVideoParamsForModel(model, { ...params, ...draft.params });
 					}
 				} catch {
 					// Ignore stale or malformed local drafts.
@@ -423,12 +491,13 @@
 				return;
 			}
 		}
-		for (const field of selectedModel.json_fields ?? []) {
-			if (field.required && !String(fieldValue(field)).trim()) {
-				toast.error(`${$i18n.t(fieldKey(field).replaceAll('_', ' '))} ${$i18n.t('is required')}`);
-				return;
-			}
+		if (advancedError) {
+			toast.error(
+				`${$i18n.t(advancedFieldLabels[advancedError.field.key])}: ${advancedErrorLabel(advancedError.field)}`
+			);
+			return;
 		}
+		const submittedParams = normalizeVideoParamsForModel(selectedModel, params);
 		const latestQuote = await refreshQuote();
 		if (!latestQuote?.configured) {
 			toast.error($i18n.t('Video price is not configured'));
@@ -449,7 +518,7 @@
 					assets: Object.entries(assets).flatMap(([role, items]) =>
 						(items ?? []).map((item) => ({ role: role as VideoAssetRole, file_id: item.id }))
 					),
-					params
+					params: submittedParams
 				},
 				uuidv4()
 			);
@@ -483,10 +552,13 @@
 		resetForModel(models.find((model) => model.id === modelId) ?? null);
 		prompt = record.prompt ?? '';
 		if (record.params && typeof record.params === 'object' && !Array.isArray(record.params)) {
-			params = {
-				...params,
-				...(record.params as Record<string, string | number | boolean | null>)
-			};
+			const model = models.find((item) => item.id === modelId);
+			if (model) {
+				params = normalizeVideoParamsForModel(model, {
+					...params,
+					...(record.params as Record<string, string | number | boolean | null>)
+				});
+			}
 		}
 		selection = 'generate';
 		toast.success($i18n.t('Parameters loaded'));
@@ -579,8 +651,31 @@
 		if (record.params?.aspect_ratio) pills.push(String(record.params.aspect_ratio));
 		if (record.params?.resolution) pills.push(String(record.params.resolution));
 		if (record.params?.audio_mode) {
-			pills.push($i18n.t(audioLabels[String(record.params.audio_mode)] ?? String(record.params.audio_mode)));
+			pills.push(
+				$i18n.t(audioLabels[String(record.params.audio_mode)] ?? String(record.params.audio_mode))
+			);
 		}
+		if (record.params?.fps) pills.push(`${record.params.fps} FPS`);
+		if (record.params?.output_quality) {
+			pills.push(
+				$i18n.t(
+					advancedOptionLabels[String(record.params.output_quality)] ??
+						String(record.params.output_quality)
+				)
+			);
+		}
+		if (record.params?.motion_amplitude) {
+			pills.push(
+				`${$i18n.t('Motion amplitude')}: ${$i18n.t(advancedOptionLabels[String(record.params.motion_amplitude)] ?? String(record.params.motion_amplitude))}`
+			);
+		}
+		if (record.params?.guidance_scale !== null && record.params?.guidance_scale !== undefined) {
+			pills.push(`${$i18n.t('Prompt adherence')}: ${record.params.guidance_scale}`);
+		}
+		if (record.params?.seed !== null && record.params?.seed !== undefined) {
+			pills.push(`${$i18n.t('Seed')}: ${record.params.seed}`);
+		}
+		if (record.params?.loop === true) pills.push($i18n.t('Loop video'));
 		return pills;
 	};
 
@@ -788,9 +883,7 @@
 											</div>
 										{:else if taskItem.status === 'queued' || taskItem.status === 'running'}
 											<!-- 生成中：占位骨架 + 提示 -->
-											<div
-												class="flex w-full justify-start overflow-hidden"
-											>
+											<div class="flex w-full justify-start overflow-hidden">
 												<div
 													class="flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center dark:border-gray-700 dark:bg-gray-900 sm:px-5 sm:py-10"
 												>
@@ -804,9 +897,7 @@
 												</div>
 											</div>
 										{:else if taskItem.status === 'failed'}
-											<div
-												class="flex w-full justify-start overflow-hidden"
-											>
+											<div class="flex w-full justify-start overflow-hidden">
 												<div
 													class="flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-4 py-5 text-center dark:border-red-900/60 dark:bg-red-950/20 sm:px-5 sm:py-6"
 												>
@@ -899,7 +990,7 @@
 														stroke-linejoin="round"
 														aria-hidden="true"
 														><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
-												>
+													>
 												{/if}
 												{$i18n.t('Remove')}
 											</button>
@@ -1039,7 +1130,11 @@
 												aria-haspopup="true"
 											>
 												{@render taskIcon(task)}
-												<span class="truncate">{$i18n.t(taskOptions.find((item) => item.id === task)?.label ?? '')}</span>
+												<span class="truncate"
+													>{$i18n.t(
+														taskOptions.find((item) => item.id === task)?.label ?? ''
+													)}</span
+												>
 												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
 											</button>
 
@@ -1056,7 +1151,8 @@
 															showTaskSelector = false;
 														}}
 														aria-pressed={task === option.id}
-													>{@render taskIcon(option.id)}{$i18n.t(option.label)}</button>
+														>{@render taskIcon(option.id)}{$i18n.t(option.label)}</button
+													>
 												{/each}
 											</div>
 										</Dropdown>
@@ -1078,7 +1174,10 @@
 												option.id
 													? 'bg-gray-900 text-white shadow-sm dark:bg-gray-100 dark:text-gray-900'
 													: 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-												on:click={() => changeTask(option.id)}>{@render taskIcon(option.id, 'size-3.5 shrink-0')}{$i18n.t(option.label)}</button
+												on:click={() => changeTask(option.id)}
+												>{@render taskIcon(option.id, 'size-3.5 shrink-0')}{$i18n.t(
+													option.label
+												)}</button
 											>
 										{/each}
 									</div>
@@ -1088,7 +1187,6 @@
 									class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 p-4 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
 									on:submit|preventDefault={generate}
 								>
-
 									{#if selectedModel?.asset_inputs?.length}
 										<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
 											{#each selectedModel.asset_inputs as capability}
@@ -1112,7 +1210,8 @@
 														type="file"
 														accept={capability.mime_types.join(',')}
 														multiple={capability.multiple}
-														on:change={(event) => uploadAsset(capability, event.currentTarget.files)}
+														on:change={(event) =>
+															uploadAsset(capability, event.currentTarget.files)}
 													/>
 												</label>
 											{/each}
@@ -1151,7 +1250,8 @@
 																type="button"
 																class="absolute right-1 top-1 flex size-11 items-center justify-center rounded-full bg-white/90 text-sm text-gray-600 shadow-sm transition hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-8 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:text-white"
 																aria-label={$i18n.t('Remove')}
-																on:click={() => removeAsset(role as VideoAssetRole, item.id)}>×</button
+																on:click={() => removeAsset(role as VideoAssetRole, item.id)}
+																>×</button
 															>
 														</div>
 													{/each}
@@ -1171,8 +1271,8 @@
 											bind:show={showVideoOptions}
 											side="top"
 											align="start"
-											maxHeight="min(75dvh, 36rem)"
-											contentClass="z-50 w-[min(30rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-gray-100 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900"
+											maxHeight="min(calc(100dvh - 5rem), 42rem)"
+											contentClass="z-50 w-[min(27rem,calc(100vw-4rem))] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:p-4 dark:border-gray-800 dark:bg-gray-900"
 										>
 											<button
 												type="button"
@@ -1190,11 +1290,13 @@
 												<span class="truncate">{videoOptionsLabel}</span>
 											</button>
 
-											<div slot="content" class="space-y-4">
+											<div slot="content" class="min-w-0">
 												{#if durationChoices.length}
 													<section>
-														<div class="mb-2 flex items-center justify-between gap-3">
-															<h3 class="text-sm font-medium">{$i18n.t('Duration')}</h3>
+														<div class="flex items-center justify-between gap-3 px-1 pb-2">
+															<h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">
+																{$i18n.t('Duration')}
+															</h3>
 															<output
 																class="rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium tabular-nums dark:bg-gray-800"
 																>{durationLabel(durationChoices[durationIndex])}</output
@@ -1217,105 +1319,156 @@
 															/>
 															<div class="flex justify-between text-[10px] text-gray-400">
 																<span>{durationLabel(durationChoices[0])}</span>
-																<span>{durationLabel(durationChoices[durationChoices.length - 1])}</span>
+																<span
+																	>{durationLabel(
+																		durationChoices[durationChoices.length - 1]
+																	)}</span
+																>
 															</div>
 														</div>
 													</section>
 												{/if}
 												{#if selectedModel?.aspect_ratios}
-													<section>
-														<h3 class="mb-2 text-sm font-medium">{$i18n.t('Aspect ratio')}</h3>
-														<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+													<section class="mt-5">
+														<h3
+															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+														>
+															{$i18n.t('Ratio')}
+														</h3>
+														<div class="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5">
 															{#each selectedModel.aspect_ratios as value}<button
 																	type="button"
-																	class="h-10 rounded-xl border text-xs transition {params.aspect_ratio ===
+																	class="flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition {params.aspect_ratio ===
 																	value
 																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
+																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
 																	on:click={() => (params = { ...params, aspect_ratio: value })}
-																	aria-pressed={params.aspect_ratio === value}>{value}</button
+																	aria-pressed={params.aspect_ratio === value}
+																	><span class="flex size-6 items-center justify-center"
+																		><span
+																			class="border border-current/60 {aspectRatioPreviewClass(
+																				value
+																			)}"
+																			style={aspectRatioPreviewStyle(value)}
+																		></span></span
+																	><span class="min-w-0 truncate">{value}</span></button
 																>{/each}
 														</div>
 													</section>
 												{/if}
-												<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-													{#if selectedModel?.resolutions}<section>
-															<h3 class="mb-2 text-sm font-medium">{$i18n.t('Resolution')}</h3>
-															<div class="grid grid-cols-2 gap-1.5">
-																{#each selectedModel.resolutions as value}<button
-																		type="button"
-																		class="h-9 rounded-xl border text-xs transition {params.resolution ===
-																		value
-																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
-																		on:click={() => (params = { ...params, resolution: value })}
-																		aria-pressed={params.resolution === value}>{value}</button
-																	>{/each}
-															</div>
-														</section>{/if}
-													{#if selectedModel?.audio_options}<section>
-															<h3 class="mb-2 text-sm font-medium">{$i18n.t('Audio')}</h3>
-															<div class="grid grid-cols-2 gap-1.5">
-																{#each selectedModel.audio_options as value}<button
-																		type="button"
-																		class="h-9 rounded-xl border px-2 text-xs transition {params.audio_mode ===
-																		value.mode
-																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
-																		on:click={() => (params = { ...params, audio_mode: value.mode })}
-																		aria-pressed={params.audio_mode === value.mode}
-																		>{$i18n.t(audioLabels[value.mode] ?? value.mode)}</button
-																	>{/each}
-															</div>
-														</section>{/if}
-												</div>
+												{#if selectedModel?.resolutions}<section class="mt-5">
+														<h3
+															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+														>
+															{$i18n.t('Resolution')}
+														</h3>
+														<div class="grid grid-cols-3 gap-1.5">
+															{#each selectedModel.resolutions as value}<button
+																	type="button"
+																	class="h-9 rounded-xl border text-sm transition {params.resolution ===
+																	value
+																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																	on:click={() => (params = { ...params, resolution: value })}
+																	aria-pressed={params.resolution === value}>{value}</button
+																>{/each}
+														</div>
+													</section>{/if}
+												{#if selectedModel?.audio_options}<section class="mt-5">
+														<h3
+															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
+														>
+															{$i18n.t('Audio')}
+														</h3>
+														<div class="grid grid-cols-2 gap-1.5">
+															{#each selectedModel.audio_options as value}<button
+																	type="button"
+																	class="h-9 rounded-xl border px-2 text-sm transition {params.audio_mode ===
+																	value.mode
+																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																	on:click={() => (params = { ...params, audio_mode: value.mode })}
+																	aria-pressed={params.audio_mode === value.mode}
+																	>{$i18n.t(audioLabels[value.mode] ?? value.mode)}</button
+																>{/each}
+														</div>
+													</section>{/if}
 												{#if advancedFields.length}
-													<section class="border-t border-gray-100 pt-3 dark:border-gray-800">
+													<section class="mt-5 border-t border-gray-100 pt-3 dark:border-gray-800">
 														<button
 															type="button"
-															class="min-h-11 rounded-lg px-2 py-1.5 text-xs text-gray-500 hover:bg-gray-100 sm:min-h-0 dark:hover:bg-gray-800"
+															class="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-medium text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:text-gray-100"
 															aria-expanded={showAdvanced}
+															aria-controls="video-advanced-settings"
 															on:click={() => (showAdvanced = !showAdvanced)}
-															>{$i18n.t('Advanced')} {showAdvanced ? '↑' : '↓'}</button
+															><span>{$i18n.t('Advanced')}</span><span
+																class="text-gray-400"
+																aria-hidden="true">{showAdvanced ? '−' : '+'}</span
+															></button
 														>
-														{#if showAdvanced}<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+														{#if showAdvanced}<div
+																id="video-advanced-settings"
+																class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"
+															>
 																{#each advancedFields as field}<div
-																		class="text-xs text-gray-500 {field.format === 'json'
+																		class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300 {field.kind ===
+																		'text'
 																			? 'sm:col-span-2'
 																			: ''}"
 																	>
-																		<span class="mb-1.5 block"
-																			>{$i18n.t(fieldKey(field).replaceAll('_', ' '))}{field.required
-																				? ' *'
-																				: ''}</span
-																		>{#if field.format === 'json'}<textarea
-																				class="min-h-24 w-full resize-y rounded-xl bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900 outline-none dark:bg-gray-800 dark:text-gray-100"
-																				rows="4"
+																		<span class="flex justify-between gap-2"
+																			><span>{$i18n.t(advancedFieldLabels[field.key])}</span
+																			>{#if field.kind === 'integer' || field.kind === 'number'}<span
+																					class="font-normal text-gray-400"
+																					>{advancedRangeLabel(field)}</span
+																				>{/if}</span
+																		>
+																		{#if advancedFieldDescriptions[field.key]}<p
+																				class="mt-1 text-[11px] font-normal leading-4 text-gray-400"
+																			>
+																				{$i18n.t(advancedFieldDescriptions[field.key] ?? '')}
+																			</p>{/if}
+																		{#if field.kind === 'text'}<textarea
+																				id="video-advanced-{field.key}"
+																				class="mt-1 min-h-24 w-full resize-y rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm font-normal text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+																				rows="3"
+																				maxlength={field.max_length ?? undefined}
 																				value={String(fieldValue(field, params))}
-																				placeholder={$i18n.t('Enter a JSON array or object')}
-																				aria-label={$i18n.t(fieldKey(field).replaceAll('_', ' '))}
+																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
 																				on:input={(event) =>
 																					setAdvancedParam(field, event.currentTarget.value)}
-																			></textarea>{:else if field.options}<div
-																				class="flex flex-wrap gap-1.5"
+
+																			></textarea>{:else if field.kind === 'option' && field.options}<div
+																				class="mt-1 grid grid-cols-2 gap-1.5"
+																				role="group"
+																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
 																			>
 																				{#each field.options as option}<button
 																						type="button"
-																						class="rounded-xl border px-3 py-2 text-xs {fieldValue(
+																						class="min-h-11 rounded-xl border px-3 py-2 text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {fieldValue(
 																							field,
 																							params
 																						) === option
 																							? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																							: 'border-gray-100 bg-gray-50 text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300'}"
+																							: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
 																						on:click={() => setAdvancedParam(field, option)}
 																						aria-pressed={fieldValue(field, params) === option}
-																						>{option}</button
+																						>{$i18n.t(
+																							advancedOptionLabels[option] ?? option
+																						)}</button
 																					>{/each}
-																			</div>{:else if typeof field.default === 'boolean'}<button
+																			</div>{:else if field.kind === 'boolean'}<button
+																				id="video-advanced-{field.key}"
 																				type="button"
-																				class="flex w-full items-center justify-between rounded-xl bg-gray-100 px-3 py-2 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+																				class="mt-1 flex min-h-11 w-full items-center justify-between rounded-xl border border-gray-200 bg-transparent px-3 py-2 font-normal text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:border-gray-700 dark:text-gray-100"
+																				role="switch"
+																				aria-checked={Boolean(fieldValue(field, params))}
+																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
 																				on:click={() =>
-																					setAdvancedParam(field, !Boolean(fieldValue(field, params)))}
+																					setAdvancedParam(
+																						field,
+																						!Boolean(fieldValue(field, params))
+																					)}
 																				><span
 																					>{Boolean(fieldValue(field, params))
 																						? $i18n.t('On')
@@ -1335,14 +1488,26 @@
 																					></span></span
 																				></button
 																			>{:else}<input
-																				class="w-full rounded-xl bg-gray-100 px-3 py-2 text-gray-900 outline-none dark:bg-gray-800 dark:text-gray-100"
-																				type={field.min !== undefined ? 'number' : 'text'}
-																				min={field.min ?? undefined}
-																				max={field.max ?? undefined}
-																				step={field.step ?? undefined}
+																				id="video-advanced-{field.key}"
+																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm font-normal tabular-nums text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+																				type="text"
+																				inputmode={field.kind === 'integer' ? 'numeric' : 'decimal'}
 																				value={fieldValue(field, params)}
+																				placeholder={$i18n.t('Model default')}
+																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
+																				aria-invalid={Boolean(advancedErrorLabel(field))}
+																				aria-describedby={advancedErrorLabel(field)
+																					? `video-advanced-error-${field.key}`
+																					: undefined}
 																				on:input={(event) => updateAdvancedInput(field, event)}
 																			/>{/if}
+																		{#if advancedErrorLabel(field)}<p
+																				id="video-advanced-error-{field.key}"
+																				class="mt-1 text-[11px] font-normal text-red-600 dark:text-red-400"
+																				aria-live="polite"
+																			>
+																				{advancedErrorLabel(field)}
+																			</p>{/if}
 																	</div>{/each}
 															</div>{/if}
 													</section>
@@ -1357,6 +1522,7 @@
 												disabled={submitting ||
 													!selectedModel ||
 													selectedModel.enabled === false ||
+													Boolean(advancedError) ||
 													!isImageQuoteSubmittable(quoteState)}
 												label={$i18n.t('Generate video')}
 											/>
@@ -1372,7 +1538,7 @@
 	{:else}
 		<div class="min-h-0 flex-1 overflow-y-auto pt-18">
 			<CreationsLibrary
-				active={selection !== 'generate' as 'generate' | 'mine' | 'all'}
+				active={selection !== ('generate' as 'generate' | 'mine' | 'all')}
 				scope={selection === 'all' ? 'all' : 'mine'}
 				revision={creationRevision}
 				mediaKind="video"

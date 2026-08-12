@@ -37,6 +37,29 @@ describe('video creation page', () => {
 		expect(source).toContain('updateAdvancedInput(field, event)');
 	});
 
+	test('renders only curated advanced fields with responsive and accessible controls', () => {
+		expect(source).toContain('selectedModel?.advanced_fields ?? []');
+		expect(source).toContain('id="video-advanced-settings"');
+		expect(source).toContain('aria-controls="video-advanced-settings"');
+		expect(source).toContain('grid min-w-0 gap-4 sm:grid-cols-2');
+		expect(source).toContain("inputmode={field.kind === 'integer' ? 'numeric' : 'decimal'}");
+		expect(source).toContain('aria-describedby={advancedErrorLabel(field)');
+		expect(source).toContain('normalizeVideoParamsForModel');
+		expect(source).toContain('Boolean(advancedError)');
+		expect(source).not.toContain('...(selectedModel.json_fields ?? [])');
+		expect(source).not.toContain("field.format === 'json'");
+	});
+
+	test('matches the image parameter popover visual system', () => {
+		expect(source).toContain('w-[min(27rem,calc(100vw-4rem))]');
+		expect(source).toContain('rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:p-4');
+		expect(source).toContain('flex h-14 min-w-0 flex-col items-center justify-center');
+		expect(source).toContain('aspectRatioPreviewStyle(value)');
+		expect(source).toContain('flex min-h-11 w-full items-center justify-between rounded-xl px-1');
+		expect(source).toContain("{showAdvanced ? '−' : '+'}");
+		expect(source).toContain('border border-gray-200 bg-transparent');
+	});
+
 	test('renders result action row with regenerate, download, details and remove', () => {
 		// 结果区操作按钮放在视频下方独立行，不再用绝对定位浮层盖住播放器控件
 		expect(source).not.toContain('absolute bottom-3 right-3');

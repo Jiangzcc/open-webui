@@ -57,3 +57,18 @@ def test_video_billing_keeps_auto_duration_as_a_pricing_dimension() -> None:
 
     match_source_task = _task().model_copy(update={'params': {'duration': '0'}})
     assert video_billing_context(match_source_task).dimensions['duration'] == '0'
+
+
+def test_video_billing_includes_output_dimensions_when_selected() -> None:
+    task = _task().model_copy(
+        update={'params': {**_task().params, 'fps': '50', 'output_quality': 'high'}}
+    )
+
+    assert dict(video_billing_context(task).dimensions) == {
+        'duration': 5,
+        'resolution': '1080p',
+        'aspect_ratio': '16:9',
+        'audio_mode': 'generate',
+        'fps': '50',
+        'output_quality': 'high',
+    }

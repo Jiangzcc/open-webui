@@ -102,9 +102,14 @@
 	let selectedModel = '';
 	let selectedResolution = '';
 	let selectedQuality = '';
+	let selectedOutputFormat = '';
 	let imageCount = 1;
 	let negativePrompt = '';
-	let steps: number | null = null;
+	let stepsInput = '';
+	let seedInput = '';
+	let guidanceScaleInput = '';
+	let strengthInput = '';
+	let showAdvancedSettings = false;
 	// 自定义宽高输入(WxH),仅对声明 custom_size 的模型启用。空串表示未输入。
 	let customWidth = '';
 	let customHeight = '';
@@ -183,6 +188,25 @@
 	$: resolutionOptions = selectedModelCapability.resolutions;
 	$: imageCountOptions = selectedModelCapability.imageCounts;
 	$: qualityOptions = selectedModelCapability.qualityOptions;
+	$: outputFormatOptions = selectedModelCapability.outputFormats;
+	$: advancedFields = selectedModelCapability.advancedFields;
+	$: seedField = advancedFields.find((field) => field.field === 'seed') ?? null;
+	$: negativePromptField =
+		advancedFields.find((field) => field.field === 'negative_prompt') ?? null;
+	$: stepsField = advancedFields.find((field) => field.field === 'steps') ?? null;
+	$: guidanceScaleField = advancedFields.find((field) => field.field === 'guidance_scale') ?? null;
+	$: strengthField = advancedFields.find((field) => field.field === 'strength') ?? null;
+	$: hasAdvancedSettings = advancedFields.length > 0 || outputFormatOptions.length > 0;
+	$: steps = parseAdvancedNumber(stepsInput, stepsField);
+	$: seed = parseAdvancedNumber(seedInput, seedField);
+	$: guidanceScale = parseAdvancedNumber(guidanceScaleInput, guidanceScaleField);
+	$: strength = parseAdvancedNumber(strengthInput, strengthField);
+	$: advancedSettingsInvalid = Boolean(
+		(stepsField && getAdvancedNumberError(stepsInput, stepsField)) ||
+		(seedField && getAdvancedNumberError(seedInput, seedField)) ||
+		(guidanceScaleField && getAdvancedNumberError(guidanceScaleInput, guidanceScaleField)) ||
+		(strengthField && getAdvancedNumberError(strengthInput, strengthField))
+	);
 	$: hasImageSizingOptions = aspectRatioOptions.length > 0 || resolutionOptions.length > 0;
 	$: selectedImageSizeLabel = hasImageSizingOptions
 		? aspectRatioOptions.length > 0
@@ -241,6 +265,23 @@
 	$: if (loaded && qualityOptions.length === 0 && selectedQuality) {
 		selectedQuality = '';
 	}
+	$: if (
+		loaded &&
+		outputFormatOptions.length > 0 &&
+		!outputFormatOptions.includes(selectedOutputFormat)
+	) {
+		selectedOutputFormat =
+			selectedModelCapability.defaultOutputFormat ?? outputFormatOptions[0] ?? '';
+	}
+	$: if (loaded && outputFormatOptions.length === 0 && selectedOutputFormat) {
+		selectedOutputFormat = '';
+	}
+	$: if (loaded && !seedField && seedInput) seedInput = '';
+	$: if (loaded && !negativePromptField && negativePrompt) negativePrompt = '';
+	$: if (loaded && !stepsField && stepsInput) stepsInput = '';
+	$: if (loaded && !guidanceScaleField && guidanceScaleInput) guidanceScaleInput = '';
+	$: if (loaded && !strengthField && strengthInput) strengthInput = '';
+	$: if (loaded && !hasAdvancedSettings && showAdvancedSettings) showAdvancedSettings = false;
 	$: if (
 		loaded &&
 		imageCountOptions.length > 0 &&
@@ -392,6 +433,40 @@
 		}
 	};
 
+	const parseAdvancedNumber = (
+		value: string,
+		field: { kind: 'integer' | 'number' | 'text'; min?: number; max?: number } | null
+	) => {
+		if (!field || !value.trim() || getAdvancedNumberError(value, field)) return null;
+		return Number(value);
+	};
+
+	const getAdvancedNumberError = (
+		value: string,
+		field: { kind: 'integer' | 'number' | 'text'; min?: number; max?: number }
+	) => {
+		if (!value.trim()) return null;
+		const parsed = Number(value);
+		if (!Number.isFinite(parsed) || (field.kind === 'integer' && !Number.isInteger(parsed))) {
+			return $i18n.t(field.kind === 'integer' ? 'Enter a whole number' : 'Enter a number');
+		}
+		if (field.min !== undefined && parsed < field.min) {
+			return $i18n.t('Minimum: {{value}}', { value: field.min });
+		}
+		if (field.max !== undefined && parsed > field.max) {
+			return $i18n.t('Maximum: {{value}}', { value: field.max });
+		}
+		return null;
+	};
+
+	const advancedRangeLabel = (field: { min?: number; max?: number } | null) => {
+		if (!field || (field.min === undefined && field.max === undefined))
+			return $i18n.t('Model default');
+		if (field.min !== undefined && field.max !== undefined) return `${field.min}–${field.max}`;
+		if (field.min !== undefined) return `≥ ${field.min}`;
+		return `≤ ${field.max}`;
+	};
+
 	const getAspectRatioPreviewClass = (ratio: ImageAspectRatio) => {
 		return ratio === DEFAULT_IMAGE_ASPECT_RATIO ? 'size-5 rounded-full' : 'rounded-[3px]';
 	};
@@ -469,7 +544,7 @@
 		return model ? stripVendorFromName(model) : $i18n.t('Default Model');
 	};
 
-	// pill 参数：模型 · 比例 · 分辨率(若有) · 张数 · 质量(若有)。
+	// pill 参数：基础尺寸参数后追加用户实际提交的高级参数，便于复现。
 	// 同样需显式传 modelList，让模板引用 primaryModels 触发响应式。
 	const getBatchMetaPills = (batch: ImageGenerationBatch, modelList: ImageGenerationModel[]) => {
 		const pills = [getBatchModelLabel(batch, modelList), getAspectRatioLabel(batch.aspectRatio)];
@@ -477,6 +552,19 @@
 		pills.push(String(batch.expectedCount));
 		const q = batch.quality?.trim();
 		if (q) pills.push(getQualityLabel(q));
+		const outputFormat = batch.params.output_format;
+		if (typeof outputFormat === 'string' && outputFormat.trim()) {
+			pills.push(outputFormat.trim().toUpperCase());
+		}
+		for (const [key, label] of [
+			['steps', $i18n.t('Steps')],
+			['guidance_scale', $i18n.t('Guidance scale')],
+			['strength', $i18n.t('Strength')],
+			['seed', $i18n.t('Seed')]
+		] as const) {
+			const value = batch.params[key];
+			if (typeof value === 'number' && Number.isFinite(value)) pills.push(`${label} ${value}`);
+		}
 		return pills;
 	};
 
@@ -872,6 +960,9 @@
 				return;
 			}
 		}
+		referenceImages = referenceImageUrl
+			? [{ url: referenceImageUrl, name: $i18n.t('Previous creation') }]
+			: [];
 
 		let targetModel = primaryModels.find(
 			(model) => model.id === draft.modelId || model.editModel === draft.modelId
@@ -892,10 +983,23 @@
 		if (draft.quality && qualityOptions.includes(draft.quality)) {
 			selectedQuality = draft.quality;
 		}
+		if (draft.outputFormat && outputFormatOptions.includes(draft.outputFormat)) {
+			selectedOutputFormat = draft.outputFormat;
+		}
+		negativePrompt = negativePromptField ? (draft.negativePrompt ?? '') : '';
+		stepsInput =
+			stepsField && draft.steps !== null && draft.steps !== undefined ? String(draft.steps) : '';
+		seedInput =
+			seedField && draft.seed !== null && draft.seed !== undefined ? String(draft.seed) : '';
+		guidanceScaleInput =
+			guidanceScaleField && draft.guidanceScale !== null && draft.guidanceScale !== undefined
+				? String(draft.guidanceScale)
+				: '';
+		strengthInput =
+			strengthField && draft.strength !== null && draft.strength !== undefined
+				? String(draft.strength)
+				: '';
 		prompt = draft.prompt;
-		referenceImages = referenceImageUrl
-			? [{ url: referenceImageUrl, name: $i18n.t('Previous creation') }]
-			: [];
 		await selectSelection('generate');
 		await tick();
 		resizePromptTextarea();
@@ -973,6 +1077,10 @@
 		if (!isImageQuoteSubmittable(imageQuoteState)) {
 			return;
 		}
+		if (advancedSettingsInvalid) {
+			toast.error($i18n.t('Check the advanced settings'));
+			return;
+		}
 
 		loading = true;
 		showAspectRatioPicker = false;
@@ -988,6 +1096,10 @@
 				n: imageCount,
 				steps,
 				negative_prompt: negativePrompt,
+				output_format: selectedOutputFormat || null,
+				seed,
+				guidance_scale: guidanceScale,
+				strength,
 				size: customSizeValue
 			};
 			const payload =
@@ -1210,7 +1322,7 @@
 										{batch.prompt}
 									</p>
 
-									<!-- pill 参数行：模型 · 比例 · 分辨率 · 张数 · 质量；生成中附状态 -->
+									<!-- pill 参数行：基础参数与已提交的高级参数；生成中附状态 -->
 									<div class="flex flex-wrap items-center gap-1.5">
 										{#each getBatchMetaPills(batch, primaryModels) as pill, index (`${index}-${pill}`)}
 											<span
@@ -1586,7 +1698,6 @@
 							/>
 
 							<div class="p-4">
-
 								{#if referenceImages.length > 0}
 									<div class="mb-3 flex gap-2 overflow-x-auto scrollbar-hidden pb-1">
 										{#each referenceImages as image, index (`${image.url}-${index}`)}
@@ -1843,6 +1954,196 @@
 															</div>
 														</section>
 													{/if}
+
+													{#if hasAdvancedSettings}
+														<section
+															class="mt-5 border-t border-gray-100 pt-3 dark:border-gray-800"
+														>
+															<button
+																type="button"
+																class="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-medium text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:text-gray-100"
+																on:click={() => (showAdvancedSettings = !showAdvancedSettings)}
+																aria-expanded={showAdvancedSettings}
+																aria-controls="image-advanced-settings"
+															>
+																<span>{$i18n.t('Advanced')}</span>
+																<span class="text-gray-400" aria-hidden="true"
+																	>{showAdvancedSettings ? '−' : '+'}</span
+																>
+															</button>
+
+															{#if showAdvancedSettings}
+																<div
+																	id="image-advanced-settings"
+																	class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"
+																>
+																	{#if outputFormatOptions.length > 0}
+																		<div class="min-w-0 sm:col-span-2">
+																			<div
+																				class="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-300"
+																			>
+																				{$i18n.t('Output Format')}
+																			</div>
+																			<div class="grid grid-cols-3 gap-1.5">
+																				{#each outputFormatOptions as format}
+																					<button
+																						type="button"
+																						class="min-h-11 rounded-xl border text-sm uppercase transition {selectedOutputFormat ===
+																						format
+																							? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																							: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																						on:click={() => (selectedOutputFormat = format)}
+																						aria-pressed={selectedOutputFormat === format}
+																					>
+																						{format}
+																					</button>
+																				{/each}
+																			</div>
+																		</div>
+																	{/if}
+
+																	{#if seedField}
+																		<label
+																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+																		>
+																			<span class="flex justify-between gap-2"
+																				><span>{$i18n.t('Seed')}</span><span
+																					class="font-normal text-gray-400"
+																					>{advancedRangeLabel(seedField)}</span
+																				></span
+																			>
+																			<input
+																				type="text"
+																				inputmode="numeric"
+																				value={seedInput}
+																				on:input={(event) =>
+																					(seedInput = event.currentTarget.value)}
+																				placeholder={$i18n.t('Model default')}
+																				aria-invalid={Boolean(
+																					getAdvancedNumberError(seedInput, seedField)
+																				)}
+																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+																			/>
+																			{#if getAdvancedNumberError(seedInput, seedField)}<span
+																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																					>{getAdvancedNumberError(seedInput, seedField)}</span
+																				>{/if}
+																		</label>
+																	{/if}
+
+																	{#if stepsField}
+																		<label
+																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+																		>
+																			<span class="flex justify-between gap-2"
+																				><span>{$i18n.t('Steps')}</span><span
+																					class="font-normal text-gray-400"
+																					>{advancedRangeLabel(stepsField)}</span
+																				></span
+																			>
+																			<input
+																				type="text"
+																				inputmode="numeric"
+																				value={stepsInput}
+																				on:input={(event) =>
+																					(stepsInput = event.currentTarget.value)}
+																				placeholder={$i18n.t('Model default')}
+																				aria-invalid={Boolean(
+																					getAdvancedNumberError(stepsInput, stepsField)
+																				)}
+																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+																			/>
+																			{#if getAdvancedNumberError(stepsInput, stepsField)}<span
+																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																					>{getAdvancedNumberError(stepsInput, stepsField)}</span
+																				>{/if}
+																		</label>
+																	{/if}
+
+																	{#if guidanceScaleField}
+																		<label
+																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+																		>
+																			<span class="flex justify-between gap-2"
+																				><span>{$i18n.t('Guidance scale')}</span><span
+																					class="font-normal text-gray-400"
+																					>{advancedRangeLabel(guidanceScaleField)}</span
+																				></span
+																			>
+																			<input
+																				type="text"
+																				inputmode="decimal"
+																				value={guidanceScaleInput}
+																				on:input={(event) =>
+																					(guidanceScaleInput = event.currentTarget.value)}
+																				placeholder={$i18n.t('Model default')}
+																				aria-invalid={Boolean(
+																					getAdvancedNumberError(
+																						guidanceScaleInput,
+																						guidanceScaleField
+																					)
+																				)}
+																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+																			/>
+																			{#if getAdvancedNumberError(guidanceScaleInput, guidanceScaleField)}<span
+																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																					>{getAdvancedNumberError(
+																						guidanceScaleInput,
+																						guidanceScaleField
+																					)}</span
+																				>{/if}
+																		</label>
+																	{/if}
+
+																	{#if strengthField}
+																		<label
+																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+																		>
+																			<span class="flex justify-between gap-2"
+																				><span>{$i18n.t('Strength')}</span><span
+																					class="font-normal text-gray-400"
+																					>{advancedRangeLabel(strengthField)}</span
+																				></span
+																			>
+																			<input
+																				type="text"
+																				inputmode="decimal"
+																				value={strengthInput}
+																				on:input={(event) =>
+																					(strengthInput = event.currentTarget.value)}
+																				placeholder={$i18n.t('Model default')}
+																				aria-invalid={Boolean(
+																					getAdvancedNumberError(strengthInput, strengthField)
+																				)}
+																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+																			/>
+																			{#if getAdvancedNumberError(strengthInput, strengthField)}<span
+																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																					>{getAdvancedNumberError(
+																						strengthInput,
+																						strengthField
+																					)}</span
+																				>{/if}
+																		</label>
+																	{/if}
+
+																	{#if negativePromptField}
+																		<label
+																			class="min-w-0 text-xs font-medium text-gray-600 sm:col-span-2 dark:text-gray-300"
+																		>
+																			<span>{$i18n.t('Negative Prompt')}</span>
+																			<textarea
+																				bind:value={negativePrompt}
+																				rows="3"
+																				placeholder={$i18n.t('Describe what should not appear')}
+																				class="mt-1 w-full resize-y rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm font-normal text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+																			></textarea>
+																		</label>
+																	{/if}
+																</div>
+															{/if}
+														</section>
+													{/if}
 												</div>
 											{/if}
 										</div>
@@ -1855,6 +2156,7 @@
 											disabled={!prompt.trim() ||
 												!isImageQuoteSubmittable(imageQuoteState) ||
 												(useCustomSize && Boolean(customSizeError)) ||
+												advancedSettingsInvalid ||
 												loading}
 											label={referenceImages.length > 0
 												? $i18n.t('Edit Image')

@@ -41,6 +41,9 @@ export type ImageGenerationPayload = {
 	quality?: string;
 	output_format?: string;
 	system_prompt?: string;
+	seed?: number;
+	guidance_scale?: number;
+	strength?: number;
 };
 
 export type ImageEditPayload = ImageGenerationPayload & {
@@ -98,6 +101,21 @@ export type ImageGenerationModel = {
 	 */
 	customSize?: CustomSizeConstraints;
 	presetSizes?: string[];
+	advancedFields?: ImageAdvancedField[];
+};
+
+export type ImageAdvancedFieldName =
+	| 'seed'
+	| 'negative_prompt'
+	| 'steps'
+	| 'guidance_scale'
+	| 'strength';
+
+export type ImageAdvancedField = {
+	field: ImageAdvancedFieldName;
+	kind: 'integer' | 'number' | 'text';
+	min?: number;
+	max?: number;
 };
 
 export type CustomSizeConstraints = {
@@ -127,6 +145,7 @@ export type ImageModelCapability = {
 	defaultQuality?: string;
 	customSize?: CustomSizeConstraints;
 	presetSizes: string[];
+	advancedFields: ImageAdvancedField[];
 };
 
 type ImagePayloadInput = {
@@ -139,6 +158,10 @@ type ImagePayloadInput = {
 	n?: number | null;
 	steps?: number | null;
 	negative_prompt?: string | null;
+	output_format?: string | null;
+	seed?: number | null;
+	guidance_scale?: number | null;
+	strength?: number | null;
 };
 
 type ImageEditPayloadInput = ImagePayloadInput & {
@@ -209,7 +232,8 @@ const DEFAULT_MODEL_CAPABILITY: ImageModelCapability = {
 	aspectRatioSizes: DEFAULT_IMAGE_ASPECT_RATIO_SIZES,
 	outputFormats: [],
 	qualityOptions: [],
-	presetSizes: []
+	presetSizes: [],
+	advancedFields: []
 };
 
 const isPositiveInteger = (value?: number | null) => {
@@ -368,6 +392,46 @@ const normalizePresetSizes = (value: unknown): string[] => {
 			const [bw, bh] = b.split('x').map(Number);
 			return aw * ah - bw * bh;
 		});
+};
+
+const IMAGE_ADVANCED_FIELD_NAMES = new Set<ImageAdvancedFieldName>([
+	'seed',
+	'negative_prompt',
+	'steps',
+	'guidance_scale',
+	'strength'
+]);
+
+const normalizeAdvancedFields = (value: unknown): ImageAdvancedField[] => {
+	if (!Array.isArray(value)) return [];
+	const seen = new Set<ImageAdvancedFieldName>();
+	return value.flatMap((item) => {
+		if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+		const source = item as Record<string, unknown>;
+		const field = source.field as ImageAdvancedFieldName;
+		const kind = source.kind;
+		if (
+			!IMAGE_ADVANCED_FIELD_NAMES.has(field) ||
+			!['integer', 'number', 'text'].includes(String(kind)) ||
+			seen.has(field)
+		) {
+			return [];
+		}
+		const min =
+			typeof source.min === 'number' && Number.isFinite(source.min) ? source.min : undefined;
+		const max =
+			typeof source.max === 'number' && Number.isFinite(source.max) ? source.max : undefined;
+		if (min !== undefined && max !== undefined && min > max) return [];
+		seen.add(field);
+		return [
+			{
+				field,
+				kind: kind as ImageAdvancedField['kind'],
+				...(min !== undefined && { min }),
+				...(max !== undefined && { max })
+			}
+		];
+	});
 };
 
 export type CustomSizeValidationError = {
@@ -534,7 +598,8 @@ const getExplicitModelCapability = (model?: ImageGenerationModel | string | null
 		qualityOptions: model.qualityOptions,
 		defaultQuality: model.defaultQuality,
 		customSize: model.customSize,
-		presetSizes: model.presetSizes ?? []
+		presetSizes: model.presetSizes ?? [],
+		advancedFields: model.advancedFields ?? []
 	};
 };
 
@@ -611,6 +676,7 @@ export const getImageModelCapability = (
 
 	const customSize = explicit.customSize;
 	const presetSizes = explicit.presetSizes ?? [];
+	const advancedFields = explicit.advancedFields ?? [];
 
 	return {
 		aspectRatios,
@@ -626,7 +692,8 @@ export const getImageModelCapability = (
 		customSize,
 		presetSizes,
 		qualityOptions,
-		defaultQuality: explicit.defaultQuality
+		defaultQuality: explicit.defaultQuality,
+		advancedFields
 	};
 };
 
@@ -798,6 +865,7 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 			model.aspectRatioSizes ?? model.aspect_ratio_sizes
 		);
 		const customSize = normalizeCustomSizeConstraints(model.customSize ?? model.custom_size);
+		const advancedFields = normalizeAdvancedFields(model.advancedFields ?? model.advanced_fields);
 		// Preset chips for the custom-size input come from the model's curated
 		// image_size_whitelist keys (already WxH strings).
 		const rawPresets = model.image_size_whitelist ?? model.imageSizeWhitelist;
@@ -860,7 +928,8 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 				...(qualityOptions.length && { qualityOptions }),
 				...(defaultQuality && { defaultQuality }),
 				...(customSize && { customSize }),
-				...(presetSizes.length && { presetSizes })
+				...(presetSizes.length && { presetSizes }),
+				...(advancedFields.length && { advancedFields })
 			}
 		];
 	});
@@ -904,7 +973,11 @@ export const buildImageGenerationPayload = ({
 	quality,
 	n,
 	steps,
-	negative_prompt
+	negative_prompt,
+	output_format,
+	seed,
+	guidance_scale,
+	strength
 }: ImagePayloadInput): ImageGenerationPayload => {
 	const payload: ImageGenerationPayload = {
 		prompt: prompt.trim()
@@ -959,7 +1032,11 @@ export const buildImageGenerationPayload = ({
 	// 没有声明时回退 png（fal 后端亦以 png 为兜底）。避免对无 output_formats 能力的
 	// 模型强写一个它不接受或非首选的格式。
 	if (capability.outputFormats.length > 0) {
-		payload.output_format = trimOptional(capability.defaultOutputFormat) ?? 'png';
+		const requestedOutputFormat = trimOptional(output_format);
+		payload.output_format =
+			(requestedOutputFormat && capability.outputFormats.includes(requestedOutputFormat)
+				? requestedOutputFormat
+				: trimOptional(capability.defaultOutputFormat)) ?? 'png';
 	}
 	if (isPositiveInteger(n)) {
 		payload.n = Number(n);
@@ -969,6 +1046,15 @@ export const buildImageGenerationPayload = ({
 	}
 	if (trimmedNegativePrompt) {
 		payload.negative_prompt = trimmedNegativePrompt;
+	}
+	if (Number.isInteger(seed)) {
+		payload.seed = Number(seed);
+	}
+	if (typeof guidance_scale === 'number' && Number.isFinite(guidance_scale)) {
+		payload.guidance_scale = guidance_scale;
+	}
+	if (typeof strength === 'number' && Number.isFinite(strength)) {
+		payload.strength = strength;
 	}
 
 	return payload;

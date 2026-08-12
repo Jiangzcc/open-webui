@@ -76,7 +76,17 @@ describe('image generation batches', () => {
 		const common = {
 			prompt: 'quiet lake',
 			model_id: 'fal/model',
-			params: { aspect_ratio: '3:2', size: '1536x1024', quality: 'medium' },
+			params: {
+				aspect_ratio: '3:2',
+				size: '1536x1024',
+				quality: 'medium',
+				output_format: 'webp',
+				negative_prompt: 'blurry',
+				steps: 24,
+				seed: 42,
+				guidance_scale: 3.5,
+				strength: 0.65
+			},
 			content_url: '/image.png'
 		};
 		expect(buildCreationDraft(common)).toEqual({
@@ -85,6 +95,12 @@ describe('image generation batches', () => {
 			aspectRatio: '3:2',
 			resolution: '1536x1024',
 			quality: 'medium',
+			outputFormat: 'webp',
+			negativePrompt: 'blurry',
+			steps: 24,
+			seed: 42,
+			guidanceScale: 3.5,
+			strength: 0.65,
 			referenceImageUrl: null
 		});
 		expect(buildCreationDraft({ ...common, useAsReference: true }).referenceImageUrl).toBe(

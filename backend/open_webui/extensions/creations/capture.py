@@ -45,6 +45,7 @@ _PARAM_WHITELIST = (
     'steps',
     'guidance_scale',
     'seed',
+    'strength',
     'style',
     'output_format',
     'system_prompt',

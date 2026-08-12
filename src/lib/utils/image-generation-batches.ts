@@ -48,6 +48,12 @@ export type ImageCreationDraft = {
 	aspectRatio: ImageAspectRatio | null;
 	resolution: string | null;
 	quality: string | null;
+	outputFormat?: string | null;
+	negativePrompt?: string | null;
+	steps?: number | null;
+	seed?: number | null;
+	guidanceScale?: number | null;
+	strength?: number | null;
 	referenceImageUrl: string | null;
 };
 
@@ -57,6 +63,8 @@ type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 const nullableString = (value: unknown): value is string | null =>
 	typeof value === 'string' || value === null;
+const nullableNumber = (value: unknown): value is number | null =>
+	(typeof value === 'number' && Number.isFinite(value)) || value === null;
 
 const isImageCreationDraft = (value: unknown): value is ImageCreationDraft => {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -67,6 +75,12 @@ const isImageCreationDraft = (value: unknown): value is ImageCreationDraft => {
 		nullableString(draft.aspectRatio) &&
 		nullableString(draft.resolution) &&
 		nullableString(draft.quality) &&
+		(draft.outputFormat === undefined || nullableString(draft.outputFormat)) &&
+		(draft.negativePrompt === undefined || nullableString(draft.negativePrompt)) &&
+		(draft.steps === undefined || nullableNumber(draft.steps)) &&
+		(draft.seed === undefined || nullableNumber(draft.seed)) &&
+		(draft.guidanceScale === undefined || nullableNumber(draft.guidanceScale)) &&
+		(draft.strength === undefined || nullableNumber(draft.strength)) &&
 		nullableString(draft.referenceImageUrl)
 	);
 };
@@ -90,6 +104,11 @@ export const consumePendingCreationDraft = (storage: DraftStorage): ImageCreatio
 const stringParam = (params: Record<string, unknown> | null, key: string) => {
 	const value = params?.[key];
 	return typeof value === 'string' && value.trim() ? value.trim() : '';
+};
+
+const numberParam = (params: Record<string, unknown> | null, key: string) => {
+	const value = params?.[key];
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
 };
 
 const aspectRatioParam = (params: Record<string, unknown> | null): ImageAspectRatio => {
@@ -161,6 +180,7 @@ export const buildCreationDraft = (input: {
 	prompt: string;
 	model_id?: string | null;
 	params?: Record<string, unknown> | null;
+	negative_prompt?: string | null;
 	content_url?: string | null;
 	useAsReference?: boolean;
 }): ImageCreationDraft => ({
@@ -172,5 +192,12 @@ export const buildCreationDraft = (input: {
 		stringParam(input.params ?? null, 'size') ||
 		null,
 	quality: stringParam(input.params ?? null, 'quality') || null,
+	outputFormat: stringParam(input.params ?? null, 'output_format') || null,
+	negativePrompt:
+		stringParam(input.params ?? null, 'negative_prompt') || input.negative_prompt?.trim() || null,
+	steps: numberParam(input.params ?? null, 'steps'),
+	seed: numberParam(input.params ?? null, 'seed'),
+	guidanceScale: numberParam(input.params ?? null, 'guidance_scale'),
+	strength: numberParam(input.params ?? null, 'strength'),
 	referenceImageUrl: input.useAsReference ? (input.content_url ?? null) : null
 });

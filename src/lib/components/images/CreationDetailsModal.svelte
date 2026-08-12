@@ -273,6 +273,7 @@
 				prompt: detail.prompt,
 				model_id: detail.model_id,
 				params: detail.params,
+				negative_prompt: detail.negative_prompt,
 				content_url: detail.content_url,
 				useAsReference
 			})
@@ -293,7 +294,7 @@
 	// the consumer rather than exported, because the only writer of these keys
 	// is `extractParamTags`'s PARAM_TAG_ORDER; diverging here trips nothing
 	// worse than a falling-through English-ish fallback per the default arm.
-	const PARAM_LABELS: Record<ParamTag['key'], string> = {
+	const PARAM_LABELS: Partial<Record<ParamTag['key'], string>> = {
 		size: $i18n.t('Size'),
 		resolution: $i18n.t('Resolution'),
 		aspect_ratio: $i18n.t('Aspect ratio'),
@@ -301,13 +302,22 @@
 		image_count: $i18n.t('Image count'),
 		steps: $i18n.t('Steps'),
 		guidance_scale: $i18n.t('Guidance scale'),
+		strength: $i18n.t('Strength'),
 		seed: $i18n.t('Seed'),
 		style: $i18n.t('Style'),
 		output_format: $i18n.t('Format'),
 		background: $i18n.t('Background'),
 		acceleration: $i18n.t('Acceleration'),
 		input_fidelity: $i18n.t('Input fidelity'),
-		thinking_level: $i18n.t('Thinking level')
+		thinking_level: $i18n.t('Thinking level'),
+		prompt_enhancement: $i18n.t('Prompt enhancement'),
+		motion_amplitude: $i18n.t('Motion amplitude'),
+		fps: $i18n.t('Frame rate'),
+		output_quality: $i18n.t('Output quality'),
+		edit_strength: $i18n.t('Edit strength'),
+		retake_mode: $i18n.t('Retake mode'),
+		start_time: $i18n.t('Start time'),
+		ingredients_mode: $i18n.t('Reference mode')
 	};
 	const paramLabel = (key: ParamTag['key']): string => PARAM_LABELS[key] ?? key;
 	$: paramTags = detail ? extractParamTags(detail.params) : [];

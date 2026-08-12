@@ -46,6 +46,31 @@ def test_public_catalog_hides_internal_provider_controls() -> None:
         'vidu',
     }
     assert all('fixed_fields' not in model and not model['id'].startswith('fal-ai/') for model in models)
+    assert all(
+        field['key'] not in {'safety_tolerance', 'auto_fix'}
+        for model in models
+        for field in model.get('advanced_fields', [])
+    )
+    assert all(
+        key not in model
+        for model in models
+        for key in (
+            'option_fields',
+            'boolean_fields',
+            'integer_fields',
+            'number_fields',
+            'text_fields',
+            'json_fields',
+        )
+    )
+    assert all(model['id'] != 'pixverse/c1/reference-to-video' for model in models)
+
+    wan = next(model for model in models if model['id'] == 'wan-2.7-video')
+    assert wan['advanced_fields'] == [
+        {'key': 'seed', 'kind': 'integer'},
+        {'key': 'negative_prompt', 'kind': 'text', 'max_length': 2500},
+        {'key': 'prompt_enhancement', 'kind': 'option', 'options': ['on', 'off'], 'default': 'on'},
+    ]
 
 
 @pytest.mark.asyncio
@@ -85,8 +110,59 @@ def test_builds_normalized_kling_payload_with_defaults() -> None:
         'aspect_ratio': '16:9',
         'audio_mode': 'generate',
         'shot_type': 'customize',
-        'cfg_scale': 0.5,
+        'guidance_scale': 0.5,
     }
+
+
+def test_maps_canonical_advanced_parameters_to_provider_fields() -> None:
+    submission = VideoTaskSubmitForm(
+        task='text-to-video',
+        model='wan-2.7-video',
+        prompt='A quiet lake at dawn',
+        params={
+            'seed': 0,
+            'negative_prompt': 'flicker',
+            'prompt_enhancement': 'off',
+        },
+    )
+
+    _definition, provider_payload, safe_params = build_video_provider_payload(submission)
+
+    assert provider_payload['seed'] == 0
+    assert provider_payload['negative_prompt'] == 'flicker'
+    assert provider_payload['enable_prompt_expansion'] is False
+    assert safe_params['prompt_enhancement'] == 'off'
+
+
+def test_rejects_conflicting_canonical_and_legacy_advanced_parameters() -> None:
+    submission = VideoTaskSubmitForm(
+        task='text-to-video',
+        model='wan-2.7-video',
+        prompt='A quiet lake at dawn',
+        params={'prompt_enhancement': 'off', 'enable_prompt_expansion': True},
+    )
+
+    with pytest.raises(VideoInputError, match='conflicting_video_parameter:prompt_enhancement'):
+        build_video_provider_payload(submission)
+
+
+def test_keeps_video_safety_and_auto_fix_server_controlled() -> None:
+    submission = VideoTaskSubmitForm(
+        task='text-to-video',
+        model='veo3.1',
+        prompt='A lighthouse in a storm',
+        params={'safety_tolerance': '6'},
+    )
+
+    with pytest.raises(VideoInputError, match='unsupported_video_parameter:safety_tolerance'):
+        build_video_provider_payload(submission)
+
+    default_submission = submission.model_copy(update={'params': {}})
+    _definition, provider_payload, safe_params = build_video_provider_payload(default_submission)
+    assert provider_payload['safety_tolerance'] == '4'
+    assert provider_payload['auto_fix'] is False
+    assert 'safety_tolerance' not in safe_params
+    assert 'auto_fix' not in safe_params
 
 
 def test_requires_primary_image_for_image_to_video() -> None:

@@ -56,6 +56,12 @@ def video_billing_context(task: VideoTaskResponse) -> VideoBillingContext:
         'resolution': str(task.params.get('resolution', 'default')),
         'aspect_ratio': str(task.params.get('aspect_ratio', 'default')),
         'audio_mode': str(task.params.get('audio_mode', 'default')),
+        **({'fps': str(task.params['fps'])} if task.params.get('fps') is not None else {}),
+        **(
+            {'output_quality': str(task.params['output_quality'])}
+            if task.params.get('output_quality') is not None
+            else {}
+        ),
     }
     return VideoBillingContext(
         service_type='video',

@@ -32,6 +32,31 @@ export type VideoField = {
 	advanced: boolean;
 };
 
+export type VideoAdvancedFieldKey =
+	| 'seed'
+	| 'negative_prompt'
+	| 'prompt_enhancement'
+	| 'motion_amplitude'
+	| 'guidance_scale'
+	| 'fps'
+	| 'output_quality'
+	| 'loop'
+	| 'edit_strength'
+	| 'retake_mode'
+	| 'start_time'
+	| 'ingredients_mode';
+
+export type VideoAdvancedField = {
+	key: VideoAdvancedFieldKey;
+	kind: 'option' | 'boolean' | 'integer' | 'number' | 'text';
+	options?: string[];
+	default?: string | number | boolean | null;
+	min?: number | null;
+	max?: number | null;
+	step?: number | null;
+	max_length?: number;
+};
+
 export type VideoModel = {
 	id: string;
 	name: string;
@@ -56,6 +81,7 @@ export type VideoModel = {
 	number_fields?: VideoField[] | null;
 	text_fields?: VideoField[] | null;
 	json_fields?: VideoField[] | null;
+	advanced_fields?: VideoAdvancedField[] | null;
 	visible?: boolean;
 	enabled?: boolean;
 	recommended?: boolean;

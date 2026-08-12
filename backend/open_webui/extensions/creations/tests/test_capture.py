@@ -412,6 +412,7 @@ async def test_build_context_maps_fal_public_id_and_allowlists_params(monkeypatc
                 'enable_prompt_expansion': False,
                 'acceleration': 'regular',
                 'input_fidelity': 'high',
+                'strength': 0.65,
             },
         ),
     )
@@ -447,6 +448,7 @@ async def test_build_context_maps_fal_public_id_and_allowlists_params(monkeypatc
         'enable_prompt_expansion': False,
         'acceleration': 'regular',
         'input_fidelity': 'high',
+        'strength': 0.65,
     }
 
 

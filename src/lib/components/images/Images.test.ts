@@ -13,6 +13,26 @@ describe('images page controls', () => {
 		expect(source).not.toContain(': modeLabel}');
 	});
 
+	test('renders only model-advertised advanced controls in a responsive disclosure', () => {
+		expect(source).toContain('{#if hasAdvancedSettings}');
+		expect(source).toContain('aria-controls="image-advanced-settings"');
+		expect(source).toContain('class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"');
+		expect(source).toContain('{#if seedField}');
+		expect(source).toContain('{#if stepsField}');
+		expect(source).toContain('{#if guidanceScaleField}');
+		expect(source).toContain('{#if strengthField}');
+		expect(source).toContain('{#if negativePromptField}');
+		expect(source).not.toContain('enable_safety_checker');
+		expect(source).not.toContain('sync_mode');
+	});
+
+	test('keeps advanced touch controls large and blocks invalid numeric submissions', () => {
+		expect(source).toContain('class="flex min-h-11 w-full');
+		expect(source).toContain('class="mt-1 min-h-11 w-full');
+		expect(source).toContain('advancedSettingsInvalid ||');
+		expect(source).toContain("toast.error($i18n.t('Check the advanced settings'))");
+	});
+
 	test('uses auto without ratio or resolution icons in the selected options', () => {
 		const composerStart = source.indexOf(
 			'class="mt-2 flex min-w-0 items-center justify-between gap-2"'

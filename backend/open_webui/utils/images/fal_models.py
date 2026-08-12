@@ -76,6 +76,50 @@ _FAL_PUBLIC_MODEL_FIELDS = {
     'hosting',
 }
 
+_PUBLIC_ADVANCED_FIELD_SOURCES = {
+    'seed': 'seed',
+    'negative_prompt': 'negative_prompt',
+    'num_inference_steps': 'steps',
+    'steps_num': 'steps',
+    'guidance_scale': 'guidance_scale',
+    'strength': 'strength',
+}
+
+
+def public_fal_image_advanced_fields(model: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the curated creative controls safe to advertise to end users.
+
+    The catalog also contains transport, safety and provider-internal fields.
+    Keep those server-controlled instead of leaking the raw dynamic envelopes.
+    Provider-specific aliases such as ``steps_num`` are normalized to the
+    stable request field consumed by the public image forms.
+    """
+
+    fields: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for kind, group in (
+        ('integer', model.get('integer_fields')),
+        ('number', model.get('number_fields')),
+        ('text', model.get('text_fields')),
+    ):
+        for item in group or []:
+            provider_field = item.get('field')
+            public_field = _PUBLIC_ADVANCED_FIELD_SOURCES.get(provider_field)
+            if public_field is None or public_field in seen:
+                continue
+            source = item.get('source')
+            if provider_field != public_field and source != public_field:
+                continue
+            if provider_field == public_field and source is not None and source != public_field:
+                continue
+            public_item: dict[str, Any] = {'field': public_field, 'kind': kind}
+            for key in ('min', 'max'):
+                if key in item:
+                    public_item[key] = item[key]
+            fields.append(public_item)
+            seen.add(public_field)
+    return fields
+
 
 def _extract_quality_option(model: dict[str, Any]) -> tuple[list[str], str] | None:
     for item in model.get('option_fields') or []:
@@ -132,5 +176,8 @@ def public_fal_image_models(default_model: str | None = None) -> list[dict[str, 
         if quality is not None:
             public_model['quality_options'] = quality[0]
             public_model['default_quality'] = quality[1]
+        advanced_fields = public_fal_image_advanced_fields(model)
+        if advanced_fields:
+            public_model['advanced_fields'] = advanced_fields
         public_models.append(public_model)
     return public_models

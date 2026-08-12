@@ -75,7 +75,7 @@ from open_webui.utils.images.fal import (
     run_fal_queue,
     validate_fal_image_size,
 )
-from open_webui.utils.images.fal_models import public_fal_image_models
+from open_webui.utils.images.fal_models import public_fal_image_advanced_fields, public_fal_image_models
 from open_webui.utils.session_pool import get_session
 from PIL import Image, ImageOps
 from pydantic import BaseModel
@@ -432,7 +432,14 @@ async def get_models(
             models = (
                 public_fal_image_models(default_model)
                 if user.role != 'admin'
-                else [{**model, 'is_default': model['id'] == default_model} for model in get_fal_image_models()]
+                else [
+                    {
+                        **model,
+                        'is_default': model['id'] == default_model,
+                        'advanced_fields': public_fal_image_advanced_fields(model),
+                    }
+                    for model in get_fal_image_models()
+                ]
             )
             prices = await get_enabled_prices(db, 'image')
             from open_webui.extensions.model_ops.service import apply_model_operations
@@ -1096,6 +1103,7 @@ class EditImageForm(BaseModel):
     model: str | None = None
     size: str | None = None
     n: int | None = None
+    steps: int | None = None
     negative_prompt: str | None = None
     background: str | None = None
     aspect_ratio: str | None = None

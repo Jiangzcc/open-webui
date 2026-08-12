@@ -193,9 +193,31 @@ describe('extractParamTags curated chips', () => {
 	test('coerces numbers and trims surrounding whitespace on string values', () => {
 		const tags = extractParamTags({
 			guidance_scale: 7.5,
+			strength: 0.65,
+			seed: 0,
 			aspect_ratio: '  16:9  '
 		});
 		// aspect_ratio precedes guidance_scale in the curated map.
-		expect(tags.map((tag) => tag.value)).toEqual(['16:9', '7.5']);
+		expect(tags.map((tag) => tag.value)).toEqual(['16:9', '7.5', '0.65', '0']);
+	});
+
+	test('keeps curated video controls while excluding provider internals', () => {
+		const tags = extractParamTags({
+			prompt_enhancement: 'off',
+			motion_amplitude: 'large',
+			fps: '50',
+			output_quality: 'high',
+			retake_mode: 'replace_video',
+			safety_tolerance: '6',
+			multi_prompt: [{ prompt: 'hidden' }]
+		});
+
+		expect(tags.map((tag) => tag.key)).toEqual([
+			'prompt_enhancement',
+			'motion_amplitude',
+			'fps',
+			'output_quality',
+			'retake_mode'
+		]);
 	});
 });

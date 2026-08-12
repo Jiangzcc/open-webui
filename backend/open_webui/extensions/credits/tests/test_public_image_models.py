@@ -74,6 +74,29 @@ def test_public_fal_catalog_exposes_openai_quality_without_leaking_option_fields
     assert 'input_fidelity' not in serialized
 
 
+def test_public_fal_catalog_exposes_only_curated_advanced_image_fields() -> None:
+    from open_webui.utils.images import fal_models
+
+    public = fal_models.public_fal_image_models('fal-ai/z-image/turbo')
+    by_id = {item['id']: item for item in public}
+
+    turbo_fields = {item['field']: item for item in by_id['z-image-turbo']['advanced_fields']}
+    assert turbo_fields == {
+        'seed': {'field': 'seed', 'kind': 'integer'},
+        'steps': {'field': 'steps', 'kind': 'integer', 'min': 1, 'max': 8},
+    }
+
+    flux_edit_fields = {
+        item['field']: item for item in by_id['flux-2-klein-4b-base-edit']['advanced_fields']
+    }
+    assert {'seed', 'steps', 'guidance_scale', 'negative_prompt'} <= flux_edit_fields.keys()
+
+    serialized = json.dumps(public)
+    assert 'sync_mode' not in serialized
+    assert 'enable_safety_checker' not in serialized
+    assert 'safety_tolerance' not in serialized
+
+
 def test_public_fal_model_mapping_is_bidirectional_and_fail_closed() -> None:
     from open_webui.utils.images import fal_models
 

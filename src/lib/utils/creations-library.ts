@@ -221,6 +221,7 @@ const PARAM_TAG_ORDER = [
 	'image_count',
 	'steps',
 	'guidance_scale',
+	'strength',
 	'seed',
 	'style',
 	'output_format',
@@ -229,7 +230,15 @@ const PARAM_TAG_ORDER = [
 	'input_fidelity',
 	'thinking_level',
 	'duration',
-	'audio_mode'
+	'audio_mode',
+	'prompt_enhancement',
+	'motion_amplitude',
+	'fps',
+	'output_quality',
+	'edit_strength',
+	'retake_mode',
+	'start_time',
+	'ingredients_mode'
 ] as const;
 
 export type ParamTag = {
@@ -271,9 +280,9 @@ export const extractParamTags = (
 		if (!text) {
 			continue;
 		}
-		// A numeric zero encodes absence (zero steps, zero seeds, zero count)
-		// rather than a meaningful knob setting — treat it like a blank.
-		if (typeof raw === 'number' && raw === 0) {
+		// Zero is invalid for quantities/steps, but is meaningful for seeds,
+		// guidance and edit strength. Only suppress it for the former pair.
+		if (typeof raw === 'number' && raw === 0 && ['image_count', 'steps'].includes(key)) {
 			continue;
 		}
 		tags.push({ key, value: text });

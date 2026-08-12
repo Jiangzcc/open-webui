@@ -147,6 +147,25 @@ describe('image generation utils', () => {
 		]);
 	});
 
+	test('normalizes only allowlisted advanced image fields and their ranges', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'advanced-image',
+				advanced_fields: [
+					{ field: 'seed', kind: 'integer', min: 0, max: 2147483647 },
+					{ field: 'guidance_scale', kind: 'number', min: 1, max: 10 },
+					{ field: 'enable_safety_checker', kind: 'boolean' },
+					{ field: 'seed', kind: 'integer' }
+				]
+			}
+		]);
+
+		expect(getImageModelCapability(model).advancedFields).toEqual([
+			{ field: 'seed', kind: 'integer', min: 0, max: 2147483647 },
+			{ field: 'guidance_scale', kind: 'number', min: 1, max: 10 }
+		]);
+	});
+
 	test('normalizes model base prices for text and edit modes', () => {
 		const [model] = normalizeImageGenerationModels([
 			{
@@ -289,6 +308,32 @@ describe('image generation utils', () => {
 			n: 2,
 			steps: 30,
 			negative_prompt: 'blurry'
+		});
+	});
+
+	test('builds curated numeric advanced fields and a selected output format', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'advanced-image',
+				output_formats: ['jpeg', 'png', 'webp'],
+				default_output_format: 'jpeg'
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'studio portrait',
+				model,
+				output_format: 'webp',
+				seed: 42,
+				guidance_scale: 3.5,
+				strength: 0.65
+			})
+		).toMatchObject({
+			output_format: 'webp',
+			seed: 42,
+			guidance_scale: 3.5,
+			strength: 0.65
 		});
 	});
 
