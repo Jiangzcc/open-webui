@@ -139,6 +139,8 @@ from open_webui.extensions.creations.registration import (
 from open_webui.extensions.creations.router import router as creations_router
 from open_webui.extensions.model_ops.registration import initialize_model_ops_extension
 from open_webui.extensions.model_ops.router import router as model_ops_router
+from open_webui.extensions.provider_ops.registration import initialize_provider_ops_extension
+from open_webui.extensions.provider_ops.router import router as provider_ops_router
 from open_webui.extensions.videos.registration import (
     initialize_videos_extension,
     shutdown_videos_extension,
@@ -448,6 +450,7 @@ async def lifespan(app: FastAPI):
             log.warning(f'Failed to initialize terminal servers at startup: {e}')
 
     await initialize_model_ops_extension(app)
+    await initialize_provider_ops_extension(app)
     await initialize_credit_extension(app)
     await initialize_creations_extension(app)
     await initialize_videos_extension(app)
@@ -817,6 +820,7 @@ app.include_router(images.router, prefix='/api/v1/images', tags=['images'])
 app.include_router(credits_router)
 app.include_router(creations_router)
 app.include_router(model_ops_router)
+app.include_router(provider_ops_router)
 app.include_router(videos_router)
 
 app.include_router(audio.router, prefix='/api/v1/audio', tags=['audio'])

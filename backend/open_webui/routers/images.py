@@ -47,6 +47,7 @@ from open_webui.extensions.images.limits import (
     release_image_generation_slot,
 )
 from open_webui.extensions.images.resilience import run_image_operation
+from open_webui.extensions.provider_ops.service import try_start_provider_invocation
 from open_webui.internal.db import get_async_session
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
@@ -948,11 +949,20 @@ async def _invoke_image_generations(
                 log.info(f'Using mocked fal.ai image result for {fal_model}')
                 res = mock_res
             else:
+                observer = await try_start_provider_invocation(
+                    task_id=metadata.get('generation_task_id'),
+                    user_id=str(user.id),
+                    media_kind='image',
+                    provider='fal',
+                    provider_model_id=fal_model,
+                    payload=data,
+                )
                 res = await run_fal_queue(
                     fal_model,
                     data,
                     image_config.FAL_API_KEY,
                     image_config.FAL_API_BASE_URL,
+                    observer=observer,
                 )
             image_urls = extract_fal_image_urls(res)
 
@@ -1431,11 +1441,20 @@ async def _invoke_image_edits(
                 log.info(f'Using mocked fal.ai image result for {edit_model}')
                 res = mock_res
             else:
+                observer = await try_start_provider_invocation(
+                    task_id=metadata.get('generation_task_id'),
+                    user_id=str(user.id),
+                    media_kind='image',
+                    provider='fal',
+                    provider_model_id=edit_model,
+                    payload=data,
+                )
                 res = await run_fal_queue(
                     edit_model,
                     data,
                     image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY,
                     image_config.IMAGES_EDIT_FAL_API_BASE_URL or image_config.FAL_API_BASE_URL,
+                    observer=observer,
                 )
             generated_urls = extract_fal_image_urls(res)
 

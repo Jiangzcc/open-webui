@@ -1483,6 +1483,7 @@ IMAGES_GEMINI_ENDPOINT_METHOD = os.getenv('IMAGES_GEMINI_ENDPOINT_METHOD', '')
 
 FAL_API_BASE_URL = os.getenv('FAL_API_BASE_URL', 'https://queue.fal.run')
 FAL_API_KEY = os.getenv('FAL_API_KEY', os.getenv('FAL_KEY', ''))
+FAL_ADMIN_API_KEY = os.getenv('FAL_ADMIN_API_KEY', '')
 
 ENABLE_IMAGE_EDIT = os.getenv('ENABLE_IMAGE_EDIT', '').lower() == 'true'
 
@@ -3003,6 +3004,7 @@ DEFAULT_CONFIG = {
     'image_generation.gemini.endpoint_method': IMAGES_GEMINI_ENDPOINT_METHOD,
     'image_generation.fal.api_base_url': FAL_API_BASE_URL,
     'image_generation.fal.api_key': FAL_API_KEY,
+    'provider_ops.fal.admin_api_key': FAL_ADMIN_API_KEY,
     'images.edit.enable': ENABLE_IMAGE_EDIT,
     'images.edit.engine': IMAGE_EDIT_ENGINE,
     'images.edit.model': IMAGE_EDIT_MODEL,

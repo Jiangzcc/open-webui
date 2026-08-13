@@ -9,6 +9,7 @@ from open_webui.utils.images.fal import (
     FalImageSizeError,
     build_fal_image_payload,
     get_mock_fal_image_result,
+    run_fal_queue,
     validate_fal_image_size,
 )
 
@@ -146,3 +147,89 @@ def test_custom_size_validation_can_run_before_provider_payload_build(monkeypatc
         validate_fal_image_size('fal-ai/custom-model', _form(size='513x768'))
     with pytest.raises(FalImageSizeError):
         validate_fal_image_size('fal-ai/custom-model', _form(size='not-a-size'))
+
+
+class _FakeResponse:
+    def __init__(self, payload, status=200):
+        self.payload = payload
+        self.status = status
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def json(self, content_type=None):
+        return self.payload
+
+    async def text(self):
+        return str(self.payload)
+
+
+class _FakeSession:
+    def __init__(self):
+        self.status_responses = [
+            {'status': 'IN_QUEUE', 'queue_position': 2},
+            {'status': 'COMPLETED', 'metrics': {'inference_time': 0.4}},
+        ]
+
+    def post(self, *_args, **_kwargs):
+        return _FakeResponse(
+            {
+                'request_id': 'request-1',
+                'gateway_request_id': 'gateway-1',
+                'status_url': 'https://queue.test/status',
+                'response_url': 'https://queue.test/result',
+                'cancel_url': 'https://queue.test/cancel',
+                'queue_position': 3,
+            }
+        )
+
+    def get(self, url, **_kwargs):
+        if url.endswith('/status'):
+            return _FakeResponse(self.status_responses.pop(0))
+        return _FakeResponse({'images': [{'url': 'https://example.test/result.png'}]})
+
+
+class _RecordingObserver:
+    def __init__(self):
+        self.events = []
+
+    async def submitted(self, payload):
+        self.events.append(('submitted', payload))
+
+    async def status(self, payload):
+        self.events.append(('status', payload))
+
+    async def succeeded(self):
+        self.events.append(('succeeded', None))
+
+    async def failed(self, error):
+        self.events.append(('failed', error))
+
+
+@pytest.mark.asyncio
+async def test_fal_queue_reports_submission_status_and_completion(monkeypatch) -> None:
+    import open_webui.utils.images.fal as fal
+
+    observer = _RecordingObserver()
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(_FakeSession()))
+    monkeypatch.setattr(fal.asyncio, 'sleep', lambda _seconds: _async_value(None))
+
+    result = await run_fal_queue(
+        'fal-ai/example',
+        {'prompt': 'test'},
+        'secret',
+        'https://queue.test',
+        observer=observer,
+    )
+
+    assert result['images'][0]['url'] == 'https://example.test/result.png'
+    assert [event[0] for event in observer.events] == ['submitted', 'status', 'status', 'succeeded']
+    assert observer.events[0][1]['request_id'] == 'request-1'
+    assert observer.events[2][1]['metrics']['inference_time'] == 0.4
+
+
+async def _async_value(value):
+    return value

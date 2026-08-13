@@ -4,15 +4,24 @@
 	import DiscoveryOperations from '$lib/components/discovery/admin/DiscoveryOperations.svelte';
 	import DiscoveryCategories from '$lib/components/discovery/admin/DiscoveryCategories.svelte';
 	import ImageModelOperations from '$lib/components/model-ops/admin/ImageModelOperations.svelte';
+	import ProviderOperations from '$lib/components/provider-ops/admin/ProviderOperations.svelte';
 
 	const i18n = getContext('i18n');
-	type OperationsTab = 'discovery' | 'categories' | 'models';
+	type OperationsTab = 'discovery' | 'categories' | 'models' | 'providers';
 	const tabs: Array<{ id: OperationsTab; label: string }> = [
 		{ id: 'discovery', label: 'Discovery operations' },
 		{ id: 'categories', label: 'Creation categories' },
-		{ id: 'models', label: 'Model operations' }
+		{ id: 'models', label: 'Model operations' },
+		{ id: 'providers', label: 'Provider operations' }
 	];
 	let active: OperationsTab = 'discovery';
+
+	const selectTab = (tab: OperationsTab, target: EventTarget | null) => {
+		active = tab;
+		if (target instanceof HTMLElement) {
+			target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+		}
+	};
 </script>
 
 <svelte:head>
@@ -41,7 +50,7 @@
 				type="button"
 				role="tab"
 				aria-selected={active === tab.id}
-				on:click={() => (active = tab.id)}
+				on:click={(event) => selectTab(tab.id, event.currentTarget)}
 			>
 				{$i18n.t(tab.label)}
 			</button>
@@ -55,6 +64,8 @@
 			<DiscoveryCategories />
 		{:else if active === 'models'}
 			<ImageModelOperations />
+		{:else if active === 'providers'}
+			<ProviderOperations />
 		{/if}
 	</div>
 </div>

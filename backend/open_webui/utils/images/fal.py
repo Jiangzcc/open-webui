@@ -3,7 +3,7 @@ import logging
 import random
 import re
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
 from open_webui.utils.images.fal_models import (
@@ -13,6 +13,9 @@ from open_webui.utils.images.fal_models import (
     normalize_fal_image_model_id,
 )
 from open_webui.utils.session_pool import get_session
+
+if TYPE_CHECKING:
+    from open_webui.extensions.provider_ops.tracing import ProviderInvocationObserver
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +50,10 @@ FAL_MOCK_ASPECT_RATIO_SIZES = {
 
 
 class FalImageError(Exception):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None, code: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
 
 
 class FalImageSizeError(FalImageError):
@@ -536,60 +542,101 @@ async def _response_error(response) -> FalImageError:
     except Exception:
         payload = await response.text()
 
+    provider_code = None
     if isinstance(payload, dict):
+        raw_error = payload.get('error')
+        candidate = raw_error.get('type') if isinstance(raw_error, dict) else payload.get('type')
+        if isinstance(candidate, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', candidate):
+            provider_code = candidate
         detail = payload.get('detail') or payload.get('message') or payload.get('error') or payload
     else:
         detail = payload
 
-    return FalImageError(f'fal.ai request failed: {detail}')
+    return FalImageError(
+        f'fal.ai request failed: {detail}',
+        status_code=response.status,
+        code=provider_code,
+    )
 
 
-async def run_fal_queue(model: str, payload: dict[str, Any], api_key: str, base_url: str) -> dict[str, Any]:
+async def _notify_provider(observer: 'ProviderInvocationObserver | None', method: str, *args: object) -> None:
+    if observer is None:
+        return
+    try:
+        await getattr(observer, method)(*args)
+    except Exception:
+        # Provider observability is deliberately best-effort. Generation must
+        # not fail merely because its diagnostic record could not be updated.
+        log.exception('Provider invocation observer failed during %s', method)
+
+
+async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notifications share one error boundary
+    model: str,
+    payload: dict[str, Any],
+    api_key: str,
+    base_url: str,
+    *,
+    observer: 'ProviderInvocationObserver | None' = None,
+) -> dict[str, Any]:
     headers = _headers(api_key)
     session = await get_session()
 
-    async with session.post(
-        _endpoint(base_url or FAL_QUEUE_BASE_URL, model),
-        json=payload,
-        headers=headers,
-        ssl=AIOHTTP_CLIENT_SESSION_SSL,
-    ) as response:
-        if response.status >= 400:
-            raise await _response_error(response)
-        submitted = await response.json(content_type=None)
-
-    if isinstance(submitted, dict) and ('images' in submitted or 'image' in submitted or 'url' in submitted):
-        return submitted
-
-    status_url = submitted.get('status_url') if isinstance(submitted, dict) else None
-    response_url = submitted.get('response_url') if isinstance(submitted, dict) else None
-
-    if not response_url:
-        raise FalImageError('fal.ai response did not include a response_url')
-
-    deadline = asyncio.get_running_loop().time() + FAL_REQUEST_TIMEOUT_SECONDS
-
-    while status_url and asyncio.get_running_loop().time() < deadline:
-        async with session.get(status_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
+    try:
+        async with session.post(
+            _endpoint(base_url or FAL_QUEUE_BASE_URL, model),
+            json=payload,
+            headers=headers,
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        ) as response:
             if response.status >= 400:
                 raise await _response_error(response)
-            status = await response.json(content_type=None)
+            submitted = await response.json(content_type=None)
 
-        request_status = status.get('status') if isinstance(status, dict) else None
-        if request_status == 'COMPLETED':
-            break
-        if request_status in {'FAILED', 'CANCELLED'}:
-            raise FalImageError(f'fal.ai request {request_status.lower()}: {status}')
+        if isinstance(submitted, dict):
+            await _notify_provider(observer, 'submitted', submitted)
+            if 'images' in submitted or 'image' in submitted or 'url' in submitted:
+                await _notify_provider(observer, 'succeeded')
+                return submitted
 
-        await asyncio.sleep(FAL_POLL_INTERVAL_SECONDS)
-    else:
-        if status_url:
-            raise FalImageError('fal.ai request timed out')
+        status_url = submitted.get('status_url') if isinstance(submitted, dict) else None
+        response_url = submitted.get('response_url') if isinstance(submitted, dict) else None
 
-    async with session.get(response_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
-        if response.status >= 400:
-            raise await _response_error(response)
-        return await response.json(content_type=None)
+        if not response_url:
+            raise FalImageError('fal.ai response did not include a response_url')
+
+        deadline = asyncio.get_running_loop().time() + FAL_REQUEST_TIMEOUT_SECONDS
+
+        while status_url and asyncio.get_running_loop().time() < deadline:
+            async with session.get(status_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
+                if response.status >= 400:
+                    raise await _response_error(response)
+                status = await response.json(content_type=None)
+
+            if isinstance(status, dict):
+                await _notify_provider(observer, 'status', status)
+            request_status = status.get('status') if isinstance(status, dict) else None
+            if request_status == 'COMPLETED':
+                break
+            if request_status in {'FAILED', 'CANCELLED'}:
+                raise FalImageError(f'fal.ai request {request_status.lower()}: {status}')
+
+            await asyncio.sleep(FAL_POLL_INTERVAL_SECONDS)
+        else:
+            if status_url:
+                raise FalImageError('fal.ai request timed out')
+
+        async with session.get(response_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
+            if response.status >= 400:
+                raise await _response_error(response)
+            result = await response.json(content_type=None)
+        await _notify_provider(observer, 'succeeded')
+        return result
+    except asyncio.CancelledError as error:
+        await _notify_provider(observer, 'failed', error)
+        raise
+    except Exception as error:
+        await _notify_provider(observer, 'failed', error)
+        raise
 
 
 def extract_fal_image_urls(result: Any) -> list[str]:
