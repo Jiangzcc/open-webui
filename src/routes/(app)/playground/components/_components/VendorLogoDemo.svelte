@@ -7,10 +7,26 @@
 
 	const i18n = getContext<Writable<i18nType>>('i18n');
 
-	// 有静态 logo 的厂商（/assets/vendors/<provider>.webp 存在）
-	const withLogo = ['openai', 'google', 'bytedance', 'xai', 'qwen', 'bfl', 'kling'];
-	// 无静态 logo → 走首字母渐变回退
-	const noLogo = ['stability', 'minimax', 'recraft', 'tencent', 'nvidia', 'zhipu'];
+	// Catalog providers that ship a /assets/vendors/<provider>.webp logo (27 total; representative subset shown here).
+	const withLogo = [
+		'openai',
+		'google',
+		'bytedance',
+		'xai',
+		'kling',
+		'nvidia',
+		'zhipu',
+		'tencent',
+		'stability',
+		'minimax',
+		'recraft',
+		'deepseek',
+		'vidu',
+		'ideogram',
+		'microsoft'
+	];
+	// Catalog providers without a logo asset → runtime gradient-initial fallback. These are real provider slugs.
+	const noLogo = ['boogu', 'other', 'patina', 'phota', 'reve', 'rundiffusion'];
 </script>
 
 <DemoCard

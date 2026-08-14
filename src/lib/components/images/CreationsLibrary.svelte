@@ -389,10 +389,22 @@
 			{/if}
 		</div>
 	{/if}
-	<div class="flex-1 min-h-0 overflow-y-auto">
+	<div class="flex-1 min-h-0 overflow-y-auto" aria-live="polite">
 		{#if state.loading && !state.loaded}
-			<div class="flex items-center justify-center py-16">
-				<Spinner className="size-6" />
+			<!-- 首次加载骨架屏：与图片页生成中占位一致的 animate-pulse shimmer -->
+			<div
+				class="grid grid-cols-2 gap-2 py-4 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-5"
+				aria-hidden="true"
+			>
+				{#each Array(10) as _, index (index)}
+					<div
+						class="aspect-[3/4] overflow-hidden rounded-xl bg-stone-100 dark:bg-gray-900/40"
+					>
+						<div
+							class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
+						></div>
+					</div>
+				{/each}
 			</div>
 		{:else if state.error && state.items.length === 0}
 			<div class="flex flex-col items-center justify-center gap-3 py-16 text-center">

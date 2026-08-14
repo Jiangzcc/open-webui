@@ -10,6 +10,7 @@ from open_webui.env import DATABASE_SCHEMA
 from sqlalchemy import inspect
 
 from .db import engine
+from .events import init_generation_event_bus
 from .generation_tasks import fail_incomplete_generation_tasks, shutdown_generation_tasks
 from .migrations.runner import _migration_config, run_creation_migrations
 from .models import CreationBase
@@ -161,6 +162,9 @@ async def initialize_creations_extension(app: FastAPI) -> None:
     await anyio.to_thread.run_sync(run_creation_migrations)
     await anyio.to_thread.run_sync(_validate_creation_schema)
     app.state.creation_generation_tasks = {}
+    # 初始化任务事件总线，供 SSE 端点与任务执行体共享。早于 fail_incomplete
+    # 初始化，确保中断任务标记失败时也能广播（尽管此时无订阅者，会安全跳过）。
+    init_generation_event_bus(app)
     interrupted = await fail_incomplete_generation_tasks()
     if interrupted:
         log.warning('Marked %s interrupted image generation task(s) as failed', interrupted)

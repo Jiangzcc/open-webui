@@ -200,6 +200,7 @@ def test_admin_quote_reports_incomplete_price_as_unconfigured(monkeypatch) -> No
 
 
 def test_quote_cache_is_bounded(monkeypatch) -> None:
+    from open_webui.extensions.credits import quote_cache
     from open_webui.extensions.credits import router as credits_router
 
     async def prepare(_request, image_input, _metadata, _user):
@@ -228,7 +229,7 @@ def test_quote_cache_is_bounded(monkeypatch) -> None:
         return type('Price', (), {'id': f'price:{resource_id}', 'updated_at': 1, 'enabled': True})()
 
     credits_router._quote_cache.clear()
-    monkeypatch.setattr(credits_router, 'CREDIT_QUOTE_CACHE_MAX_ENTRIES', 2, raising=False)
+    monkeypatch.setattr(quote_cache, 'CREDIT_QUOTE_CACHE_MAX_ENTRIES', 2)
     monkeypatch.setattr(credits_router, 'prepare_generation_call', prepare)
     monkeypatch.setattr(credits_router, 'get_balance_if_exists', balance)
     monkeypatch.setattr(credits_router, 'get_enabled_price', price)

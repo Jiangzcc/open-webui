@@ -1,10 +1,16 @@
 <script lang="ts">
-	import { getContext, onDestroy, onMount } from 'svelte';
+	import { getContext, onDestroy, onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { uploadFile } from '$lib/apis/files';
 	import { quoteVideoCredits, type VideoQuote } from '$lib/apis/credits';
+	import {
+		GENERATION_EVENT_RECONNECT_INITIAL_MS,
+		iterateGenerationEvents,
+		nextGenerationEventReconnectDelay,
+		subscribeToGenerationEvents
+	} from '$lib/apis/creations/generation-tasks';
 	import {
 		getVideoModels,
 		getVideoTask,
@@ -135,7 +141,11 @@
 	let loadingMore = false;
 	let submitting = false;
 	let showAdvanced = false;
-	let pollingTimer: ReturnType<typeof setTimeout> | null = null;
+	let taskFallbackPollTimer: ReturnType<typeof setInterval> | null = null;
+	let generationEventReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let generationEventController: AbortController | null = null;
+	let generationEventsDestroyed = false;
+	let generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
 	let quote: VideoQuote | null = null;
 	let quoteState: ImageQuoteState = { status: 'loading' };
 	let quoteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -460,22 +470,74 @@
 		assets = { ...assets, [role]: current.filter((item) => item.id !== id) };
 	};
 
-	const pollTask = async (taskId: string) => {
-		if (pollingTimer) clearTimeout(pollingTimer);
+	// 视频页 tablist 键盘导航：对齐 Images.svelte 的 handleTabKeydown（WAI-ARIA Tab 模式）。
+	// ←/→ 在 create/mine/(all) 之间循环，焦点跟随选中 tab（roving tabindex）。
+	const handleVideoTabKeydown = (event: KeyboardEvent) => {
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		const order: Array<'generate' | 'mine' | 'all'> = isAdmin
+			? ['generate', 'mine', 'all']
+			: ['generate', 'mine'];
+		const idx = order.indexOf(selection);
+		if (idx === -1) return;
+		event.preventDefault();
+		const dir = event.key === 'ArrowRight' ? 1 : -1;
+		const next = order[(idx + dir + order.length) % order.length];
+		selection = next;
+		void tick();
+		document.getElementById(`videos-tab-${next}`)?.focus();
+	};
+
+	const applyVideoTaskUpdate = (next: VideoGenerationTask) => {
+		const previous = history.find((item) => item.id === next.id);
+		history = [next, ...history.filter((item) => item.id !== next.id)];
+		if (next.status === 'succeeded' && previous?.status !== 'succeeded') {
+			creationRevision += 1;
+			toast.success($i18n.t('Video generated'));
+		} else if (next.status === 'failed' && previous?.status !== 'failed') {
+			toast.error($i18n.t('Video generation failed'));
+		}
+	};
+
+	const refreshVideoTask = async (taskId: string) => {
+		applyVideoTaskUpdate(await getVideoTask(localStorage.token, taskId));
+	};
+
+	const pollActiveVideoTasks = async () => {
+		const activeIds = history
+			.filter((item) => item.status === 'queued' || item.status === 'running')
+			.map((item) => item.id);
+		await Promise.all(activeIds.map((taskId) => refreshVideoTask(taskId).catch(() => undefined)));
+	};
+
+	const consumeGenerationEvents = async () => {
+		generationEventController?.abort();
+		const controller = new AbortController();
+		generationEventController = controller;
 		try {
-			const next = await getVideoTask(localStorage.token, taskId);
-			// 任务列表流：把更新后的任务插回列表顶部，保持最新任务可见。
-			history = [next, ...history.filter((item) => item.id !== next.id)];
-			if (next.status === 'queued' || next.status === 'running') {
-				pollingTimer = setTimeout(() => pollTask(taskId), 900);
-			} else if (next.status === 'succeeded') {
-				creationRevision += 1;
-				toast.success($i18n.t('Video generated'));
-			} else {
-				toast.error($i18n.t('Video generation failed'));
+			for await (const event of iterateGenerationEvents(
+				subscribeToGenerationEvents(localStorage.token, controller.signal)
+			)) {
+				generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
+				if (event.kind === 'video' && event.task_id) {
+					await refreshVideoTask(event.task_id).catch(() => undefined);
+				}
 			}
-		} catch {
-			toast.error(videoRequestErrorMessage('Failed to update video generation'));
+		} catch (error) {
+			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+				await pollActiveVideoTasks();
+			}
+		} finally {
+			if (generationEventController === controller) generationEventController = null;
+			if (!generationEventsDestroyed) {
+				const reconnectAfter = generationEventReconnectDelay;
+				generationEventReconnectDelay = nextGenerationEventReconnectDelay(
+					generationEventReconnectDelay
+				);
+				generationEventReconnectTimer = setTimeout(
+					() => void consumeGenerationEvents(),
+					reconnectAfter
+				);
+			}
 		}
 	};
 
@@ -523,8 +585,9 @@
 				uuidv4()
 			);
 			// 新任务插入列表顶部，立刻可见其生成进度。
-			history = [created, ...history];
-			await pollTask(created.id);
+			// SSE 可能先于 POST 响应写入同一任务；此时保留 SSE 读到的较新状态，
+			// 既避免重复卡片，也避免用 queued 响应覆盖 running/succeeded。
+			if (!history.some((item) => item.id === created.id)) history = [created, ...history];
 		} catch {
 			toast.error(videoRequestErrorMessage('Video generation failed'));
 		} finally {
@@ -534,9 +597,15 @@
 
 	onMount(() => {
 		void load();
+		void consumeGenerationEvents();
+		// SSE 断线、代理不支持流式响应或事件落在其他 worker 时，用低频轮询补偿。
+		taskFallbackPollTimer = setInterval(() => void pollActiveVideoTasks(), 10_000);
 	});
 	onDestroy(() => {
-		if (pollingTimer) clearTimeout(pollingTimer);
+		generationEventsDestroyed = true;
+		generationEventController?.abort();
+		if (generationEventReconnectTimer) clearTimeout(generationEventReconnectTimer);
+		if (taskFallbackPollTimer) clearInterval(taskFallbackPollTimer);
 		if (quoteTimer) clearTimeout(quoteTimer);
 		for (const items of Object.values(assets)) {
 			for (const item of items ?? []) URL.revokeObjectURL(item.url);
@@ -751,11 +820,14 @@
 			role="tablist"
 			tabindex="-1"
 			aria-label={$i18n.t('Videos')}
+			on:keydown={handleVideoTabKeydown}
 		>
 			{#each [['generate', 'Create art'], ['mine', 'My creations']] as tab}
 				<button
 					type="button"
 					role="tab"
+					id="videos-tab-{tab[0]}"
+					tabindex={selection === tab[0] ? 0 : -1}
 					aria-selected={selection === tab[0]}
 					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
 					tab[0]
@@ -769,6 +841,8 @@
 			{#if isAdmin}<button
 					type="button"
 					role="tab"
+					id="videos-tab-all"
+					tabindex={selection === 'all' ? 0 : -1}
 					aria-selected={selection === 'all'}
 					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
 					'all'
@@ -882,18 +956,24 @@
 												</div>
 											</div>
 										{:else if taskItem.status === 'queued' || taskItem.status === 'running'}
-											<!-- 生成中：占位骨架 + 提示 -->
+											<!-- 生成中：占位骨架 + 提示（对齐图片页 animate-pulse 骨架风格） -->
 											<div class="flex w-full justify-start overflow-hidden">
 												<div
-													class="flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center dark:border-gray-700 dark:bg-gray-900 sm:px-5 sm:py-10"
+													class="relative flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center dark:border-gray-700 dark:bg-gray-900 sm:px-5 sm:py-10"
 												>
-													<Spinner className="size-6" />
-													<p class="mt-3 text-sm font-medium text-gray-600 dark:text-gray-300">
-														{$i18n.t('Creating your video')}
-													</p>
-													<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-														{$i18n.t('The result will appear here shortly')}
-													</p>
+													<!-- 骨架 shimmer 覆盖层，与 Images.svelte 生成中占位一致 -->
+													<div
+														class="absolute inset-0 animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
+													></div>
+													<div class="relative flex flex-col items-center gap-3">
+														<Spinner className="size-6" />
+														<p class="text-sm font-medium text-gray-600 dark:text-gray-300">
+															{$i18n.t('Creating your video')}
+														</p>
+														<p class="text-xs text-gray-400 dark:text-gray-500">
+															{$i18n.t('The result will appear here shortly')}
+														</p>
+													</div>
 												</div>
 											</div>
 										{:else if taskItem.status === 'failed'}

@@ -78,3 +78,71 @@ export const deleteImageGenerationTask = (token: string, taskId: string) =>
 	requestNoContent(`/creations/generation-tasks/${encodeURIComponent(taskId)}`, token, {
 		method: 'DELETE'
 	});
+
+export type GenerationEvent = {
+	kind: 'image' | 'video' | string;
+	task_id: string;
+	status: 'queued' | 'running' | 'succeeded' | 'failed' | string;
+	error_code?: string | null;
+	type?: string;
+};
+
+export const GENERATION_EVENT_RECONNECT_INITIAL_MS = 3_000;
+export const GENERATION_EVENT_RECONNECT_MAX_MS = 30_000;
+
+export const nextGenerationEventReconnectDelay = (current: number): number =>
+	Math.min(
+		GENERATION_EVENT_RECONNECT_MAX_MS,
+		Math.max(GENERATION_EVENT_RECONNECT_INITIAL_MS, current * 2)
+	);
+
+export const subscribeToGenerationEvents = (token: string, signal?: AbortSignal) =>
+	fetch(`${WEBUI_API_BASE_URL}/creations/generation-events`, {
+		signal,
+		headers: {
+			Accept: 'text/event-stream',
+			authorization: `Bearer ${token}`
+		}
+	});
+
+export async function* iterateGenerationEvents(
+	responsePromise: Promise<Response>
+): AsyncGenerator<GenerationEvent, void, unknown> {
+	const response = await responsePromise;
+	if (!response.ok || !response.body) {
+		throw new Error('generation_events_unavailable');
+	}
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
+			let separator: RegExpExecArray | null;
+			while ((separator = /\r\n\r\n|\r\r|\n\n/.exec(buffer)) !== null) {
+				const frame = buffer.slice(0, separator.index);
+				buffer = buffer.slice(separator.index + separator[0].length);
+				const event = parseSseFrame(frame);
+				if (event) yield event;
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
+}
+
+const parseSseFrame = (frame: string): GenerationEvent | null => {
+	const dataLines: string[] = [];
+	for (const line of frame.split(/\r\n|\r|\n/)) {
+		if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+	}
+	const data = dataLines.join('\n');
+	if (!data) return null;
+	try {
+		return JSON.parse(data) as GenerationEvent;
+	} catch {
+		return null;
+	}
+};

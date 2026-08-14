@@ -7,11 +7,15 @@
 	import type { CreationScope } from '$lib/utils/creations-library';
 	import { getImageGenerationErrorCode } from '$lib/apis/images/generation';
 	import {
+		GENERATION_EVENT_RECONNECT_INITIAL_MS,
 		cancelImageGenerationTask,
 		createImageGenerationTask,
 		deleteImageGenerationTask,
 		getImageGenerationTask,
-		listImageGenerationTasks
+		iterateGenerationEvents,
+		listImageGenerationTasks,
+		nextGenerationEventReconnectDelay,
+		subscribeToGenerationEvents
 	} from '$lib/apis/creations/generation-tasks';
 	import ImageCreditQuoteBadge from '$lib/components/credits/ImageCreditQuoteBadge.svelte';
 	import GenerationModelSelector from '$lib/components/common/GenerationModelSelector.svelte';
@@ -137,6 +141,10 @@
 	let batchToDelete: ImageGenerationBatch | null = null;
 	let elapsedNow = Date.now();
 	let taskPollTimer: ReturnType<typeof setInterval> | null = null;
+	let generationEventReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let generationEventController: AbortController | null = null;
+	let generationEventsDestroyed = false;
+	let generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 	let pollingTasks = false;
 	let showImagePreview = false;
@@ -1049,13 +1057,13 @@
 		if (active.length === 0) return;
 		pollingTasks = true;
 		try {
-			const previousStatuses = new Map(active.map((batch) => [batch.id, batch.status]));
 			const tasks = await Promise.all(
 				active.map((batch) => getImageGenerationTask(localStorage.token, batch.id))
 			);
 			for (const task of tasks) {
+				const previousStatus = generationBatches.find((batch) => batch.id === task.id)?.status;
 				generationBatches = mergeGenerationTask(generationBatches, task);
-				if (task.status === 'succeeded' && previousStatuses.get(task.id) !== 'succeeded') {
+				if (task.status === 'succeeded' && previousStatus !== 'succeeded') {
 					libraryRevision += 1;
 					toast.success($i18n.t('Image generation completed'));
 				}
@@ -1065,6 +1073,48 @@
 			// failed UI task. The next interval retries with the same task id.
 		} finally {
 			pollingTasks = false;
+		}
+	};
+
+	const refreshGenerationTask = async (taskId: string) => {
+		const previous = generationBatches.find((batch) => batch.id === taskId);
+		const task = await getImageGenerationTask(localStorage.token, taskId);
+		generationBatches = mergeGenerationTask(generationBatches, task);
+		if (task.status === 'succeeded' && previous?.status !== 'succeeded') {
+			libraryRevision += 1;
+			toast.success($i18n.t('Image generation completed'));
+		}
+	};
+
+	const consumeGenerationEvents = async () => {
+		generationEventController?.abort();
+		const controller = new AbortController();
+		generationEventController = controller;
+		try {
+			for await (const event of iterateGenerationEvents(
+				subscribeToGenerationEvents(localStorage.token, controller.signal)
+			)) {
+				generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
+				if (event.kind === 'image' && event.task_id) {
+					await refreshGenerationTask(event.task_id).catch(() => undefined);
+				}
+			}
+		} catch (error) {
+			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+				await pollGenerationTasks();
+			}
+		} finally {
+			if (generationEventController === controller) generationEventController = null;
+			if (!generationEventsDestroyed) {
+				const reconnectAfter = generationEventReconnectDelay;
+				generationEventReconnectDelay = nextGenerationEventReconnectDelay(
+					generationEventReconnectDelay
+				);
+				generationEventReconnectTimer = setTimeout(
+					() => void consumeGenerationEvents(),
+					reconnectAfter
+				);
+			}
 		}
 	};
 
@@ -1144,7 +1194,9 @@
 			);
 			if (linkedTask) generationBatches = mergeGenerationTask(generationBatches, linkedTask);
 		}
-		taskPollTimer = setInterval(() => void pollGenerationTasks(), 2_000);
+		void consumeGenerationEvents();
+		// SSE 断线、代理不支持流式响应或事件落在其他 worker 时，用低频轮询补偿。
+		taskPollTimer = setInterval(() => void pollGenerationTasks(), 10_000);
 		elapsedTimer = setInterval(() => (elapsedNow = Date.now()), 1_000);
 		await tick();
 		if (linkedTaskId) {
@@ -1157,6 +1209,9 @@
 	});
 
 	onDestroy(() => {
+		generationEventsDestroyed = true;
+		generationEventController?.abort();
+		if (generationEventReconnectTimer) clearTimeout(generationEventReconnectTimer);
 		imageQuoteStateMachine.dispose();
 		if (taskPollTimer) clearInterval(taskPollTimer);
 		if (elapsedTimer) clearInterval(elapsedTimer);
@@ -1887,7 +1942,10 @@
 																</div>
 																{#if customSizeError}
 																	<p class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">
-																		{customSizeError.message}
+																		{$i18n.t(
+																			customSizeError.message,
+																			customSizeError.messageParams
+																		)}
 																	</p>
 																{:else if customWidth && customHeight}
 																	<p class="mt-2 px-1 text-xs text-gray-400 dark:text-gray-500">

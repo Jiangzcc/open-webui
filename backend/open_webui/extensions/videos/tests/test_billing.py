@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from open_webui.extensions.videos.billing import video_billing_context
+import pytest
+from open_webui.extensions.credits.errors import CreditError
+from open_webui.extensions.videos.billing import (
+    video_billing_context,
+    video_quote_dimensions,
+)
+from open_webui.extensions.videos.catalog import VideoInputError
 from open_webui.extensions.videos.schemas import VideoTaskResponse
 
 
@@ -60,9 +66,7 @@ def test_video_billing_keeps_auto_duration_as_a_pricing_dimension() -> None:
 
 
 def test_video_billing_includes_output_dimensions_when_selected() -> None:
-    task = _task().model_copy(
-        update={'params': {**_task().params, 'fps': '50', 'output_quality': 'high'}}
-    )
+    task = _task().model_copy(update={'params': {**_task().params, 'fps': '50', 'output_quality': 'high'}})
 
     assert dict(video_billing_context(task).dimensions) == {
         'duration': 5,
@@ -72,3 +76,58 @@ def test_video_billing_includes_output_dimensions_when_selected() -> None:
         'fps': '50',
         'output_quality': 'high',
     }
+
+
+def test_video_quote_dimensions_matches_billing_context() -> None:
+    # 提交前报价预检与运行期计费必须使用同一套维度归一化逻辑，
+    # 否则前端报价与实际扣费会产生偏差。
+    task = _task().model_copy(update={'params': {**_task().params, 'fps': '50'}})
+    assert video_quote_dimensions(task) == dict(video_billing_context(task).dimensions)
+
+
+def test_quote_video_usage_raises_on_unknown_model() -> None:
+    from open_webui.extensions.videos.billing import quote_video_usage
+    from open_webui.extensions.videos.schemas import VideoTaskSubmitForm
+
+    submission = VideoTaskSubmitForm(
+        task='text-to-video',
+        model='fal-ai/does-not-exist',
+        prompt='x',
+        assets=(),
+        params={'duration': '5', 'resolution': '1080p', 'aspect_ratio': '16:9', 'audio_mode': 'generate'},
+    )
+
+    class _FakeUser:
+        id = 'user-1'
+        name = 'tester'
+        email = 't@example.com'
+
+    with pytest.raises(CreditError) as raised:
+        import asyncio
+
+        asyncio.run(quote_video_usage(_FakeUser(), submission))
+    assert raised.value.code == 'price_rule_incomplete'
+
+
+def test_quote_video_usage_rejects_invalid_duration_before_database_access() -> None:
+    from open_webui.extensions.videos.billing import quote_video_usage
+    from open_webui.extensions.videos.schemas import VideoTaskSubmitForm
+
+    submission = VideoTaskSubmitForm(
+        task='text-to-video',
+        model='kling-video-v3-pro',
+        prompt='x',
+        assets=(),
+        params={'duration': 'not-a-duration'},
+    )
+
+    class _FakeUser:
+        id = 'user-1'
+        name = 'tester'
+        email = 't@example.com'
+
+    with pytest.raises(VideoInputError) as raised:
+        import asyncio
+
+        asyncio.run(quote_video_usage(_FakeUser(), submission))
+    assert str(raised.value) == 'invalid_duration'

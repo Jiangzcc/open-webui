@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from open_webui.extensions.creations import generation_tasks
@@ -179,6 +180,67 @@ async def test_cancel_generation_task_is_owner_scoped_and_terminal(creation_sess
     assert cancelled.status == 'failed'
     assert cancelled.error_code == 'generation_cancelled'
     assert task.id not in request.app.state.creation_generation_tasks
+
+
+@pytest.mark.asyncio
+async def test_event_publish_failure_does_not_change_generated_image_success(monkeypatch) -> None:
+    from open_webui.extensions.creations import events
+    from open_webui.routers import images
+
+    states: list[str] = []
+
+    async def set_state(_task_id, *, status, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+        states.append(status)
+
+    async def generated(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return [{'url': '/api/v1/files/result-1/content'}]
+
+    async def failed_publish(*_args, **_kwargs) -> None:
+        raise RuntimeError('event bus unavailable')
+
+    monkeypatch.setattr(generation_tasks, '_set_task_state', set_state)
+    monkeypatch.setattr(images, 'image_generations', generated)
+    monkeypatch.setattr(events, 'publish_generation_event', failed_publish)
+
+    await generation_tasks.run_generation_task(
+        'task-1',
+        SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace())),
+        SimpleNamespace(id='user-1'),
+        object(),
+        'text-to-image',
+    )
+
+    assert states == ['running', 'succeeded']
+
+
+@pytest.mark.asyncio
+async def test_image_cleanup_failure_does_not_mask_shutdown_cancellation(monkeypatch) -> None:
+    from open_webui.routers import images
+
+    states: list[str] = []
+
+    async def set_state(_task_id, *, status, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+        states.append(status)
+        if status == 'failed':
+            raise RuntimeError('database unavailable')
+
+    async def cancelled_generation(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(generation_tasks, '_set_task_state', set_state)
+    monkeypatch.setattr(generation_tasks, '_publish_image_task_event', AsyncMock())
+    monkeypatch.setattr(images, 'image_generations', cancelled_generation)
+
+    with pytest.raises(asyncio.CancelledError):
+        await generation_tasks.run_generation_task(
+            'task-1',
+            SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace())),
+            SimpleNamespace(id='user-1'),
+            object(),
+            'text-to-image',
+        )
+
+    assert states == ['running', 'failed']
 
 
 @pytest.mark.asyncio

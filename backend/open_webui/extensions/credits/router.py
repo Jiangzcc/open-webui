@@ -10,12 +10,11 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from open_webui.env import WEBUI_SECRET_KEY
+from open_webui.extensions.credits import quote_cache
 from open_webui.extensions.credits.compat import CompatImageInput, get_credit_users, publish_credit_price_event
 from open_webui.extensions.credits.constants import (
     CREDIT_ADJUSTMENT_RATE_LIMIT,
     CREDIT_LEDGER_RATE_LIMIT,
-    CREDIT_QUOTE_CACHE_MAX_ENTRIES,
-    CREDIT_QUOTE_CACHE_TTL_SECONDS,
     CREDIT_QUOTE_RATE_LIMIT,
     CREDIT_RATE_LIMIT_WINDOW_SECONDS,
     DEFAULT_PAGE_SIZE,
@@ -106,7 +105,9 @@ _adjustment_limiter = CreditRateLimiter(
     limit=CREDIT_ADJUSTMENT_RATE_LIMIT,
     window=CREDIT_RATE_LIMIT_WINDOW_SECONDS,
 )
-_quote_cache: dict[tuple[str, str, str, int], tuple[float, dict[str, object]]] = {}
+# 旧测试仍直接清理/注入 router._quote_cache；让它指向唯一的内存 fallback，
+# 不再维护第二份生产缓存。
+_quote_cache = quote_cache.memory_cache_for_legacy_tests()
 _IMAGE_DIMENSIONS = {
     'image': {
         'text-to-image': {
@@ -392,22 +393,11 @@ async def _prepare_quote_call(action: str, image_input: CompatImageInput, user: 
 
 
 def _cached_quote(cache_key: tuple[str, str, str, int], balance: int, now: float) -> dict[str, object] | None:
-    cached = _quote_cache.get(cache_key)
-    if cached is not None and cached[0] > now:
-        response = dict(cached[1])
-        response['balance'] = balance
-        response['sufficient'] = balance >= response['charged_credits']
-        return response
-    if cached is not None:
-        del _quote_cache[cache_key]
-    return None
+    return quote_cache.get_cached_quote(cache_key, balance, now)
 
 
 def _cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object], now: float) -> None:
-    if len(_quote_cache) >= CREDIT_QUOTE_CACHE_MAX_ENTRIES:
-        oldest_key = min(_quote_cache, key=lambda key: _quote_cache[key][0])
-        del _quote_cache[oldest_key]
-    _quote_cache[cache_key] = (now + CREDIT_QUOTE_CACHE_TTL_SECONDS, dict(response))
+    quote_cache.cache_quote(cache_key, response, now)
 
 
 async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mapping[str, object]) -> dict[str, object]:

@@ -248,6 +248,34 @@ async def _set_task_state(
         await session.commit()
 
 
+async def _publish_image_task_event(
+    app: object,
+    task_id: str,
+    user_id: str,
+    status: str,
+    *,
+    error_code: str | None = None,
+) -> None:
+    """广播图片任务状态变更到 SSE 事件总线。无订阅者时安全跳过。"""
+    from open_webui.extensions.creations.events import publish_generation_event
+
+    payload: dict[str, object] = {'kind': 'image'}
+    if error_code is not None:
+        payload['error_code'] = error_code
+    try:
+        await publish_generation_event(
+            app,
+            kind='image',
+            task_id=task_id,
+            status=status,
+            user_id=user_id,
+            payload=payload if error_code is not None else None,
+        )
+    except Exception:
+        # SSE 是辅助通知通道，失败不能改变已经持久化的任务终态。
+        log.exception('Could not publish %s event for image task %s', status, task_id)
+
+
 def _public_result(result: object) -> list[dict[str, object]]:
     if not isinstance(result, list):
         return []
@@ -266,9 +294,11 @@ def _error_code(error: Exception) -> str:
 
 
 async def run_generation_task(task_id: str, request: Request, user: object, form: object, kind: str) -> None:
-    await _set_task_state(task_id, status='running')
+    user_id = getattr(user, 'id', '')
     result: object | None = None
     try:
+        await _set_task_state(task_id, status='running')
+        await _publish_image_task_event(request.app, task_id, user_id, 'running')
         from open_webui.routers.images import image_edits, image_generations
 
         if kind == 'image-to-image':
@@ -288,21 +318,38 @@ async def run_generation_task(task_id: str, request: Request, user: object, form
                 user=user,
             )
         await _set_task_state(task_id, status='succeeded', result=_public_result(result))
+        await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
     except asyncio.CancelledError as error:
         # The billed call already returned a terminal result. A cancellation
         # arriving in the tiny window before the task-row update is too late;
         # preserve the completed result rather than reporting a false refund.
         if result is not None:
-            await _set_task_state(task_id, status='succeeded', result=_public_result(result))
+            try:
+                await _set_task_state(task_id, status='succeeded', result=_public_result(result))
+            except Exception:
+                log.exception('Could not restore succeeded state for interrupted image task %s', task_id)
+            try:
+                await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
+            except Exception:
+                log.exception('Could not publish succeeded state for interrupted image task %s', task_id)
             return
         error_code = (
             'generation_cancelled' if error.args and error.args[0] == 'generation_cancelled' else 'server_shutdown'
         )
-        await _set_task_state(task_id, status='failed', error_code=error_code)
+        try:
+            await _set_task_state(task_id, status='failed', error_code=error_code)
+        except Exception:
+            log.exception('Could not persist interrupted image task %s', task_id)
+        try:
+            await _publish_image_task_event(request.app, task_id, user_id, 'failed', error_code=error_code)
+        except Exception:
+            log.exception('Could not publish interrupted image task %s', task_id)
         raise
     except Exception as error:
         log.exception('Image generation task %s failed', task_id)
-        await _set_task_state(task_id, status='failed', error_code=_error_code(error))
+        code = _error_code(error)
+        await _set_task_state(task_id, status='failed', error_code=code)
+        await _publish_image_task_event(request.app, task_id, user_id, 'failed', error_code=code)
 
 
 def schedule_generation_task(

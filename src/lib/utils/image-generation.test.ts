@@ -824,6 +824,54 @@ describe('custom size constraints', () => {
 		expect(validateCustomSize(0, 512)?.field).toBe('width'); // shared backend guard without model constraints
 	});
 
+	test('validateCustomSize returns i18n keys with interpolation params', () => {
+		// Validation messages must be i18n keys (English literals) — not hardcoded
+		// localized strings — so the caller can pass them through $i18n.t.
+		const positiveInteger = validateCustomSize(0, 512);
+		expect(positiveInteger?.message).toBe('Width and height must be positive integers');
+		expect(positiveInteger?.messageParams).toBeUndefined();
+
+		// Width/height bounds (no multipleOf so the dimension-multiple check is skipped).
+		const bounds = {
+			minWidth: 512,
+			maxWidth: 2048,
+			minHeight: 512,
+			maxHeight: 2048
+		};
+		expect(validateCustomSize(100, 1024, bounds)?.message).toBe('Width must be at least {{min}}');
+		expect(validateCustomSize(100, 1024, bounds)?.messageParams).toEqual({ min: 512 });
+		expect(validateCustomSize(4096, 1024, bounds)?.message).toBe('Width must be at most {{max}}');
+		expect(validateCustomSize(4096, 1024, bounds)?.messageParams).toEqual({ max: 2048 });
+		expect(validateCustomSize(1024, 100, bounds)?.message).toBe('Height must be at least {{min}}');
+		expect(validateCustomSize(1024, 4096, bounds)?.message).toBe('Height must be at most {{max}}');
+
+		// Dimensions multiple + pixel + aspect checks.
+		const cs = {
+			multipleOf: 16,
+			minPixels: 1_048_576,
+			maxPixels: 4_194_304,
+			aspectRatioMin: 0.5,
+			aspectRatioMax: 2
+		};
+		expect(validateCustomSize(513, 1024, cs)?.message).toBe(
+			'Dimensions must be a multiple of {{multipleOf}}'
+		);
+		expect(validateCustomSize(513, 1024, cs)?.messageParams).toEqual({ multipleOf: 16 });
+		expect(validateCustomSize(512, 512, cs)?.message).toBe(
+			'Total pixels must be at least {{min}}'
+		);
+		// 2064×2048 = 4_227_072 > maxPixels; both dims are multiples of 16, ratio in range.
+		expect(validateCustomSize(2064, 2048, cs)?.message).toBe(
+			'Total pixels must be at most {{max}}'
+		);
+		expect(validateCustomSize(2048, 512, cs)?.message).toBe(
+			'Aspect ratio is above the maximum ({{max}})'
+		);
+		expect(validateCustomSize(512, 2048, cs)?.message).toBe(
+			'Aspect ratio is below the minimum ({{min}})'
+		);
+	});
+
 	test('validateCustomSize enforces pixel and aspect-ratio bounds', () => {
 		const cs = {
 			minPixels: 1_048_576,

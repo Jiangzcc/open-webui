@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 
 async def initialize_videos_extension(app: FastAPI) -> None:
-    app.state.video_generation_tasks = set()
+    app.state.video_generation_tasks = {}
     interrupted = await fail_incomplete_video_tasks()
     if interrupted:
         log.warning('Marked %s interrupted video generation task(s) as failed', interrupted)

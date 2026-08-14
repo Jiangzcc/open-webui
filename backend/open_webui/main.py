@@ -139,7 +139,10 @@ from open_webui.extensions.creations.registration import (
 from open_webui.extensions.creations.router import router as creations_router
 from open_webui.extensions.model_ops.registration import initialize_model_ops_extension
 from open_webui.extensions.model_ops.router import router as model_ops_router
-from open_webui.extensions.provider_ops.registration import initialize_provider_ops_extension
+from open_webui.extensions.provider_ops.registration import (
+    initialize_provider_ops_extension,
+    shutdown_provider_ops_extension,
+)
 from open_webui.extensions.provider_ops.router import router as provider_ops_router
 from open_webui.extensions.videos.registration import (
     initialize_videos_extension,
@@ -473,6 +476,7 @@ async def lifespan(app: FastAPI):
     await shutdown_videos_extension(app)
     await shutdown_creations_extension(app)
     await shutdown_credit_extension(app)
+    await shutdown_provider_ops_extension(app)
 
     # Shutdown: clean up shared resources
     from open_webui.utils.session_pool import close_session

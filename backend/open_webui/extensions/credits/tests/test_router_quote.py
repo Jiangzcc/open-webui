@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from open_webui.extensions.credits.constants import CREDIT_QUOTE_CACHE_TTL_SECONDS
 
 from .router_test_support import AuthenticatedUser
 
@@ -326,7 +327,7 @@ def test_quote_cache_recomputes_after_ttl_expiry(monkeypatch) -> None:
     user = AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test')
 
     asyncio.run(credits_router.quote_image(Session(), user, payload))
-    clock[0] += credits_router.CREDIT_QUOTE_CACHE_TTL_SECONDS + 1
+    clock[0] += CREDIT_QUOTE_CACHE_TTL_SECONDS + 1
     asyncio.run(credits_router.quote_image(Session(), user, payload))
 
     assert compute_calls == [100.0, 106.0]

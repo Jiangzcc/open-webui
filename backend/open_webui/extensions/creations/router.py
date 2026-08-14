@@ -213,6 +213,30 @@ async def cancel_image_generation_task(
     return task
 
 
+@router.get('/generation-events')
+async def stream_generation_task_events(
+    request: Request,
+    user=Depends(get_verified_user),
+):
+    """SSE 端点：推送当前用户的图片/视频生成任务状态变更事件。
+
+    前端订阅此端点替代 2s/900ms 固定轮询，显著降低后端 QPS 并提升实时性。
+    事件格式：``data: {"kind":"image|video","task_id":"...","status":"...","user_id":"..."}``
+    每 15s 无事件时发送心跳帧，避免代理空闲断连。连接关闭时自动清理订阅队列。
+    """
+    from fastapi.responses import StreamingResponse
+    from open_webui.extensions.creations.events import sse_generation_events_generator
+
+    return StreamingResponse(
+        sse_generation_events_generator(request.app, user.id),
+        media_type='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',  # 关闭 nginx 缓冲，保证事件实时推送
+        },
+    )
+
+
 @router.get('/media', response_model=CreationListResponse)
 async def list_media(
     scope: PersonalScope = 'mine',

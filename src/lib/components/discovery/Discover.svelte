@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -116,6 +116,21 @@
 		if (!feeds[feed].loaded && !feeds[feed].loading) void loadPage(feed, true);
 	};
 
+	// 发现页 feed tabs 键盘导航：对齐 Images.svelte 的 handleTabKeydown（WAI-ARIA Tab 模式）。
+	// ←/→ 在 featured/latest/popular/favorites 之间循环，焦点跟随选中 tab（roving tabindex）。
+	const handleFeedTabKeydown = (event: KeyboardEvent) => {
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		const order: DiscoveryFeed[] = ['featured', 'latest', 'popular', 'favorites'];
+		const idx = order.indexOf(activeFeed);
+		if (idx === -1) return;
+		event.preventDefault();
+		const dir = event.key === 'ArrowRight' ? 1 : -1;
+		const next = order[(idx + dir + order.length) % order.length];
+		selectFeed(next);
+		void tick();
+		document.getElementById(`discovery-feed-tab-${next}`)?.focus();
+	};
+
 	onMount(() => {
 		// 分类元数据与首屏信息流相互独立：并行加载，避免 categories 端点慢/挂起
 		// 时阻塞 feed 首屏；categories 失败时回退到内置「Other」分类即可。
@@ -226,6 +241,7 @@
 					class="grid min-h-11 grid-cols-4 rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-900/80"
 					role="tablist"
 					aria-label={$i18n.t('Discovery feed')}
+					on:keydown={handleFeedTabKeydown}
 				>
 					{#each [['featured', $i18n.t('Featured')], ['latest', $i18n.t('Latest')], ['popular', $i18n.t('Popular')], ['favorites', $i18n.t('My favorites')]] as tab}
 						<button
@@ -236,6 +252,8 @@
 								: 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'}"
 							on:click={() => selectFeed(tab[0] as DiscoveryFeed)}
 							role="tab"
+							id="discovery-feed-tab-{tab[0]}"
+							tabindex={activeFeed === tab[0] ? 0 : -1}
 							aria-selected={activeFeed === tab[0]}
 						>
 							{tab[1]}
@@ -293,10 +311,23 @@
 				{/each}
 			</div>
 
-			<div role="tabpanel" aria-label={$i18n.t('Discovery feed')}>
+			<div role="tabpanel" aria-label={$i18n.t('Discovery feed')} aria-live="polite">
 				{#if state.loading && !state.loaded}
-					<div class="flex min-h-64 items-center justify-center">
-						<Spinner className="size-6" />
+					<!-- 首次加载骨架屏：与图片页生成中占位一致的 animate-pulse shimmer，
+					     避免长时间空 Spinners 带来"卡住"观感。 -->
+					<div
+						class="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5"
+						aria-hidden="true"
+					>
+						{#each Array(10) as _, index (index)}
+							<div
+								class="aspect-[3/4] overflow-hidden rounded-xl bg-stone-100 dark:bg-gray-900/40"
+							>
+								<div
+									class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
+								></div>
+							</div>
+						{/each}
 					</div>
 				{:else if state.error && state.items.length === 0}
 					<div class="flex min-h-64 flex-col items-center justify-center gap-3 text-center">

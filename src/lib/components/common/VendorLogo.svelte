@@ -4,13 +4,16 @@
 	/**
 	 * Vendor brand logo with a graceful fallback.
 	 *
-	 * Many providers in the fal catalog (e.g. black-forest-labs, baidu, hidream,
-	 * minimax, nvidia, recraft, reve, rundiffusion, stability, tencent, zhipu,
-	 * …) have no static logo asset under /assets/vendors/. A raw <img> with a
-	 * missing src shows a broken-image glyph, which reads as "no icon" in the
-	 * selector. This component falls back to a gradient disc showing the first
-	 * letter of the provider slug when the asset 404s or the provider is empty,
-	 * so every model row renders a recognizable brand mark.
+	 * Logos live at /assets/vendors/<provider>.webp as 96×96 opaque webp.
+	 * 27 of the fal catalog's providers ship an asset (alibaba, baai, baidu,
+	 * black-forest-labs, bria, bytedance, deepseek, google, hidream, ideogram,
+	 * kling, krea, ltx, luma, meituan, microsoft, minimax, nvidia, openai,
+	 * pika, pixverse, recraft, stability, tencent, vidu, xai, zhipu). The
+	 * six long-tail vendors without a logo (boogu, other, patina, phota,
+	 * reve, rundiffusion) deliberately fall back here rather than shipping a
+	 * letter-only placeholder, so a missing asset renders a gradient disc
+	 * with the provider's first initial instead of a broken-image glyph —
+	 * and keeps future catalog additions legible before their logo lands.
 	 */
 	export let provider: string;
 	export let alt: string = '';

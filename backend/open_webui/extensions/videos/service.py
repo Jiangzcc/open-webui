@@ -4,6 +4,7 @@ import asyncio
 import io
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from open_webui.extensions.creations.db import creation_session
 from open_webui.extensions.creations.models import CreationMediaItem, VideoGenerationTask
 from open_webui.extensions.creations.schemas import decode_keyset_cursor, encode_keyset_cursor
 from open_webui.extensions.credits.errors import CreditError
+from open_webui.extensions.credits.models import CreditUsage
 from open_webui.extensions.fal_catalog.video_schemas import FalVideoModelDefinition
 from open_webui.extensions.videos.billing import (
     begin_video_usage,
@@ -163,6 +165,20 @@ async def get_video_task(session: AsyncSession, user_id: str, task_id: str) -> V
     return _response(task) if task is not None else None
 
 
+async def get_video_task_by_idempotency_key(
+    session: AsyncSession,
+    user_id: str,
+    idempotency_key: str,
+) -> VideoTaskResponse | None:
+    task = await session.scalar(
+        select(VideoGenerationTask).where(
+            VideoGenerationTask.user_id == user_id,
+            VideoGenerationTask.idempotency_key == idempotency_key,
+        )
+    )
+    return _response(task) if task is not None else None
+
+
 async def list_video_tasks(
     session: AsyncSession,
     user_id: str,
@@ -240,6 +256,34 @@ async def _set_task_state(
     async with creation_session() as session:
         await session.execute(update(VideoGenerationTask).where(VideoGenerationTask.id == task_id).values(**values))
         await session.commit()
+
+
+async def _publish_video_task_event(
+    app: object,
+    task_id: str,
+    user_id: str,
+    status: str,
+    *,
+    error_code: str | None = None,
+) -> None:
+    """广播视频任务状态变更到 SSE 事件总线。无订阅者时安全跳过。"""
+    from open_webui.extensions.creations.events import publish_generation_event
+
+    payload: dict[str, object] | None = None
+    if error_code is not None:
+        payload = {'kind': 'video', 'error_code': error_code}
+    try:
+        await publish_generation_event(
+            app,
+            kind='video',
+            task_id=task_id,
+            status=status,
+            user_id=user_id,
+            payload=payload,
+        )
+    except Exception:
+        # SSE 是辅助通知通道，失败不能覆盖已经持久化的任务终态。
+        log.exception('Could not publish %s event for video task %s', status, task_id)
 
 
 async def _set_task_usage_id(task_id: str, usage_id: str) -> None:
@@ -395,12 +439,8 @@ async def _finalize_clip_mock_video(
 
     # File uploads commit through their own sessions. Keep these writes sequential so
     # SQLite does not have to arbitrate two writers for the same generated result.
-    video_file = await _upload_mock_file(
-        request, user, clip.video_bytes, 'generated-video.mp4', 'video/mp4'
-    )
-    poster_file = await _upload_mock_file(
-        request, user, poster_bytes, poster_filename_ext, poster_content_type
-    )
+    video_file = await _upload_mock_file(request, user, clip.video_bytes, 'generated-video.mp4', 'video/mp4')
+    poster_file = await _upload_mock_file(request, user, poster_bytes, poster_filename_ext, poster_content_type)
     created_at = int(video_file.created_at or _now())
     # Prefer the real clip duration reported by Pexels; fall back to the task's
     # configured duration when the API omits it.
@@ -441,14 +481,18 @@ async def _finalize_clip_mock_video(
     ).model_dump()
 
 
-async def run_video_task(
+async def run_video_task(  # noqa: C901 - terminal billing and cancellation states must remain coordinated
     task_id: str,
     request: Request,
     user: object,
 ) -> None:
-    await _set_task_state(task_id, 'running')
+    user_id = getattr(user, 'id', '')
     usage_id: str | None = None
+    result: dict[str, object] | None = None
+    usage_succeeded = False
     try:
+        await _set_task_state(task_id, 'running')
+        await _publish_video_task_event(request.app, task_id, user_id, 'running')
         async with creation_session() as session:
             task = await get_video_task(session, getattr(user, 'id'), task_id)
         if task is None:
@@ -469,26 +513,100 @@ async def run_video_task(
             )
             if changed != 1:
                 raise RuntimeError('video usage success transition failed')
+        usage_succeeded = True
         await _set_task_state(task_id, 'succeeded', result=result)
+        await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
     except asyncio.CancelledError:
-        await _set_task_state(task_id, 'failed', error_code='server_shutdown')
+        # 进程关停会取消运行中的 worker 并进入此分支。失败任务默认退预扣积分（billing.py 的
+        # mark_video_usage_failed 已传 restore_prepaid=True），再重抛以遵守
+        # asyncio 取消语义（与图片侧 generation_tasks.py 一致）。
+        # 取消可能恰好落在 terminal_session 提交完成、usage_succeeded 赋值之前。
+        # 此时以数据库中的 usage 终态为准，避免 usage=succeeded 而 task=failed。
+        if not usage_succeeded and usage_id is not None and result is not None:
+            try:
+                async with credit_session() as status_session:
+                    persisted_status = await status_session.scalar(
+                        select(CreditUsage.status).where(CreditUsage.id == usage_id)
+                    )
+                usage_succeeded = persisted_status == 'succeeded'
+            except Exception:
+                log.exception('Could not verify terminal usage state for interrupted video task %s', task_id)
+        if usage_succeeded and result is not None:
+            try:
+                await _set_task_state(task_id, 'succeeded', result=result)
+            except Exception:
+                log.exception('Could not restore succeeded state for interrupted video task %s', task_id)
+            try:
+                await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
+            except Exception:
+                log.exception('Could not publish succeeded state for interrupted video task %s', task_id)
+            return
+        code = 'server_shutdown'
+        if usage_id is not None:
+            try:
+                await mark_video_usage_failed(usage_id, code)
+            except Exception:
+                # 计费清理失败不能阻止任务行终态写入，也不能把原始取消异常
+                # 替换成次生 DB 异常。后台对账仍可处理未完成 usage。
+                log.exception('Could not fail usage for interrupted video task %s', task_id)
+        try:
+            await _set_task_state(task_id, 'failed', error_code=code)
+        except Exception:
+            log.exception('Could not persist interrupted video task %s', task_id)
+        try:
+            await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
+        except Exception:
+            log.exception('Could not publish interrupted video task %s', task_id)
         raise
     except CreditError as error:
         if usage_id is not None:
             await mark_video_usage_failed(usage_id, error.code)
-        await _set_task_state(task_id, 'failed', error_code=error.code[:64])
+        code = error.code[:64]
+        await _set_task_state(task_id, 'failed', error_code=code)
+        await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
     except Exception:
         log.exception('Mock video generation task %s failed', task_id)
         if usage_id is not None:
             await mark_video_usage_failed(usage_id, 'video_generation_failed')
         await _set_task_state(task_id, 'failed', error_code='video_generation_failed')
+        await _publish_video_task_event(
+            request.app,
+            task_id,
+            user_id,
+            'failed',
+            error_code='video_generation_failed',
+        )
 
 
-def schedule_video_task(request: Request, task_id: str, user: object) -> None:
-    running: set[asyncio.Task] = request.app.state.video_generation_tasks
-    task = asyncio.create_task(run_video_task(task_id, request, user))
-    running.add(task)
-    task.add_done_callback(running.discard)
+def schedule_video_task(
+    request: Request,
+    task_id: str,
+    user: object,
+    *,
+    on_finished: Callable[[], Awaitable[None]] | None = None,
+) -> None:
+    running: dict[str, asyncio.Task] = request.app.state.video_generation_tasks
+
+    async def run_and_finish() -> None:
+        try:
+            await run_video_task(task_id, request, user)
+        finally:
+            if on_finished is not None:
+                try:
+                    await on_finished()
+                except Exception:
+                    # 槽位释放失败需要记录，但不能替换 worker 的原始异常，尤其是
+                    # shutdown CancelledError。进程内槽位也会随进程退出而回收。
+                    log.exception('Could not release generation slot for video task %s', task_id)
+
+    task = asyncio.create_task(run_and_finish())
+    running[task_id] = task
+
+    def discard_finished(finished: asyncio.Task) -> None:
+        if running.get(task_id) is finished:
+            running.pop(task_id, None)
+
+    task.add_done_callback(discard_finished)
 
 
 async def fail_incomplete_video_tasks() -> int:
@@ -509,11 +627,12 @@ async def fail_incomplete_video_tasks() -> int:
 
 
 async def shutdown_video_tasks(app) -> None:
-    running: set[asyncio.Task] = getattr(app.state, 'video_generation_tasks', set())
-    for task in tuple(running):
+    running: dict[str, asyncio.Task] = getattr(app.state, 'video_generation_tasks', {})
+    tasks = tuple(running.values())
+    for task in tasks:
         task.cancel()
-    if running:
-        await asyncio.gather(*tuple(running), return_exceptions=True)
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
     running.clear()
 
 
@@ -522,6 +641,7 @@ __all__ = [
     'delete_video_task',
     'fail_incomplete_video_tasks',
     'get_video_task',
+    'get_video_task_by_idempotency_key',
     'list_video_tasks',
     'schedule_video_task',
     'shutdown_video_tasks',

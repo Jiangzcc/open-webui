@@ -436,7 +436,12 @@ const normalizeAdvancedFields = (value: unknown): ImageAdvancedField[] => {
 
 export type CustomSizeValidationError = {
 	field: 'width' | 'height' | 'pixels' | 'aspect';
+	// i18n key consumed by the caller via `$i18n.t(message, messageParams)`.
+	// Using the English literal as the i18n key follows the repo convention
+	// (see "Minimum: {{value}}" / "Maximum: {{value}}") so en-US falls back to
+	// the key itself and zh-CN supplies the translated string.
 	message: string;
+	messageParams?: Record<string, string | number>;
 };
 
 export const validateCustomSize = (
@@ -445,41 +450,77 @@ export const validateCustomSize = (
 	constraints?: CustomSizeConstraints
 ): CustomSizeValidationError | null => {
 	if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
-		return { field: 'width', message: '宽高必须是正整数' };
+		return { field: 'width', message: 'Width and height must be positive integers' };
 	}
 	if (!constraints) {
 		return null;
 	}
 	if (constraints.minWidth !== undefined && width < constraints.minWidth) {
-		return { field: 'width', message: `宽度不能小于 ${constraints.minWidth}` };
+		return {
+			field: 'width',
+			message: 'Width must be at least {{min}}',
+			messageParams: { min: constraints.minWidth }
+		};
 	}
 	if (constraints.maxWidth !== undefined && width > constraints.maxWidth) {
-		return { field: 'width', message: `宽度不能大于 ${constraints.maxWidth}` };
+		return {
+			field: 'width',
+			message: 'Width must be at most {{max}}',
+			messageParams: { max: constraints.maxWidth }
+		};
 	}
 	if (constraints.minHeight !== undefined && height < constraints.minHeight) {
-		return { field: 'height', message: `高度不能小于 ${constraints.minHeight}` };
+		return {
+			field: 'height',
+			message: 'Height must be at least {{min}}',
+			messageParams: { min: constraints.minHeight }
+		};
 	}
 	if (constraints.maxHeight !== undefined && height > constraints.maxHeight) {
-		return { field: 'height', message: `高度不能大于 ${constraints.maxHeight}` };
+		return {
+			field: 'height',
+			message: 'Height must be at most {{max}}',
+			messageParams: { max: constraints.maxHeight }
+		};
 	}
 	if (
 		constraints.multipleOf !== undefined &&
 		(width % constraints.multipleOf || height % constraints.multipleOf)
 	) {
-		return { field: 'width', message: `宽高必须是 ${constraints.multipleOf} 的倍数` };
+		return {
+			field: 'width',
+			message: 'Dimensions must be a multiple of {{multipleOf}}',
+			messageParams: { multipleOf: constraints.multipleOf }
+		};
 	}
 	const pixels = width * height;
 	if (constraints.minPixels !== undefined && pixels < constraints.minPixels) {
-		return { field: 'pixels', message: `总像素不能少于 ${constraints.minPixels.toLocaleString()}` };
+		return {
+			field: 'pixels',
+			message: 'Total pixels must be at least {{min}}',
+			messageParams: { min: constraints.minPixels }
+		};
 	}
 	if (constraints.maxPixels !== undefined && pixels > constraints.maxPixels) {
-		return { field: 'pixels', message: `总像素不能超过 ${constraints.maxPixels.toLocaleString()}` };
+		return {
+			field: 'pixels',
+			message: 'Total pixels must be at most {{max}}',
+			messageParams: { max: constraints.maxPixels }
+		};
 	}
 	if (constraints.aspectRatioMin !== undefined && width / height < constraints.aspectRatioMin) {
-		return { field: 'aspect', message: `宽高比超出范围（最小 ${constraints.aspectRatioMin}）` };
+		return {
+			field: 'aspect',
+			message: 'Aspect ratio is below the minimum ({{min}})',
+			messageParams: { min: constraints.aspectRatioMin }
+		};
 	}
 	if (constraints.aspectRatioMax !== undefined && width / height > constraints.aspectRatioMax) {
-		return { field: 'aspect', message: `宽高比超出范围（最大 ${constraints.aspectRatioMax}）` };
+		return {
+			field: 'aspect',
+			message: 'Aspect ratio is above the maximum ({{max}})',
+			messageParams: { max: constraints.aspectRatioMax }
+		};
 	}
 	return null;
 };
