@@ -17,6 +17,7 @@
 		listVideoTasks,
 		deleteVideoTask,
 		submitVideoTask,
+		VideoRequestError,
 		type VideoAssetCapability,
 		type VideoAssetRole,
 		type VideoAdvancedField,
@@ -309,6 +310,29 @@
 
 	const videoRequestErrorMessage = (fallback: string) => $i18n.t(fallback);
 
+	// 后端 CreditError 的 code → i18n key 映射，使余额不足/限流/价格未配置等
+	// 竞态错误能显示具体提示而非通用「视频生成失败」。
+	// 同时包含 VideoInputError 的校验码（后端返回 {detail: 'invalid_duration'} 等，
+	// API 层 detail 优先于 code，因此这些码通过 error.message 查找）。
+	const videoCreditErrorI18nKey: Record<string, string> = {
+		insufficient_credits: 'Insufficient credits',
+		price_not_configured: 'Video price is not configured',
+		price_rule_incomplete: 'Video price is not configured',
+		rate_limited: 'Too many video generation requests',
+		unknown_video_model: 'Unknown video model',
+		video_model_task_mismatch: 'Video model does not support this task type',
+		prompt_required: 'Please enter a prompt',
+		unsupported_duration: 'Unsupported duration',
+		unsupported_aspect_ratio: 'Unsupported aspect ratio',
+		unsupported_resolution: 'Unsupported resolution',
+		unsupported_audio_mode: 'Unsupported audio mode',
+		invalid_duration: 'Invalid duration',
+		invalid_aspect_ratio: 'Invalid aspect ratio',
+		invalid_resolution: 'Invalid resolution',
+		invalid_audio_mode: 'Invalid audio mode',
+		video_model_unavailable: 'This model is temporarily unavailable.'
+	};
+
 	const resetForModel = (model: VideoModel | null) => {
 		const next: Record<string, string | number | boolean | null> = {};
 		assets = {};
@@ -527,8 +551,12 @@
 				await pollActiveVideoTasks();
 			}
 		} finally {
-			if (generationEventController === controller) generationEventController = null;
-			if (!generationEventsDestroyed) {
+			// 仅当此调用的 controller 仍为活跃 controller 时才设重连定时器。
+			// 如果已被新调用替换（abort），旧调用的 finally 不应再调度重连，
+			// 否则定时器会周期性 abort 新连接，造成 SSE 连接振荡。
+			const wasActive = generationEventController === controller;
+			if (wasActive) generationEventController = null;
+			if (wasActive && !generationEventsDestroyed) {
 				const reconnectAfter = generationEventReconnectDelay;
 				generationEventReconnectDelay = nextGenerationEventReconnectDelay(
 					generationEventReconnectDelay
@@ -588,8 +616,18 @@
 			// SSE 可能先于 POST 响应写入同一任务；此时保留 SSE 读到的较新状态，
 			// 既避免重复卡片，也避免用 queued 响应覆盖 running/succeeded。
 			if (!history.some((item) => item.id === created.id)) history = [created, ...history];
-		} catch {
-			toast.error(videoRequestErrorMessage('Video generation failed'));
+		} catch (error) {
+			const code = error instanceof VideoRequestError ? error.code : '';
+			const i18nKey = videoCreditErrorI18nKey[code];
+			toast.error(
+				error instanceof VideoRequestError && error.preferPublicMessage && error.publicMessage
+					? error.publicMessage
+					: i18nKey
+						? videoRequestErrorMessage(i18nKey)
+						: error instanceof VideoRequestError && error.publicMessage
+							? error.publicMessage
+							: videoRequestErrorMessage('Video generation failed')
+			);
 		} finally {
 			submitting = false;
 		}
@@ -776,6 +814,18 @@
 		showCreationDetails = true;
 	};
 
+	// CreationDetailsModal 回调：创作更新或删除后同步 history 列表与 creationRevision。
+	const onCreationUpdated = () => {
+		// 视频任务列表不直接展示 caption/publication，仅刷新作品库。
+		creationRevision += 1;
+	};
+
+	const onCreationRemoved = (creationId: string) => {
+		// 从创作页历史列表中移除被删除的创作对应的任务。
+		history = history.filter((item) => item.result?.creation_id !== creationId);
+		creationRevision += 1;
+	};
+
 	// 视频结果卡片样式：与图片结果区 BATCH_ARTICLE_CLASS 同构，保持视觉统一。
 	// 任务列表流式布局，卡片自然高度，新任务在顶部；播放器在卡片内靠左、固定 16:9 宽度。
 	const VIDEO_TASK_ARTICLE_CLASS =
@@ -827,6 +877,7 @@
 					type="button"
 					role="tab"
 					id="videos-tab-{tab[0]}"
+					aria-controls="videos-{tab[0] === 'generate' ? 'generate' : 'library'}-panel"
 					tabindex={selection === tab[0] ? 0 : -1}
 					aria-selected={selection === tab[0]}
 					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
@@ -842,6 +893,7 @@
 					type="button"
 					role="tab"
 					id="videos-tab-all"
+					aria-controls="videos-library-panel"
 					tabindex={selection === 'all' ? 0 : -1}
 					aria-selected={selection === 'all'}
 					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
@@ -853,7 +905,13 @@
 		</div>
 	</div>
 
-	{#if selection === 'generate'}
+	<!-- 两面板同时渲染，用 hidden 控制可见性，避免切换时 DOM 状态丢失（对齐 Images.svelte tabpanel 模式） -->
+	<div
+		id="videos-generate-panel"
+		role="tabpanel"
+		aria-labelledby="videos-tab-generate"
+		hidden={selection !== 'generate'}
+	>
 		{#if loading}
 			<div class="flex flex-1 items-center justify-center text-sm text-gray-500">
 				{$i18n.t('Loading...')}
@@ -1615,22 +1673,32 @@
 				</main>
 			</div>
 		{/if}
-	{:else}
+	</div>
+
+	<div
+		id="videos-library-panel"
+		role="tabpanel"
+		aria-labelledby={selection === 'all' ? 'videos-tab-all' : 'videos-tab-mine'}
+		hidden={selection === 'generate'}
+	>
 		<div class="min-h-0 flex-1 overflow-y-auto pt-18">
 			<CreationsLibrary
-				active={selection !== ('generate' as 'generate' | 'mine' | 'all')}
+				active={selection !== 'generate'}
 				scope={selection === 'all' ? 'all' : 'mine'}
 				revision={creationRevision}
 				mediaKind="video"
 			/>
 		</div>
-	{/if}
+	</div>
 </div>
 
 <CreationDetailsModal
 	bind:show={showCreationDetails}
 	creationId={detailsTask?.result?.creation_id ?? null}
 	scope="mine"
+	canManage
+	onUpdated={onCreationUpdated}
+	onRemoved={onCreationRemoved}
 />
 
 <ConfirmDialog

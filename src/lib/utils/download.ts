@@ -14,11 +14,15 @@ export const blobExtension = (blob: Blob): string => {
 	return sub && /^[a-z0-9]+$/.test(sub) ? sub : 'png';
 };
 
+// 从文件名中提取纯文件名部分，阻止路径遍历（zip-slip / 路径穿越）。
+const sanitizeFilename = (filename: string): string =>
+	filename.split(/[/\\]/).pop() || 'file';
+
 export const downloadBlob = (blob: Blob, filename: string) => {
 	const url = URL.createObjectURL(blob);
 	const anchor = document.createElement('a');
 	anchor.href = url;
-	anchor.download = filename;
+	anchor.download = sanitizeFilename(filename);
 	document.body.appendChild(anchor);
 	anchor.click();
 	anchor.remove();
@@ -40,9 +44,10 @@ export const zipAndDownload = async (entries: ZipEntry[], zipName: string) => {
 			const blob = await response.blob();
 			const filename =
 				typeof entry.filename === 'function' ? entry.filename(index, blob) : entry.filename;
-			zip.file(filename, blob);
+			// 消毒文件名，防止恶意路径穿越（zip-slip）。
+			zip.file(sanitizeFilename(filename), blob);
 		})
 	);
 	const archive = await zip.generateAsync({ type: 'blob' });
-	downloadBlob(archive, zipName);
+	downloadBlob(archive, sanitizeFilename(zipName));
 };

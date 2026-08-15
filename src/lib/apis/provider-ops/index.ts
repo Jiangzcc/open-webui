@@ -84,6 +84,8 @@ const request = async <T>(path: string, token: string, init?: RequestInit): Prom
 		}
 	});
 	if (!response.ok) throw await response.json().catch(() => null);
+	// 204 No Content 无响应体，直接返回 undefined。
+	if (response.status === 204) return undefined as T;
 	return (await response.json()) as T;
 };
 

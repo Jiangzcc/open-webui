@@ -140,6 +140,9 @@ export const applyCreationPage = (
 		return true;
 	}
 
+	// 首次加载时清空已有项，避免乐观插入的旧数据与新页面混杂（与 discovery 的 applyDiscoveryPage 一致）。
+	if (isFirst) state.items = [];
+
 	const seen = new Set(state.items.map((item) => item.id));
 	for (const item of page.items) {
 		if (!seen.has(item.id)) {

@@ -29,6 +29,12 @@
 - 管理员账号：292591116@qq.com 密码：jiangzhichao
 - 普通用户账号：292591117@qq.com 密码：jiangzhichao
 
+## 部署与项目阶段
+
+- 项目目前处于开发阶段，尚未上线，没有线上用户。不需要考虑老用户数据迁移、向后兼容等历史包袱问题。
+- 部署时使用单 worker（不使用多 worker 模式）。进程级并发控制（如 `_active_by_user`、内存限流计数器等）在此前提下是有效的，不需要分布式锁或跨进程同步。
+- 上述两点在将来上线或引入多 worker 部署时需要重新评估。
+
 ## Project shape
 
 - This is a SvelteKit 2 / Svelte 5 / Vite / TypeScript frontend with a FastAPI / SQLAlchemy / Alembic backend.

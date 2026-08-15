@@ -14,9 +14,18 @@ const modelOperations = readSource('./ImageModelOperations.svelte');
 
 describe('operations center', () => {
 	test('combines discovery and image models after credit management', () => {
-		expect(operationsPage).toContain('<DiscoveryOperations />');
-		expect(operationsPage).toContain('<DiscoveryCategories />');
-		expect(operationsPage).toContain('<ImageModelOperations />');
+		// 页面已改为懒加载动态导入 + <svelte:component> 模式，
+		// 断言动态导入路径而非静态组件标签。
+		expect(operationsPage).toContain(
+			"import('$lib/components/discovery/admin/DiscoveryOperations.svelte')"
+		);
+		expect(operationsPage).toContain(
+			"import('$lib/components/discovery/admin/DiscoveryCategories.svelte')"
+		);
+		expect(operationsPage).toContain(
+			"import('$lib/components/model-ops/admin/ImageModelOperations.svelte')"
+		);
+		expect(operationsPage).toContain('svelte:component this=');
 		expect(operationsPage).toContain(
 			'<h1 class="text-xl font-medium dark:text-gray-100">{$i18n.t(\'Operations center\')}</h1>'
 		);

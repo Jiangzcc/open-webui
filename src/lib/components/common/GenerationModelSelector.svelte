@@ -64,6 +64,7 @@
 		class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 		aria-expanded={show}
 		aria-haspopup="listbox"
+		aria-label={listboxLabel || $i18n.t('Select model')}
 	>
 		{#if provider}
 			<VendorLogo {provider} className="size-4 shrink-0 rounded-sm" />

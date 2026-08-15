@@ -204,7 +204,8 @@ async def _try_clip_from_video(
     if not chosen:
         return None
     link = chosen['link']
-    assert isinstance(link, str)
+    if not isinstance(link, str):
+        return None
     video_bytes = await _download_bytes(session, link, max_bytes=_MAX_VIDEO_BYTES)
     if not video_bytes:
         return None

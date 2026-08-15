@@ -7,15 +7,21 @@ import {
 } from './sidebar-menu';
 
 describe('sidebar menu settings', () => {
-	test('includes Images in the default pinned menu', () => {
-		expect(DEFAULT_PINNED_MENU_ITEMS).toEqual(['notes', 'workspace', 'discover', 'images']);
+	test('includes Images and Videos in the default pinned menu', () => {
+		expect(DEFAULT_PINNED_MENU_ITEMS).toEqual([
+			'notes',
+			'workspace',
+			'discover',
+			'images',
+			'videos'
+		]);
 	});
 
-	test('adds Images once to existing legacy pinned settings', () => {
+	test('adds new entries without restoring an explicitly unpinned Images item', () => {
 		const settings = { pinnedMenuItems: ['workspace', 'calendar'] };
 
 		expect(getPinnedMediaMenuMigration(settings)).toEqual({
-			pinnedMenuItems: ['workspace', 'calendar', 'discover', 'images'],
+			pinnedMenuItems: ['workspace', 'calendar', 'discover', 'videos'],
 			pinnedMenuItemsVersion: PINNED_MEDIA_MENU_VERSION
 		});
 		expect(settings).toEqual({ pinnedMenuItems: ['workspace', 'calendar'] });
@@ -23,7 +29,7 @@ describe('sidebar menu settings', () => {
 
 	test('marks legacy settings that already contain Images without duplicating it', () => {
 		expect(getPinnedMediaMenuMigration({ pinnedMenuItems: ['images', 'notes'] })).toEqual({
-			pinnedMenuItems: ['discover', 'images', 'notes'],
+			pinnedMenuItems: ['discover', 'images', 'notes', 'videos'],
 			pinnedMenuItemsVersion: PINNED_MEDIA_MENU_VERSION
 		});
 	});

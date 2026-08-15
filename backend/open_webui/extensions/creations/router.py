@@ -26,8 +26,6 @@ from open_webui.extensions.creations.discovery_service import (
     withdraw_creation,
 )
 from open_webui.extensions.creations.generation_tasks import (
-    GenerationTaskNotCancellable,
-    cancel_generation_task,
     create_generation_task,
     delete_generation_task,
     get_generation_task,
@@ -188,29 +186,10 @@ async def delete_image_generation_task(
     if task is None:
         raise HTTPException(status_code=404, detail='generation task not found')
     if task.status not in {'succeeded', 'failed'}:
-        raise HTTPException(status_code=409, detail='active generation task must be cancelled first')
+        raise HTTPException(status_code=409, detail='active generation task cannot be deleted')
     removed = await delete_generation_task(session, user.id, task_id)
     if not removed:
         raise HTTPException(status_code=404, detail='generation task not found')
-
-
-@router.post(
-    '/generation-tasks/{task_id}/cancel',
-    response_model=ImageGenerationTaskResponse,
-)
-async def cancel_image_generation_task(
-    request: Request,
-    task_id: str,
-    user=Depends(get_verified_user),
-    session: AsyncSession = Depends(get_creation_session),
-):
-    try:
-        task = await cancel_generation_task(request, session, user.id, task_id)
-    except GenerationTaskNotCancellable:
-        raise HTTPException(status_code=409, detail='generation task is not cancellable') from None
-    if task is None:
-        raise HTTPException(status_code=404, detail='generation task not found')
-    return task
 
 
 @router.get('/generation-events')

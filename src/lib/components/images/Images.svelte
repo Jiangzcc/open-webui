@@ -8,7 +8,6 @@
 	import { getImageGenerationErrorCode } from '$lib/apis/images/generation';
 	import {
 		GENERATION_EVENT_RECONNECT_INITIAL_MS,
-		cancelImageGenerationTask,
 		createImageGenerationTask,
 		deleteImageGenerationTask,
 		getImageGenerationTask,
@@ -135,7 +134,6 @@
 	let canHover = true;
 	// 批量下载中各 batch 的 id 集合，用 Set 支持多批并发，各批独立显示 loading 态。
 	let batchDownloadingIds: Set<string> = new Set();
-	let batchCancellingIds: Set<string> = new Set();
 	let batchDeletingIds: Set<string> = new Set();
 	let showBatchDeleteConfirm = false;
 	let batchToDelete: ImageGenerationBatch | null = null;
@@ -884,26 +882,6 @@
 		showBatchDeleteConfirm = true;
 	};
 
-	const cancelGenerationBatch = async (batch: ImageGenerationBatch) => {
-		if (isGenerationTaskTerminal(batch.status) || batchCancellingIds.has(batch.id)) return;
-		batchCancellingIds = new Set(batchCancellingIds).add(batch.id);
-		try {
-			const cancelled = await cancelImageGenerationTask(localStorage.token, batch.id);
-			generationBatches = mergeGenerationTask(generationBatches, cancelled);
-			toast.success(
-				$i18n.t(
-					cancelled.status === 'succeeded' ? 'Generation already completed' : 'Generation cancelled'
-				)
-			);
-		} catch {
-			toast.error($i18n.t('Failed to cancel generation'));
-		} finally {
-			const next = new Set(batchCancellingIds);
-			next.delete(batch.id);
-			batchCancellingIds = next;
-		}
-	};
-
 	const confirmDeleteBatch = async () => {
 		const batch = batchToDelete;
 		batchToDelete = null;
@@ -1104,8 +1082,12 @@
 				await pollGenerationTasks();
 			}
 		} finally {
-			if (generationEventController === controller) generationEventController = null;
-			if (!generationEventsDestroyed) {
+			// 仅当此调用的 controller 仍为活跃 controller 时才设重连定时器。
+			// 如果已被新调用替换（abort），旧调用的 finally 不应再调度重连，
+			// 否则定时器会周期性 abort 新连接，造成 SSE 连接振荡。
+			const wasActive = generationEventController === controller;
+			if (wasActive) generationEventController = null;
+			if (wasActive && !generationEventsDestroyed) {
 				const reconnectAfter = generationEventReconnectDelay;
 				generationEventReconnectDelay = nextGenerationEventReconnectDelay(
 					generationEventReconnectDelay
@@ -1536,22 +1518,7 @@
 
 									<!-- 操作行：再次编辑(i2i) + 重新生成(t2i) + 下载本批(ZIP)，紧凑次级按钮 -->
 									<div class="flex flex-wrap items-center gap-1.5">
-										{#if !isGenerationTaskTerminal(batch.status)}
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-amber-50 px-3 text-xs font-medium text-amber-700 transition hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50"
-												on:click={() => cancelGenerationBatch(batch)}
-												disabled={batchCancellingIds.has(batch.id)}
-												aria-label={$i18n.t('Cancel generation')}
-											>
-												{#if batchCancellingIds.has(batch.id)}
-													<Spinner className="size-3.5" />
-												{/if}
-												{$i18n.t(
-													batchCancellingIds.has(batch.id) ? 'Cancelling...' : 'Cancel generation'
-												)}
-											</button>
-										{:else}
+										{#if isGenerationTaskTerminal(batch.status)}
 											<button
 												type="button"
 												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"

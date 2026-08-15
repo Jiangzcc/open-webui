@@ -237,7 +237,7 @@ def _set_custom_image_size(
     if not in_whitelist:
         reason = _validate_custom_size(width, height, constraints)
         if reason is not None:
-            raise FalImageError(f'unsupported image size {requested_size}: {reason}')
+            raise FalImageSizeError(f'unsupported image size {requested_size}: {reason}')
 
     data[field] = {'width': width, 'height': height}
 

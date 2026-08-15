@@ -2,12 +2,14 @@
 	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import { trapFocus } from '$lib/actions/focusTrap';
 	import {
 		createAdminDiscoveryCategory,
 		deleteAdminDiscoveryCategory,
 		listAdminDiscoveryCategories,
 		updateAdminDiscoveryCategory
 	} from '$lib/apis/discovery';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import type { DiscoveryCategoryItem } from '$lib/utils/discovery';
 
@@ -18,6 +20,8 @@
 	let deletingId: string | null = null;
 	let showCreate = false;
 	let creating = false;
+	let pendingDelete: DiscoveryCategoryItem | null = null;
+	let showDeleteConfirm = false;
 	let newCategory = { display_name: '', enabled: true, sort_order: 1000 };
 
 	const sortCategories = (items: DiscoveryCategoryItem[]) =>
@@ -73,14 +77,17 @@
 		}
 	};
 
-	const remove = async (category: DiscoveryCategoryItem) => {
+	const requestDelete = (category: DiscoveryCategoryItem) => {
 		if (deletingId || category.id === 'other') return;
-		if (
-			!window.confirm(
-				$i18n.t('Delete creation category {{name}}?', { name: category.display_name })
-			)
-		)
-			return;
+		pendingDelete = category;
+		showDeleteConfirm = true;
+	};
+
+	const confirmDelete = async () => {
+		if (!pendingDelete) return;
+		const category = pendingDelete;
+		pendingDelete = null;
+		showDeleteConfirm = false;
 		deletingId = category.id;
 		try {
 			await deleteAdminDiscoveryCategory(localStorage.token, category.id);
@@ -100,6 +107,8 @@
 
 	onMount(load);
 </script>
+
+<svelte:window on:keydown={(event) => event.key === 'Escape' && !creating && (showCreate = false)} />
 
 <section class="flex min-h-0 flex-col gap-4">
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -184,7 +193,7 @@
 							title={category.id === 'other'
 								? $i18n.t('The default category cannot be deleted')
 								: ''}
-							on:click={() => remove(category)}
+							on:click={() => requestDelete(category)}
 						>
 							{deletingId === category.id ? $i18n.t('Deleting') : $i18n.t('Delete')}
 						</button>
@@ -206,6 +215,7 @@
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="create-category-title"
+			use:trapFocus
 		>
 			<h2 id="create-category-title" class="text-lg font-medium dark:text-gray-100">
 				{$i18n.t('Add creation category')}
@@ -253,3 +263,13 @@
 		</section>
 	</div>
 {/if}
+
+<ConfirmDialog
+	bind:show={showDeleteConfirm}
+	title={$i18n.t('Delete creation category')}
+	message={$i18n.t('Delete creation category {{name}}?', {
+		name: pendingDelete?.display_name ?? ''
+	})}
+	confirmLabel={$i18n.t('Delete')}
+	onConfirm={confirmDelete}
+/>

@@ -509,6 +509,8 @@ def test_router_exposes_exactly_the_documented_credit_routes() -> None:
         ('/api/v1/credits/me', 'GET'),
         ('/api/v1/credits/me/ledger', 'GET'),
         ('/api/v1/credits/quotes/image', 'POST'),
+        # 新增的视频报价路由
+        ('/api/v1/credits/quotes/video', 'POST'),
         ('/api/v1/credits/admin/accounts', 'GET'),
         ('/api/v1/credits/admin/accounts/{user_id}/adjustments', 'POST'),
         ('/api/v1/credits/admin/ledger', 'GET'),

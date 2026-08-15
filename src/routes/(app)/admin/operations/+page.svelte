@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onMount, tick } from 'svelte';
 
 	import type { SvelteComponent } from 'svelte';
 
@@ -20,6 +20,20 @@
 		if (target instanceof HTMLElement) {
 			target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 		}
+	};
+
+	// 运营中心 tab 键盘导航：←/→ 在 tab 之间循环，焦点跟随选中 tab（roving tabindex）。
+	const handleTabKeydown = async (event: KeyboardEvent) => {
+		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+		const order = tabs.map((t) => t.id);
+		const idx = order.indexOf(active);
+		if (idx === -1) return;
+		event.preventDefault();
+		const dir = event.key === 'ArrowRight' ? 1 : -1;
+		const next = order[(idx + dir + order.length) % order.length];
+		selectTab(next, null);
+		await tick();
+		document.getElementById(`operations-tab-${next}`)?.focus();
 	};
 
 	// 懒加载：首屏只加载默认 discovery tab，其余 tab 切换时按需动态导入，
@@ -94,6 +108,7 @@
 		class="flex shrink-0 gap-1 overflow-x-auto border-b border-gray-100 dark:border-gray-800"
 		role="tablist"
 		aria-label={$i18n.t('Operations center')}
+		on:keydown={handleTabKeydown}
 	>
 		{#each tabs as tab (tab.id)}
 			<button
@@ -103,6 +118,8 @@
 					: 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-gray-100'}"
 				type="button"
 				role="tab"
+				id="operations-tab-{tab.id}"
+				tabindex={active === tab.id ? 0 : -1}
 				aria-selected={active === tab.id}
 				on:click={(event) => selectTab(tab.id, event.currentTarget)}
 			>

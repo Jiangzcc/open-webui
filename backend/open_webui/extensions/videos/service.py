@@ -47,6 +47,8 @@ upload_file_handler = None  # lazily bound; tests replace this module-level seam
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 _MOCK_VIDEO_PATH = _REPOSITORY_ROOT / 'static' / 'assets' / 'welcome.mp4'
 _MOCK_POSTER_PATH = _REPOSITORY_ROOT / 'static' / 'assets' / 'welcome.webp'
+# Mock 路径的模拟延迟：模拟真实生成耗时，避免 mock 完成过快导致前端轮询异常。
+_MOCK_VIDEO_DELAY_SECONDS = 1.2
 
 
 def _now() -> int:
@@ -494,7 +496,7 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
         await _set_task_state(task_id, 'running')
         await _publish_video_task_event(request.app, task_id, user_id, 'running')
         async with creation_session() as session:
-            task = await get_video_task(session, getattr(user, 'id'), task_id)
+            task = await get_video_task(session, getattr(user, 'id', ''), task_id)
         if task is None:
             return
         begin = await begin_video_usage(user, task)
@@ -503,7 +505,7 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
         usage_id = begin.usage.id
         await _set_task_usage_id(task_id, usage_id)
         await mark_video_usage_invoking(usage_id)
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(_MOCK_VIDEO_DELAY_SECONDS)
         async with credit_session() as terminal_session, terminal_session.begin():
             result = await _finalize_mock_video(request, user, task, terminal_session)
             changed = await mark_usage_succeeded_in_session(
@@ -540,7 +542,7 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
                 await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
             except Exception:
                 log.exception('Could not publish succeeded state for interrupted video task %s', task_id)
-            return
+            raise
         code = 'server_shutdown'
         if usage_id is not None:
             try:
@@ -559,23 +561,43 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
             log.exception('Could not publish interrupted video task %s', task_id)
         raise
     except CreditError as error:
-        if usage_id is not None:
-            await mark_video_usage_failed(usage_id, error.code)
         code = error.code[:64]
-        await _set_task_state(task_id, 'failed', error_code=code)
-        await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
+        if usage_id is not None:
+            try:
+                await mark_video_usage_failed(usage_id, error.code)
+            except Exception:
+                # 计费清理失败不能阻止任务行终态写入（与 CancelledError 处理器一致）。
+                log.exception('Could not fail usage for video task %s', task_id)
+        try:
+            await _set_task_state(task_id, 'failed', error_code=code)
+        except Exception:
+            log.exception('Could not persist failed video task %s', task_id)
+        try:
+            await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
+        except Exception:
+            log.exception('Could not publish failed video task %s', task_id)
     except Exception:
         log.exception('Mock video generation task %s failed', task_id)
         if usage_id is not None:
-            await mark_video_usage_failed(usage_id, 'video_generation_failed')
-        await _set_task_state(task_id, 'failed', error_code='video_generation_failed')
-        await _publish_video_task_event(
-            request.app,
-            task_id,
-            user_id,
-            'failed',
-            error_code='video_generation_failed',
-        )
+            try:
+                await mark_video_usage_failed(usage_id, 'video_generation_failed')
+            except Exception:
+                # 计费清理失败不能阻止任务行终态写入（与 CancelledError 处理器一致）。
+                log.exception('Could not fail usage for video task %s', task_id)
+        try:
+            await _set_task_state(task_id, 'failed', error_code='video_generation_failed')
+        except Exception:
+            log.exception('Could not persist failed video task %s', task_id)
+        try:
+            await _publish_video_task_event(
+                request.app,
+                task_id,
+                user_id,
+                'failed',
+                error_code='video_generation_failed',
+            )
+        except Exception:
+            log.exception('Could not publish failed video task %s', task_id)
 
 
 def schedule_video_task(
@@ -588,15 +610,29 @@ def schedule_video_task(
     running: dict[str, asyncio.Task] = request.app.state.video_generation_tasks
 
     async def run_and_finish() -> None:
+        original_exc: BaseException | None = None
         try:
             await run_video_task(task_id, request, user)
+        except BaseException as exc:
+            original_exc = exc
+            raise
         finally:
             if on_finished is not None:
                 try:
                     await on_finished()
+                except asyncio.CancelledError:
+                    # 如果 try 块已有原始异常在传播，不要让 on_finished 的
+                    # CancelledError 替换它（否则日志丢失原始失败原因）。
+                    # 无原始异常时正常重抛以遵守取消语义。
+                    if original_exc is None:
+                        raise
+                    log.warning(
+                        'on_finished cancelled for video task %s; original exception preserved',
+                        task_id,
+                    )
                 except Exception:
-                    # 槽位释放失败需要记录，但不能替换 worker 的原始异常，尤其是
-                    # shutdown CancelledError。进程内槽位也会随进程退出而回收。
+                    # 槽位释放失败需要记录，但不能替换 worker 的原始异常。
+                    # 进程内槽位也会随进程退出而回收。
                     log.exception('Could not release generation slot for video task %s', task_id)
 
     task = asyncio.create_task(run_and_finish())

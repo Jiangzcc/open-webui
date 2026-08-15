@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { getContext, onMount } from 'svelte';
 	import type { Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
-	import { WEBUI_NAME, showSidebar, mobile } from '$lib/stores';
+	import { WEBUI_NAME, showSidebar, mobile, user } from '$lib/stores';
 	import { page } from '$app/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
@@ -29,6 +30,17 @@
 
 	let activeCategory = 'display';
 
+	// 管理员守卫：该页面展示所有内部组件演示，仅限管理员访问。
+	let loaded = false;
+
+	onMount(async () => {
+		if ($user?.role !== 'admin') {
+			await goto('/', { replaceState: true });
+			return;
+		}
+		loaded = true;
+	});
+
 	const scrollTo = (id: string) => {
 		activeCategory = id;
 		document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -41,6 +53,7 @@
 	</title>
 </svelte:head>
 
+{#if loaded}
 <div
 	class="flex flex-col w-full h-screen max-h-[100dvh] transition-width duration-200 ease-in-out {$showSidebar
 		? 'md:max-w-[calc(100%-var(--sidebar-width))]'
@@ -549,3 +562,4 @@
 		</div>
 	</div>
 </div>
+{/if}

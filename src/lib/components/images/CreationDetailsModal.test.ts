@@ -45,17 +45,15 @@ describe('CreationDetailsModal source contract', () => {
 		expect(source).toContain('$: if (!show && wasShown)');
 	});
 
-	test('collapses admin owner identity into a header badge with hover email', () => {
-		// Per the redesign, owner name/email left the aside and moved into a
-		// compact header badge; the email reveals on hover/focus rather than
-		// occupying a permanent paragraph that crowds every reader's first frame.
+	test('collapses admin owner identity into a header badge', () => {
+		// 管理员 scope 下，owner 身份折叠为 header 标题（name 或 user_id），
+		// 传给 ArtworkViewerShell 的 headerTitle，不再单独显示 Owner/Email 标签段落。
 		expect(source).toContain('isAdminScope()');
 		expect(source).toContain("'owner' in detail");
 		expect(source).toContain('detail.owner.name');
-		expect(source).toContain('detail.owner.email');
-		expect(source).toContain('href={`mailto:');
-		expect(source).toContain('group-hover/admn:block');
-		// The standalone "Owner:" / "Email:" labelling paragraphs are gone.
+		expect(source).toContain('detail.owner.user_id');
+		expect(source).toContain('headerTitle');
+		// 独立的 "Owner:" / "Email:" 标签段落已移除。
 		expect(source).not.toContain("$i18n.t('Owner')");
 		expect(source).not.toContain("$i18n.t('Email')");
 	});
@@ -95,28 +93,34 @@ describe('CreationDetailsModal source contract', () => {
 	});
 
 	test('uses an artwork-first responsive gallery layout', () => {
-		expect(source).toContain('max-w-5xl');
-		// Flex row on desktop lets the artwork column shrink to the image's
-		// natural width instead of greedily filling 1fr, so the modal wraps the
-		// picture rather than parking it in a grey void.
-		expect(source).toContain('lg:flex-row');
-		expect(source).toContain('lg:w-[22rem]');
-		expect(source).toContain("aria-label={$i18n.t('Artwork')}");
-		expect(source).toContain('<aside');
-		expect(source).toContain('lg:overflow-y-auto');
+		// 布局委托给 ArtworkViewerShell：max-w-5xl、lg:flex-row、<aside>、
+		// lg:overflow-y-auto 等结构类位于 shell 组件中；CreationDetailsModal
+		// 通过 mediaLabel 和 detailsClassName 传入定制参数。
+		const shellSource = readFileSync(
+			fileURLToPath(new URL('./ArtworkViewerShell.svelte', import.meta.url)),
+			'utf-8'
+		);
+		expect(source).toContain('<ArtworkViewerShell');
+		expect(source).toContain('mediaLabel={$i18n.t(\'Artwork\')}');
+		expect(source).toContain("detailsClassName=\"lg:w-[22rem]\"");
 		expect(source).toContain('object-contain');
 		expect(source).not.toContain('max-h-[40vh]');
+		// 布局结构类在 shell 中。
+		expect(shellSource).toContain('max-w-5xl');
+		expect(shellSource).toContain('lg:flex-row');
+		expect(shellSource).toContain('<aside');
+		expect(shellSource).toContain('lg:overflow-y-auto');
 	});
 
 	test('keeps notes and generation metadata in the secondary panel', () => {
-		expect(source).toContain('<aside');
+		// 辅助面板 (<aside>) 位于 ArtworkViewerShell 中，CreationDetailsModal
+		// 通过 slot="details" 注入内容；prompt 属于 details slot，media slot 在前。
+		expect(source).toContain('slot="details"');
+		expect(source).toContain('slot="media"');
 		expect(source).toContain("$i18n.t('Prompt')");
-		// The artwork region precedes the secondary aside so the picture leads.
-		expect(source.indexOf("aria-label={$i18n.t('Artwork')}")).toBeLessThan(
-			source.indexOf('<aside')
-		);
-		// Caption was demoted to an inline "add a note" affordance — the old
-		// standalone labelled section is gone.
+		// media slot 在 details slot 之前，保证图片优先展示。
+		expect(source.indexOf('slot="media"')).toBeLessThan(source.indexOf('slot="details"'));
+		// Caption 被降级为内联 "add a note"，独立的标签段落已移除。
 		expect(source).not.toContain("$i18n.t('Caption')");
 		expect(source).toContain("$i18n.t('Add a note')");
 	});

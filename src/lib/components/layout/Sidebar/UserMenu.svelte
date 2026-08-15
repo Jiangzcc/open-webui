@@ -455,7 +455,7 @@
 						>
 							<button
 								type="button"
-								class="p-1 mr-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+								class="p-1 mr-1 rounded-lg hover:bg-gray-100/60 dark:hover:bg-gray-700/60 transition"
 								on:click|preventDefault|stopPropagation={() => togglePin('images')}
 							>
 								{#if isPinned('images')}

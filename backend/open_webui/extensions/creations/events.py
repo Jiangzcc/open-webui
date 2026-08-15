@@ -5,8 +5,6 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from open_webui.extensions.creations.db import creation_session  # noqa: F401  # 保留以备后续快照推送使用
-
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
@@ -28,33 +26,43 @@ _SUBSCRIBER_QUEUE_MAXSIZE = 128
 class GenerationEventBus:
     """进程内任务事件广播总线。
 
-    每个连接的 SSE 端点调用 subscribe() 拿到一个 Queue，并阻塞读取。
-    任务终态写入后调用 publish() 向所有订阅者广播。subscribe() 返回的
+    每个连接的 SSE 端点调用 subscribe(user_id) 拿到一个 Queue，并阻塞读取。
+    任务终态写入后调用 publish() 向该 user_id 的订阅者广播。subscribe() 返回的
     Queue 必须在连接关闭时通过 unsubscribe() 移除，否则会泄漏引用。
     """
 
     def __init__(self) -> None:
-        self._subscribers: set[asyncio.Queue[dict[str, object]]] = set()
+        # 按 user_id 分组的订阅者队列集合，publish 时只推送给匹配用户的队列，
+        # 避免向所有订阅者广播全量事件（含其他用户的 task_id）。
+        self._subscribers: dict[str, set[asyncio.Queue[dict[str, object]]]] = {}
         self._lock = asyncio.Lock()
 
-    async def subscribe(self) -> asyncio.Queue[dict[str, object]]:
+    async def subscribe(self, user_id: str) -> asyncio.Queue[dict[str, object]]:
         queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=_SUBSCRIBER_QUEUE_MAXSIZE)
         async with self._lock:
-            self._subscribers.add(queue)
+            self._subscribers.setdefault(user_id, set()).add(queue)
         return queue
 
-    async def unsubscribe(self, queue: asyncio.Queue[dict[str, object]]) -> None:
+    async def unsubscribe(self, user_id: str, queue: asyncio.Queue[dict[str, object]]) -> None:
         async with self._lock:
-            self._subscribers.discard(queue)
+            subscribers = self._subscribers.get(user_id)
+            if subscribers is not None:
+                subscribers.discard(queue)
+                if not subscribers:
+                    del self._subscribers[user_id]
 
     async def publish(self, event: dict[str, object]) -> None:
-        """向所有订阅者非阻塞广播事件。
+        """向匹配 user_id 的订阅者非阻塞广播事件。
 
+        仅推送给 event['user_id'] 对应的订阅者队列，避免泄露其他用户的事件。
         慢消费者（队列已满）会被跳过，不阻塞生产者；客户端重连后会拉一次
         list 补齐终态，因此过渡态丢弃是安全的。
         """
+        user_id = event.get('user_id')
+        if not isinstance(user_id, str):
+            return
         async with self._lock:
-            subscribers = list(self._subscribers)
+            subscribers = list(self._subscribers.get(user_id, ()))
         for queue in subscribers:
             try:
                 queue.put_nowait(event)
@@ -66,7 +74,7 @@ class GenerationEventBus:
 
     @property
     def subscriber_count(self) -> int:
-        return len(self._subscribers)
+        return sum(len(subs) for subs in self._subscribers.values())
 
 
 # 全局单例。在 main.py 的 lifespan 中通过 app.state.generation_event_bus 暴露，
@@ -126,7 +134,8 @@ def _format_sse_event(event: dict[str, object]) -> str:
 async def sse_generation_events_generator(app: FastAPI, user_id: str):
     """SSE 事件生成器：按用户过滤推送其可见的任务事件。
 
-    连接建立后先推送一次 hello 帧，之后阻塞等待总线事件，按 user_id 过滤后 yield。
+    连接建立后先推送一次 hello 帧，之后阻塞等待总线事件。
+    总线层已按 user_id 过滤，只推送该用户自己的任务事件，无需消费端再过滤。
     每 15s 无事件时发心跳，保持连接活跃，避免代理/负载均衡器因空闲超时断开。
     SSE 端点传入 app 以访问 app.state.generation_event_bus。
     """
@@ -134,7 +143,7 @@ async def sse_generation_events_generator(app: FastAPI, user_id: str):
     if bus is None:
         bus = get_generation_event_bus()
 
-    queue = await bus.subscribe()
+    queue = await bus.subscribe(user_id)
     try:
         yield _format_sse_event({'type': 'hello', 'user_id': user_id})
         while True:
@@ -144,13 +153,11 @@ async def sse_generation_events_generator(app: FastAPI, user_id: str):
                 # 心跳：保持连接活跃，避免代理/负载均衡器因空闲超时断开。
                 yield ': keepalive\n\n'
                 continue
-            # 仅推送该用户自己的任务事件。
-            if event.get('user_id') == user_id:
-                yield _format_sse_event(event)
+            yield _format_sse_event(event)
     except asyncio.CancelledError:
         raise
     finally:
-        await bus.unsubscribe(queue)
+        await bus.unsubscribe(user_id, queue)
 
 
 __all__ = [

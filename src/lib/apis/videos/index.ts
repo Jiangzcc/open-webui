@@ -117,6 +117,38 @@ export type VideoGenerationTask = {
 	updated_at: number;
 };
 
+export class VideoRequestError extends Error {
+	code: string;
+	publicMessage?: string;
+	preferPublicMessage: boolean;
+
+	constructor(code: string, publicMessage?: string, preferPublicMessage = false) {
+		super(code);
+		this.name = 'VideoRequestError';
+		this.code = code;
+		this.publicMessage = publicMessage;
+		this.preferPublicMessage = preferPublicMessage;
+	}
+}
+
+export const parseVideoRequestError = (payload: unknown): VideoRequestError => {
+	if (!payload || typeof payload !== 'object') return new VideoRequestError('video_request_failed');
+
+	const body = payload as Record<string, unknown>;
+	if (body.detail && typeof body.detail === 'object') {
+		const detail = body.detail as Record<string, unknown>;
+		const code = typeof detail.code === 'string' ? detail.code : 'video_request_failed';
+		const publicMessage = typeof detail.message === 'string' ? detail.message : undefined;
+		return new VideoRequestError(code, publicMessage, true);
+	}
+	if (typeof body.detail === 'string') return new VideoRequestError(body.detail);
+	if (typeof body.code === 'string') {
+		const publicMessage = typeof body.message === 'string' ? body.message : undefined;
+		return new VideoRequestError(body.code, publicMessage);
+	}
+	return new VideoRequestError('video_request_failed');
+};
+
 const request = async <T>(token: string, path: string, init?: RequestInit): Promise<T> => {
 	const response = await fetch(`${WEBUI_API_BASE_URL}/videos${path}`, {
 		...init,
@@ -129,7 +161,7 @@ const request = async <T>(token: string, path: string, init?: RequestInit): Prom
 	});
 	if (!response.ok) {
 		const payload = await response.json().catch(() => ({}));
-		throw new Error(payload?.detail ?? 'video_request_failed');
+		throw parseVideoRequestError(payload);
 	}
 	return response.status === 204 ? (undefined as T) : response.json();
 };

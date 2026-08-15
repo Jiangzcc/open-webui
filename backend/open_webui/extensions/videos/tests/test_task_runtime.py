@@ -225,11 +225,16 @@ def test_late_cancellation_preserves_committed_success(monkeypatch) -> None:  # 
         monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
         monkeypatch.setattr(service, 'mark_video_usage_failed', fail_usage)
 
-        await service.run_video_task(
-            'task-1',
-            SimpleNamespace(app=object()),
-            SimpleNamespace(id='user-1'),
-        )
+        try:
+            await service.run_video_task(
+                'task-1',
+                SimpleNamespace(app=object()),
+                SimpleNamespace(id='user-1'),
+            )
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError('late cancellation was swallowed')
 
         assert states[-1] == 'succeeded'
         assert 'failed' not in states
@@ -315,11 +320,16 @@ def test_cancellation_during_terminal_commit_uses_persisted_usage_status(monkeyp
         monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
         monkeypatch.setattr(service, 'mark_video_usage_failed', fail_usage)
 
-        await service.run_video_task(
-            'task-1',
-            SimpleNamespace(app=object()),
-            SimpleNamespace(id='user-1'),
-        )
+        try:
+            await service.run_video_task(
+                'task-1',
+                SimpleNamespace(app=object()),
+                SimpleNamespace(id='user-1'),
+            )
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError('terminal-commit cancellation was swallowed')
 
         assert states[-1] == 'succeeded'
         assert 'failed' not in states

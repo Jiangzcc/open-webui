@@ -392,12 +392,16 @@ async def _prepare_quote_call(action: str, image_input: CompatImageInput, user: 
     return await prepare_edit_call(None, image_input, None, user)
 
 
-def _cached_quote(cache_key: tuple[str, str, str, int], balance: int, now: float) -> dict[str, object] | None:
-    return quote_cache.get_cached_quote(cache_key, balance, now)
+async def _cached_quote(
+    cache_key: tuple[str, str, str, int],
+    balance: int,
+    now: float,
+) -> dict[str, object] | None:
+    return await quote_cache.get_cached_quote(cache_key, balance, now)
 
 
-def _cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object], now: float) -> None:
-    quote_cache.cache_quote(cache_key, response, now)
+async def _cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object], now: float) -> None:
+    await quote_cache.cache_quote(cache_key, response, now)
 
 
 async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mapping[str, object]) -> dict[str, object]:
@@ -421,7 +425,7 @@ async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mappin
         return _unconfigured_quote(balance, 'price_not_configured')
     cache_key = (user.id, str(getattr(price, 'id', '')), f'{billing.action}:{billing.request_hash}', price.updated_at)
     now = time()
-    cached = _cached_quote(cache_key, balance, now)
+    cached = await _cached_quote(cache_key, balance, now)
     if cached is not None:
         credit_metrics.quote_succeeded(
             model=billing.resource_id,
@@ -450,7 +454,7 @@ async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mappin
         charged_credits=quote.charged_credits,
         error=None,
     )
-    _cache_quote(cache_key, quote_response, now)
+    await _cache_quote(cache_key, quote_response, now)
     credit_metrics.quote_succeeded(
         model=billing.resource_id,
         action=billing.action,
@@ -487,7 +491,9 @@ async def quote_video(
     internal_id = catalog.public_to_internal.get(quote_request.resource_id)
     if internal_id is None:
         raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_video_model'})
-    definition = next(item for item in catalog.definitions if item.id == internal_id)
+    definition = next((item for item in catalog.definitions if item.id == internal_id), None)
+    if definition is None:
+        raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_video_model'})
     if definition.task != quote_request.action:
         raise CreditError(code='price_rule_incomplete', context={'reason': 'video_model_task_mismatch'})
     dimensions = _normalize_video_quote_dimensions(quote_request.dimensions)

@@ -121,11 +121,13 @@ def test_finalize_image_creations_factory_uses_capture_context_signature(images_
         and node.func.id == 'build_creation_capture_context'
     ]
     assert len(context_calls) == 1
+    # 代码新增了 generation_task_id 关键字参数，用于把图片生成关联到任务记录。
     assert {keyword.arg for keyword in context_calls[0].keywords} == {
         'raw_form',
         'prepared',
         'user',
         'usage_id',
+        'generation_task_id',
     }
 
 

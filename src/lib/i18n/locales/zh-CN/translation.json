@@ -3357,6 +3357,7 @@
 	"Oldest first": "最早优先",
 	"{{count}} selected": "已选择 {{count}} 项",
 	"Download ZIP": "下载 ZIP",
+	"Remove selected creations?": "确定移除所选作品吗？",
 	"Remove selected creations from your library?": "确定从作品库移除所选作品吗？",
 	"Selected creations removed": "已移除所选作品",
 	"Failed to remove selected creations": "移除所选作品失败",
@@ -3451,5 +3452,19 @@
 	"Balanced · High": "平衡编辑 · 高",
 	"Reimagine · Low": "创意重构 · 低",
 	"Reimagine · Medium": "创意重构 · 中",
-	"Reimagine · High": "创意重构 · 高"
+	"Reimagine · High": "创意重构 · 高",
+	"Remove Model": "移除模型",
+	"Failed to load more videos": "加载更多视频失败",
+	"Too many video generation requests": "生成请求过于频繁，请稍后再试",
+	"Unknown video model": "未知的视频模型",
+	"Video model does not support this task type": "该视频模型不支持此任务类型",
+	"Unsupported duration": "不支持的时长",
+	"Unsupported aspect ratio": "不支持的宽高比",
+	"Unsupported resolution": "不支持的分辨率",
+	"Unsupported audio mode": "不支持的音乐模式",
+	"Invalid duration": "无效的时长",
+	"Invalid aspect ratio": "无效的宽高比",
+	"Invalid resolution": "无效的分辨率",
+	"Invalid audio mode": "无效的音乐模式",
+	"Delete creation category": "删除创作分类"
 }

@@ -35,7 +35,7 @@ PUBLIC_ERRORS: dict[CreditErrorCode, PublicErrorDefinition] = {
     'provider_failed': PublicErrorDefinition(502, 'Image provider request failed'),
     'invalid_image_size': PublicErrorDefinition(422, 'Image size is invalid'),
     'generation_cancelled': PublicErrorDefinition(409, 'Image generation was cancelled'),
-    'rate_limited': PublicErrorDefinition(429, 'Too many image generation requests'),
+    'rate_limited': PublicErrorDefinition(429, 'Too many generation requests'),
 }
 
 

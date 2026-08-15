@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from fastapi.responses import JSONResponse
 from open_webui.extensions.creations.db import get_creation_session
 from open_webui.extensions.credits.errors import CreditError
+from open_webui.extensions.credits.http import public_credit_error_response
 from open_webui.extensions.model_ops.service import ensure_model_enabled
 from open_webui.extensions.videos.billing import quote_video_usage
 from open_webui.extensions.videos.catalog import VideoInputError, public_video_catalog_for_user
@@ -68,7 +69,7 @@ async def submit_video_task(  # noqa: C901 - admission, idempotency, and slot cl
     try:
         enforce_video_generation_rate(user.id)
     except CreditError as error:
-        return JSONResponse(status_code=429, content={'detail': error.code, 'reason': error.context})
+        return public_credit_error_response(error)
     # 配额前置校验：在调度前预检余额，避免任务进 run_video_task 才发现余额不足，
     # 浪费 DB 行 + 用户看到「生成失败」而非「余额不足」的清晰提示。
     # quote 只读账户与定价表，不扣费、不占位。
@@ -77,12 +78,12 @@ async def submit_video_task(  # noqa: C901 - admission, idempotency, and slot cl
     except VideoInputError as error:
         return JSONResponse(status_code=422, content={'detail': str(error)})
     except CreditError as error:
-        return JSONResponse(status_code=error.status_code, content={'detail': error.code, 'reason': error.context})
+        return public_credit_error_response(error)
     # 并发槽：每用户进行中任务上限。acquire 后无论后续成功失败都必须 release。
     try:
         await acquire_video_generation_slot(user.id)
     except CreditError as error:
-        return JSONResponse(status_code=429, content={'detail': error.code, 'reason': error.context})
+        return public_credit_error_response(error)
     try:
         task, created = await create_video_task(
             session,

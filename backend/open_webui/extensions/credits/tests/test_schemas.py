@@ -402,7 +402,7 @@ ERROR_CASES = [
     ('provider_failed', 502, 'Image provider request failed'),
     ('invalid_image_size', 422, 'Image size is invalid'),
     ('generation_cancelled', 409, 'Image generation was cancelled'),
-    ('rate_limited', 429, 'Too many image generation requests'),
+    ('rate_limited', 429, 'Too many generation requests'),
 ]
 
 

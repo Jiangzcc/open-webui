@@ -8,6 +8,7 @@
 		type ReconciliationItem,
 		type ReconciliationStatus
 	} from '$lib/apis/credits';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
@@ -24,6 +25,8 @@
 	let pending = new Set<string>();
 	let notes: Record<string, string> = {};
 	let mounted = false;
+	let pendingCompensation: ReconciliationItem | null = null;
+	let showCompensationConfirm = false;
 
 	const load = async () => {
 		loading = true;
@@ -55,8 +58,17 @@
 		}
 	};
 
-	const compensate = async (item: ReconciliationItem) => {
+	const requestCompensation = (item: ReconciliationItem) => {
 		if (pending.has(item.usage_id) || item.compensation_ledger_id) return;
+		pendingCompensation = item;
+		showCompensationConfirm = true;
+	};
+
+	const confirmCompensation = async () => {
+		if (!pendingCompensation) return;
+		const item = pendingCompensation;
+		pendingCompensation = null;
+		showCompensationConfirm = false;
 		pending.add(item.usage_id);
 		pending = new Set(pending);
 		try {
@@ -181,7 +193,7 @@
 									class="min-h-8 rounded-lg bg-gray-900 px-3 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-gray-900"
 									type="button"
 									disabled={pending.has(item.usage_id)}
-									on:click={() => compensate(item)}
+									on:click={() => requestCompensation(item)}
 								>
 									{pending.has(item.usage_id)
 										? $i18n.t('credits.common.saving')
@@ -203,3 +215,17 @@
 		</div>
 	{/if}
 </div>
+
+<ConfirmDialog
+	bind:show={showCompensationConfirm}
+	title={$i18n.t('credits.admin.compensationConfirmTitle')}
+	message={$i18n.t('credits.admin.compensationConfirmMessage', {
+		user: pendingCompensation?.user_name_snapshot ??
+			pendingCompensation?.user_email_snapshot ??
+			pendingCompensation?.user_id ??
+			'',
+		credits: pendingCompensation?.charged_credits ?? 0
+	})}
+	confirmLabel={$i18n.t('credits.common.confirm')}
+	onConfirm={confirmCompensation}
+/>

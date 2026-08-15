@@ -160,7 +160,9 @@ def test_keeps_video_safety_and_auto_fix_server_controlled() -> None:
     default_submission = submission.model_copy(update={'params': {}})
     _definition, provider_payload, safe_params = build_video_provider_payload(default_submission)
     assert provider_payload['safety_tolerance'] == '4'
-    assert provider_payload['auto_fix'] is False
+    # veo3.1 文本生成视频的 auto_fix 目录默认值为 True（与所有 text-to-video 模型一致），
+    # 服务端仍完全控制该字段——用户无法通过 params 传入，只能使用目录默认值。
+    assert provider_payload['auto_fix'] is True
     assert 'safety_tolerance' not in safe_params
     assert 'auto_fix' not in safe_params
 

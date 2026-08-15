@@ -24,6 +24,7 @@
 	import Loader from '$lib/components/common/Loader.svelte';
 	import Select from '$lib/components/common/Select.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import CreationDetailsModal from './CreationDetailsModal.svelte';
 
@@ -111,6 +112,7 @@
 	let selectionMode = false;
 	let selectedIds = new Set<string>();
 	let bulkBusy = false;
+	let showBulkDeleteConfirm = false;
 
 	let modalShow = false;
 	let modalCreationId: string | null = null;
@@ -235,14 +237,15 @@
 		}
 	};
 
-	const removeSelected = async () => {
-		if (
-			selectedIds.size === 0 ||
-			bulkBusy ||
-			!window.confirm($i18n.t('Remove selected creations from your library?'))
-		) {
+	const removeSelected = () => {
+		if (selectedIds.size === 0 || bulkBusy) {
 			return;
 		}
+		showBulkDeleteConfirm = true;
+	};
+
+	const confirmRemoveSelected = async () => {
+		if (selectedIds.size === 0 || bulkBusy) return;
 		bulkBusy = true;
 		try {
 			const response = await deleteCreations(localStorage.token, [...selectedIds]);
@@ -534,4 +537,12 @@
 	onUpdated={onModalUpdated}
 	onRemoved={onModalRemoved}
 	{onReuse}
+/>
+
+<ConfirmDialog
+	bind:show={showBulkDeleteConfirm}
+	title={$i18n.t('Remove selected creations?')}
+	message={$i18n.t('Remove selected creations from your library?')}
+	confirmLabel={$i18n.t('Remove')}
+	onConfirm={confirmRemoveSelected}
 />

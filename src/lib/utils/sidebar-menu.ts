@@ -15,11 +15,15 @@ export const getPinnedMediaMenuMigration = (settings: SidebarMenuSettings) => {
 	}
 
 	const items = [...settings.pinnedMenuItems];
-	if (!items.includes('images')) items.push('images');
 	if (!items.includes('videos')) items.push('videos');
 	if (!items.includes('discover')) {
 		const imagesIndex = items.indexOf('images');
-		items.splice(imagesIndex < 0 ? items.length : imagesIndex, 0, 'discover');
+		const videosIndex = items.indexOf('videos');
+		items.splice(
+			imagesIndex >= 0 ? imagesIndex : videosIndex >= 0 ? videosIndex : items.length,
+			0,
+			'discover'
+		);
 	}
 	return {
 		pinnedMenuItems: items,

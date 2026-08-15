@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, Column, Index, Integer, String, UniqueConstraint, text
 
 from .db import JSONField, ProviderOpsBase
 
@@ -222,6 +222,13 @@ class ProviderSyncRun(ProviderOpsBase):
         ),
         Index('ix_ext_provider_sync_run_provider_started', 'provider', 'started_at', 'id'),
         Index('ix_ext_provider_sync_run_status_started', 'status', 'started_at', 'id'),
+        Index(
+            'ux_ext_provider_sync_run_running',
+            'provider',
+            unique=True,
+            sqlite_where=text("status = 'running'"),
+            postgresql_where=text("status = 'running'"),
+        ),
     )
 
     id = Column(String(128), primary_key=True)
@@ -233,6 +240,7 @@ class ProviderSyncRun(ProviderOpsBase):
     window_start_at = Column(BigInteger, nullable=False)
     window_end_at = Column(BigInteger, nullable=False)
     started_at = Column(BigInteger, nullable=False)
+    heartbeat_at = Column(BigInteger, nullable=True)
     completed_at = Column(BigInteger, nullable=True)
 
 

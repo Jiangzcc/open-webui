@@ -2,11 +2,12 @@
 	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import { trapFocus } from '$lib/actions/focusTrap';
 	import {
 		listImageModelOperations,
 		updateMediaModelOperation,
 		type ImageModelOperation
-	} from '$lib/apis/image-model-ops';
+	} from '$lib/apis/media-model-ops';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	const i18n = getContext('i18n');
@@ -270,6 +271,7 @@
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="model-operation-title"
+			use:trapFocus
 		>
 			<div class="flex items-start justify-between gap-4">
 				<div class="min-w-0">
@@ -347,6 +349,7 @@
 					><textarea
 						class="min-h-24 resize-y rounded-xl border border-gray-200 bg-transparent px-3 py-2 dark:border-gray-700"
 						bind:value={editing.maintenance_message}
+						maxlength={200}
 						placeholder={$i18n.t('Maintenance message')}
 					></textarea></label
 				>

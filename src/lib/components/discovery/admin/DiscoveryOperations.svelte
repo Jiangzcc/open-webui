@@ -2,6 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import { trapFocus } from '$lib/actions/focusTrap';
 	import {
 		listAdminDiscoveryCategories,
 		listDiscoveryPosts,
@@ -33,6 +34,7 @@
 	let previewUrl = '';
 	let previewAlt = '';
 	let previewKind: 'image' | 'video' = 'image';
+	let previewPosterUrl = '';
 
 	$: visibleItems = items.filter((item) =>
 		`${item.title ?? ''} ${item.prompt_preview ?? ''} ${item.owner.name ?? ''}`
@@ -96,9 +98,9 @@
 
 	const openPreview = (item: DiscoveryPostSummary) => {
 		if (!item.content_url) return;
-		previewUrl = item.kind === 'video' ? (item.poster_url ?? item.content_url) : item.content_url;
+		previewUrl = item.content_url;
 		previewKind = item.kind;
-		if (item.kind === 'video') previewUrl = item.content_url;
+		previewPosterUrl = item.kind === 'video' ? (item.poster_url ?? '') : '';
 		previewAlt = item.title ?? item.prompt_preview ?? $i18n.t('Artwork');
 		showPreview = true;
 	};
@@ -282,6 +284,7 @@
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="discovery-operation-title"
+			use:trapFocus
 		>
 			<div class="flex items-start justify-between gap-4">
 				<div class="flex min-w-0 items-center gap-3">
@@ -378,10 +381,12 @@
 			role="dialog"
 			aria-modal="true"
 			aria-label={previewAlt}
+			use:trapFocus
 		>
 			<video
 				class="max-h-[82dvh] w-full bg-black object-contain"
 				src={previewUrl}
+				poster={previewPosterUrl || undefined}
 				controls
 				autoplay
 				playsinline

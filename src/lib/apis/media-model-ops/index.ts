@@ -24,7 +24,7 @@ export type ImageModelOperationUpdate = Partial<
 >;
 
 const request = async <T>(path: string, token: string, init?: RequestInit): Promise<T> => {
-	const response = await fetch(`${WEBUI_API_BASE_URL}/image-model-ops${path}`, {
+	const response = await fetch(`${WEBUI_API_BASE_URL}/media-model-ops${path}`, {
 		...init,
 		headers: {
 			Accept: 'application/json',
@@ -34,6 +34,8 @@ const request = async <T>(path: string, token: string, init?: RequestInit): Prom
 		}
 	});
 	if (!response.ok) throw await response.json().catch(() => null);
+	// 204 No Content 无响应体，直接返回 undefined。
+	if (response.status === 204) return undefined as T;
 	return (await response.json()) as T;
 };
 

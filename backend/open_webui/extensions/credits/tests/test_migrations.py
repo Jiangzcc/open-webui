@@ -39,6 +39,7 @@ EXPECTED_INDEXES = {
         'ix_ext_credit_ledger_user_created',
         'ix_ext_credit_ledger_created',
         'ix_ext_credit_ledger_usage',
+        'ix_ext_credit_ledger_account',
         'ux_ext_credit_ledger_related_refund',
     },
     'ext_credit_price': {'ix_ext_credit_price_enabled_service_action'},
@@ -95,7 +96,7 @@ def test_upgrade_preserves_sentinel_and_creates_only_extension_objects(sqlite_da
         assert names == TABLE_NAMES | {'user', 'ext_credit_schema_version'}
         assert 'alembic_version' not in names
         assert connection.execute(text('SELECT version_num FROM ext_credit_schema_version')).scalar_one() == (
-            '0002_add_reconciliation_guard'
+            '0003_add_credit_ledger_account_index'
         )
     assert not Path(f'{database_path}.credit-migrations.lock').exists()
 

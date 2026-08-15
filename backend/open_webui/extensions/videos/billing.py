@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from collections.abc import Mapping
@@ -19,6 +20,9 @@ from open_webui.extensions.credits.service import (
 )
 from open_webui.extensions.fal_catalog import load_video_catalog
 from open_webui.extensions.videos.schemas import VideoTaskResponse, VideoTaskSubmitForm
+
+_USAGE_FAILURE_MAX_ATTEMPTS = 3
+_USAGE_FAILURE_RETRY_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -40,7 +44,9 @@ def video_quote_dimensions(task: VideoTaskSubmitForm | VideoTaskResponse) -> dic
     """从提交表单或任务响应归一化计费维度（复用 quote_video 的维度逻辑）。"""
     params = task.params
     duration = params.get('duration', 1)
-    normalized_duration: str | int = str(duration) if duration in {'auto', '0'} else max(1, round(float(duration)))
+    normalized_duration: str | int = (
+        str(duration) if duration == 'auto' or str(duration) == '0' else max(1, round(float(duration)))
+    )
     dimensions: dict[str, str | int] = {
         'duration': normalized_duration,
         'resolution': str(params.get('resolution', 'default')),
@@ -94,7 +100,7 @@ def video_billing_context(task: VideoTaskResponse) -> VideoBillingContext:
         resource_id=internal_id,
         action=task.task,
         channel='web',
-        dimensions=MappingProxyType(video_quote_dimensions(task)),
+        dimensions=video_quote_dimensions(task),
         request_hash=_request_hash(task),
     )
 
@@ -157,11 +163,21 @@ async def mark_video_usage_failed(usage_id: str, code: str) -> None:
     # 视频任务失败默认退预扣积分，对齐图片 cancel 路径的 restore_prepaid=True
     # （image_billing.py:377-378）。否则失败后积分会卡在 invoking，只能等
     # 后台 recovery worker 标 unknown 再对账，用户拿不到即时退款。
-    await mark_usage_failed(
-        usage_id,
-        SafeProviderError(code=code[:64], summary='Video generation failed'),
-        restore_prepaid=True,
-    )
+    error = SafeProviderError(code=code[:64], summary='Video generation failed')
+    for attempt in range(_USAGE_FAILURE_MAX_ATTEMPTS):
+        try:
+            await mark_usage_failed(
+                usage_id,
+                error,
+                restore_prepaid=True,
+            )
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if attempt + 1 >= _USAGE_FAILURE_MAX_ATTEMPTS:
+                raise
+            await asyncio.sleep(_USAGE_FAILURE_RETRY_SECONDS * (attempt + 1))
 
 
 __all__ = [

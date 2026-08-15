@@ -22,7 +22,7 @@ describe('creations library state', () => {
 		expect(all.nextCursor).toBeNull();
 	});
 
-	test('dedupes by id and preserves server order on merge', () => {
+	test('clears existing items on first page and loads only the new page', () => {
 		const state = createCreationScopeState([{ id: 'a' }, { id: 'b' }, { id: 'c' }] as never[]);
 		const ok = applyCreationPage(
 			state,
@@ -31,6 +31,22 @@ describe('creations library state', () => {
 			true
 		);
 		expect(ok).toBe(true);
+		// isFirst=true 清空旧项后只保留新页面数据。
+		expect(state.items.map((item) => item.id)).toEqual(['b', 'd']);
+		expect(state.nextCursor).toBe('cur');
+	});
+
+	test('dedupes by id and preserves server order on subsequent page merge', () => {
+		const state = createCreationScopeState([{ id: 'a' }, { id: 'b' }, { id: 'c' }] as never[]);
+		state.loaded = true;
+		const ok = applyCreationPage(
+			state,
+			beginCreationRequest(state),
+			{ items: [{ id: 'b' }, { id: 'd' }] as never[], next_cursor: 'cur' },
+			false
+		);
+		expect(ok).toBe(true);
+		// isFirst=false 保留已有项，去重后追加新项。
 		expect(state.items.map((item) => item.id)).toEqual(['a', 'b', 'c', 'd']);
 		expect(state.nextCursor).toBe('cur');
 	});

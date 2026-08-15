@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from hashlib import sha256
+from threading import Lock
 
 from open_webui.extensions.credits.constants import (
     CREDIT_QUOTE_CACHE_MAX_ENTRIES,
@@ -20,14 +21,17 @@ log = logging.getLogger(__name__)
 # price.updated_at 已编码进键，因此价格变更后旧键自然失效，无需显式失效逻辑。
 # TTL 由 Redis EXPIRE 保证，避免进程内 dict 的手动过期清理。
 
-_sync_redis = get_redis_client(async_mode=False)
+_async_redis = get_redis_client(async_mode=True)
 
 # 进程内 fallback 缓存：仅在 Redis 不可用时使用。
 _memory_cache: dict[tuple[str, str, str, int], tuple[float, dict[str, object]]] = {}
+# 保护 _write_memory_fallback 中 LRU 驱逐的 check-then-act 操作，
+# 避免并发协程在检查长度 → pop → 写入之间交错导致缓存超限或驱逐错误条目。
+_memory_lock = Lock()
 
 
 def _redis_available() -> bool:
-    return _sync_redis is not None
+    return _async_redis is not None
 
 
 def _redis_key(cache_key: tuple[str, str, str, int]) -> str:
@@ -37,11 +41,15 @@ def _redis_key(cache_key: tuple[str, str, str, int]) -> str:
     return f'webui:credits:quote:{sha256(encoded).hexdigest()}'
 
 
-def get_cached_quote(cache_key: tuple[str, str, str, int], balance: int, now: float) -> dict[str, object] | None:
+async def get_cached_quote(
+    cache_key: tuple[str, str, str, int],
+    balance: int,
+    now: float,
+) -> dict[str, object] | None:
     """读缓存。命中时复用缓存的报价，但用当前余额覆写 balance/sufficient。"""
     if _redis_available():
         try:
-            raw = _sync_redis.get(_redis_key(cache_key))
+            raw = await _async_redis.get(_redis_key(cache_key))
         except Exception:
             log.warning('Quote cache Redis read failed, using process memory fallback')
         else:
@@ -61,18 +69,20 @@ def get_cached_quote(cache_key: tuple[str, str, str, int], balance: int, now: fl
                 return response
             return None
     # Redis 未配置或读取异常时才走进程内降级。
-    cached = _memory_cache.get(cache_key)
-    if cached is not None and cached[0] > now:
-        response = dict(cached[1])
-        response['balance'] = balance
-        response['sufficient'] = balance >= response.get('charged_credits', 0)
-        return response
-    if cached is not None:
-        _memory_cache.pop(cache_key, None)
+    with _memory_lock:
+        cached = _memory_cache.get(cache_key)
+        if cached is not None and cached[0] <= now:
+            _memory_cache.pop(cache_key, None)
+            cached = None
+        cached_value = dict(cached[1]) if cached is not None else None
+    if cached_value is not None:
+        cached_value['balance'] = balance
+        cached_value['sufficient'] = balance >= cached_value.get('charged_credits', 0)
+        return cached_value
     return None
 
 
-def cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object], now: float) -> None:
+async def cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object], now: float) -> None:
     """写缓存。Redis 用 SETEX 带 TTL；内存降级用原 LRU 策略。"""
     # 存储前剥离 balance/sufficient（这俩随余额实时变，不该缓存）。
     storable = {k: v for k, v in response.items() if k not in ('balance', 'sufficient')}
@@ -80,7 +90,7 @@ def cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object
     _write_memory_fallback(cache_key, storable, now)
     if _redis_available():
         try:
-            _sync_redis.setex(
+            await _async_redis.setex(
                 _redis_key(cache_key),
                 CREDIT_QUOTE_CACHE_TTL_SECONDS,
                 json.dumps(storable, default=str),
@@ -90,15 +100,17 @@ def cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object
 
 
 def _write_memory_fallback(cache_key: tuple[str, str, str, int], storable: dict[str, object], now: float) -> None:
-    if len(_memory_cache) >= CREDIT_QUOTE_CACHE_MAX_ENTRIES:
-        oldest_key = min(_memory_cache, key=lambda key: _memory_cache[key][0])
-        _memory_cache.pop(oldest_key, None)
-    _memory_cache[cache_key] = (now + CREDIT_QUOTE_CACHE_TTL_SECONDS, dict(storable))
+    with _memory_lock:
+        if len(_memory_cache) >= CREDIT_QUOTE_CACHE_MAX_ENTRIES:
+            oldest_key = min(_memory_cache, key=lambda key: _memory_cache[key][0])
+            _memory_cache.pop(oldest_key, None)
+        _memory_cache[cache_key] = (now + CREDIT_QUOTE_CACHE_TTL_SECONDS, dict(storable))
 
 
 def clear_quote_cache_for_test() -> None:
     """测试辅助：清空进程内 fallback 缓存，避免跨用例泄漏。"""
-    _memory_cache.clear()
+    with _memory_lock:
+        _memory_cache.clear()
 
 
 def memory_cache_for_legacy_tests() -> dict[tuple[str, str, str, int], tuple[float, dict[str, object]]]:

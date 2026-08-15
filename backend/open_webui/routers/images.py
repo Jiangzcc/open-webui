@@ -41,6 +41,7 @@ from open_webui.extensions.credits.http import public_credit_error_response
 from open_webui.extensions.credits.image_billing import ImageTerminalPreparationError, bill_image_call
 from open_webui.extensions.credits.pricing import attach_model_base_prices
 from open_webui.extensions.credits.repository import get_enabled_prices
+# EXT: 二开新增 —— 并发槽位控制、操作韧性重试、provider 调用追踪
 from open_webui.extensions.images.limits import (
     acquire_image_generation_slot,
     enforce_image_generation_rate,
@@ -66,6 +67,7 @@ from open_webui.utils.images.comfyui import (
 )
 from open_webui.utils.images.fal import (
     FAL_DEFAULT_IMAGE_MODEL,
+    # EXT: 二开新增 —— 自定义尺寸校验
     FalImageSizeError,
     build_fal_image_payload,
     extract_fal_image_urls,
@@ -74,8 +76,10 @@ from open_webui.utils.images.fal import (
     get_fal_image_models,
     get_mock_fal_image_result,
     run_fal_queue,
+    # EXT: 二开新增 —— 自定义尺寸校验入口
     validate_fal_image_size,
 )
+# EXT: 二开新增 —— 暴露高级参数字段给管理端模型列表
 from open_webui.utils.images.fal_models import public_fal_image_advanced_fields, public_fal_image_models
 from open_webui.utils.session_pool import get_session
 from PIL import Image, ImageOps
@@ -434,6 +438,7 @@ async def get_models(
                 public_fal_image_models(default_model)
                 if user.role != 'admin'
                 else [
+                    # EXT: 二开新增 —— 管理端模型列表附带高级参数字段并应用模型运营状态过滤
                     {
                         **model,
                         'is_default': model['id'] == default_model,
@@ -443,6 +448,7 @@ async def get_models(
                 ]
             )
             prices = await get_enabled_prices(db, 'image')
+            # EXT: 二开新增 —— 应用模型运营状态（启用/禁用/排序）到返回列表
             from open_webui.extensions.model_ops.service import apply_model_operations
 
             return await apply_model_operations(
@@ -527,6 +533,7 @@ class CreateImageForm(BaseModel):
     output_format: str | None = None
     system_prompt: str | None = None
     seed: int | None = None
+    # EXT: 二开新增 —— FAL 高级生成参数
     guidance_scale: float | None = None
     medium: str | None = None
     strength: float | None = None
@@ -653,6 +660,7 @@ async def generate_images(request: Request, form_data: CreateImageForm, user=Dep
     # builtin tools) gate themselves and call image_generations() with their own
     # server-supplied scope.
     try:
+        # EXT: 二开新增 —— 直连端点也走并发槽位控制，与异步任务路径一致
         enforce_image_generation_rate(user.id)
         await acquire_image_generation_slot(user.id)
         try:
@@ -677,6 +685,7 @@ async def generate_images(request: Request, form_data: CreateImageForm, user=Dep
     return result
 
 
+# EXT: 二开修改 —— 新增 metadata 参数，用于传递 generation_task_id 到 creation 捕获层
 def finalize_image_creations_factory(request: Request, form_data, metadata, user):
     """Build the terminal finalizer closures handed to bill_image_call.
 
@@ -691,6 +700,7 @@ def finalize_image_creations_factory(request: Request, form_data, metadata, user
             prepared=prepared,
             user=user,
             usage_id=usage_id,
+            # EXT: 二开新增 —— 将异步任务 ID 透传到 creation 捕获上下文
             generation_task_id=(
                 metadata.get('generation_task_id')
                 if isinstance(metadata, dict) and isinstance(metadata.get('generation_task_id'), str)
@@ -713,6 +723,7 @@ def invoke_edit_creations_factory(request: Request, metadata, user):
 
     async def invoke_edit_creations(prepared, provider_form):
         image_config = await get_image_config()
+        # EXT: 二开新增 —— 通过 resilience 层包装编辑操作，支持超时重试
         internal_result = await run_image_operation(
             image_config.IMAGE_EDIT_ENGINE,
             lambda: _invoke_image_edits(request, provider_form, metadata, user),
@@ -738,6 +749,7 @@ async def image_generations(
     user=None,
 ):
     image_config = await get_image_config()
+    # EXT: 二开新增 —— FAL 引擎前置校验：自定义尺寸约束 + 模型运营状态检查
     if image_config.IMAGE_GENERATION_ENGINE == 'fal':
         from open_webui.extensions.model_ops.db import model_ops_session
         from open_webui.extensions.model_ops.service import ensure_model_enabled
@@ -767,6 +779,7 @@ async def image_generations(
         raw_user=user,
         action='text-to-image',
         authorization_scope=authorization_scope,
+        # EXT: 二开修改 —— invoke 通过 resilience 层包装支持超时重试；finalize 透传 metadata
         invoke=lambda _prepared, provider_form: run_image_operation(
             image_config.IMAGE_GENERATION_ENGINE,
             lambda: _invoke_image_generations(request, provider_form, metadata, user),
@@ -949,6 +962,7 @@ async def _invoke_image_generations(
                 log.info(f'Using mocked fal.ai image result for {fal_model}')
                 res = mock_res
             else:
+                # EXT: 二开新增 —— 启动 provider 调用追踪观察者
                 observer = await try_start_provider_invocation(
                     task_id=metadata.get('generation_task_id'),
                     user_id=str(user.id),
@@ -1113,6 +1127,7 @@ class EditImageForm(BaseModel):
     model: str | None = None
     size: str | None = None
     n: int | None = None
+    # EXT: 二开新增 —— 编辑模式步数参数
     steps: int | None = None
     negative_prompt: str | None = None
     background: str | None = None
@@ -1121,6 +1136,7 @@ class EditImageForm(BaseModel):
     output_format: str | None = None
     system_prompt: str | None = None
     seed: int | None = None
+    # EXT: 二开新增 —— FAL 高级生成参数
     guidance_scale: float | None = None
     medium: str | None = None
     strength: float | None = None
@@ -1168,6 +1184,7 @@ async def image_edits(
     user=None,
 ):
     image_config = await get_image_config()
+    # EXT: 二开新增 —— FAL 引擎前置校验：自定义尺寸约束 + 模型运营状态检查
     if image_config.IMAGE_EDIT_ENGINE == 'fal':
         from open_webui.extensions.model_ops.db import model_ops_session
         from open_webui.extensions.model_ops.service import ensure_model_enabled
@@ -1198,6 +1215,7 @@ async def image_edits(
         action='image-to-image',
         authorization_scope=authorization_scope,
         invoke=invoke_edit_creations_factory(request, metadata, user),
+        # EXT: 二开修改 —— finalize 透传 metadata（含 generation_task_id）
         finalize=finalize_image_creations_factory(request, form_data, metadata, user),
     )
 
@@ -1441,6 +1459,7 @@ async def _invoke_image_edits(
                 log.info(f'Using mocked fal.ai image result for {edit_model}')
                 res = mock_res
             else:
+                # EXT: 二开新增 —— 启动 provider 调用追踪观察者
                 observer = await try_start_provider_invocation(
                     task_id=metadata.get('generation_task_id'),
                     user_id=str(user.id),

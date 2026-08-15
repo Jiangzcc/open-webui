@@ -188,9 +188,11 @@ def test_guard_helpers_reject_a_fixture_with_removed_or_bypassed_bridges() -> No
         raise AssertionError('the lifecycle guard did not fail after its bridge was removed')
 
     image_source = _source('backend/open_webui/routers/images.py')
+    # 源码已重构：invoke lambda 内部通过 run_image_operation 包装 _invoke_image_generations。
+    # 替换内层 lambda 体为 provider_form，使 _invoke_image_generations 不再被调用。
     bypassed_wrapper = image_source.replace(
-        'invoke=lambda _prepared, provider_form: _invoke_image_generations',
-        'invoke=lambda _prepared, provider_form: provider_form',
+        'lambda: _invoke_image_generations(request, provider_form, metadata, user)',
+        'provider_form',
         1,
     )
     try:

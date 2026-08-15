@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 import pytest
@@ -205,9 +206,43 @@ async def test_service_metrics_do_not_change_usage_status_transitions(monkeypatc
     async def succeeded_in_session(_session, _usage_id, _urls):
         return 1
 
+    # mark_usage_succeeded 和 mark_usage_failed 都通过 credit_session() 打开数据库
+    # 会话。monkeypatch 为内存假会话，使测试不依赖真实数据库。
+    class _FakeUsage:
+        """模拟一条处于 invoking 状态的 CreditUsage 行。"""
+
+        def __init__(self) -> None:
+            self.status = 'invoking'
+            self.exempt = False
+            self.charged_credits = 0
+            self.ledger_id = None
+
+    class _FakeSession:
+        """模拟 AsyncSession：支持 begin()、scalar()、flush()。"""
+
+        def begin(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def scalar(self, _statement):
+            return _FakeUsage()
+
+        async def flush(self):
+            pass
+
+    @asynccontextmanager
+    async def fake_credit_session():
+        yield _FakeSession()
+
     sink = RecordingMetrics()
     monkeypatch.setattr(service, '_update_usage_status', update)
     monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeeded_in_session)
+    monkeypatch.setattr(service, 'credit_session', fake_credit_session)
     monkeypatch.setattr(service, 'credit_metrics', sink)
 
     assert await service.mark_usage_invoking('usage-1') == 1

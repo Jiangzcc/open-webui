@@ -11,50 +11,33 @@ describe('CreationsLibrary source contract', () => {
 	test('lazy loads original images and exposes details on touch', () => {
 		expect(source).toContain('loading="lazy"');
 		expect(source).toContain('decoding="async"');
-		expect(source).toContain("$i18n.t('Details')");
+		// 卡片点击通过 handleCardClick → openDetails 打开详情弹窗，不再有独立的 "Details" 按钮。
+		expect(source).toContain('openDetails');
 		expect(source).toContain('<Loader');
-		// The lone hover-revealed overlay now belongs to the prompt preview
-		// (asserted in its own test); legacy owner-attribution chrome stays off.
+		// 独立 owner 标注已从卡片移除。
 		expect(source).not.toContain("$i18n.t('Deleted user')");
 	});
 
-	test('floats a hover-revealed, two-line prompt preview over each card', () => {
-		// The card draws its prompt from the list-DTO `prompt_preview` field and
-		// parks it in a gradient overlay anchored to the image's foot. Desktop
-		// hides it until group-hover; touch clients get a steady fallback (see
-		// the scoped style block) since they cannot hover.
-		expect(source).toContain('{item.prompt_preview}');
-		expect(source).toContain('line-clamp-2');
-		expect(source).toContain('group-hover:opacity-100');
-		expect(source).toContain('from-black/70');
-		expect(source).toContain('pointer-events-none');
-		expect(source).toContain('@media (hover: none)');
-		expect(source).toContain('.prompt-overlay');
+	test('keeps cards artwork-focused without a prompt overlay', () => {
+		// 卡片重新设计后不再显示 prompt 预览浮层；prompt 仅在详情弹窗中展示。
+		expect(source).not.toContain('{item.prompt_preview}');
+		expect(source).not.toContain('line-clamp-2');
+		expect(source).not.toContain('group-hover:opacity-100');
+		expect(source).not.toContain('from-black/70');
+		expect(source).not.toContain('.prompt-overlay');
 	});
 
-	test('splits the card into a preview tap and a floating details button', () => {
-		// Clicking the photograph opens the lightweight big-image preview; a
-		// separate hover-revealed chip (bottom-right) is the only road into the
-		// full details modal. The two intents must not collapse back into one
-		// giant button wrapping the whole card.
-		expect(source).toContain('openPreview');
+	test('uses a single card click to open details or toggle selection', () => {
+		// 卡片不再拆分为预览点击 + 详情按钮两个入口；
+		// 单一 handleCardClick 根据选择模式决定打开详情或切换选中。
+		expect(source).toContain('handleCardClick');
 		expect(source).toContain('openDetails');
-		expect(source).toContain("$i18n.t('Preview')");
-		expect(source).toContain("$i18n.t('Details')");
-		expect(source).toContain('details-btn');
-		expect(source).toContain('.details-btn');
-		expect(source).toContain('focus-visible:opacity-100');
-		expect(source).toContain('<ImagePreview');
-		// The photo button feeds the preview, not the details modal.
-		expect(source).toContain('on:click={() => openPreview(item)}');
-	});
-
-	test('labels the details entrance with a visible "Details" caption, not a mute icon', () => {
-		// An info glyph tucked in a corner is ambiguous; spelling out "详情 /
-		// Details" makes the affordance self-evident. Pin the visible text node
-		// and retire the icon-only design so nobody swaps it back quietly.
-		expect(source).toMatch(/\{\$i18n\.t\('Details'\)\}\s*\n?\s*(<\/button>|<\/span>)/);
-		expect(source).not.toContain('<Info ');
+		expect(source).toContain('toggleSelected');
+		expect(source).toContain('selectionMode');
+		// 不再有独立的预览/详情按钮。
+		expect(source).not.toContain("$i18n.t('Preview')");
+		expect(source).not.toContain("$i18n.t('Details')");
+		expect(source).not.toContain('details-btn');
 	});
 
 	test('receives scope from its parent instead of rendering a scope switcher', () => {

@@ -110,6 +110,9 @@ const zh = {
 			compensationSaved: '补偿已入账',
 			compensationError: '无法完成补偿',
 			compensationNote: '补偿说明（可选）',
+			compensationConfirmTitle: '确认积分补偿',
+			compensationConfirmMessage:
+				'此操作将向用户 {{user}} 补偿 {{credits}} 积分。补偿仅可执行一次，请确认无误。',
 			accountsTitle: '积分账户',
 			accountsDescription: '搜索当前用户并调整其可用积分余额。',
 			accountsSearch: '按姓名或邮箱搜索',
@@ -311,6 +314,9 @@ const en = {
 			compensationSaved: 'Compensation posted',
 			compensationError: 'Unable to compensate this charge',
 			compensationNote: 'Compensation note (optional)',
+			compensationConfirmTitle: 'Confirm credit compensation',
+			compensationConfirmMessage:
+				'This will compensate {{credits}} credits to user {{user}}. Compensation can only be performed once.',
 			accountsTitle: 'Credit accounts',
 			accountsDescription: 'Search current users and adjust their available credit balance.',
 			accountsSearch: 'Search by name or email',

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from open_webui.extensions.creations import generation_tasks
 from open_webui.extensions.creations.generation_tasks import (
-    cancel_generation_task,
     create_generation_task,
     delete_generation_task,
     get_generation_task,
@@ -138,48 +136,42 @@ async def test_list_generation_tasks_rejects_malformed_cursor(creation_sessions)
 
 
 @pytest.mark.asyncio
-async def test_cancel_generation_task_is_owner_scoped_and_terminal(creation_sessions, monkeypatch) -> None:
-    async with creation_sessions() as session:
-        task, _ = await create_generation_task(
-            session,
-            user_id='user-cancel',
-            idempotency_key='cancel-1',
-            kind='text-to-image',
-            payload={'prompt': 'long running'},
-        )
+async def test_schedule_generation_task_retries_cleanup_before_worker_finishes(monkeypatch) -> None:
+    attempts = 0
 
-    @asynccontextmanager
-    async def test_creation_session():
-        async with creation_sessions() as session:
-            yield session
+    async def generated(*_args, **_kwargs) -> None:
+        return None
 
-    started = asyncio.Event()
+    async def release() -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError('transient cleanup failure')
 
-    async def wait_until_cancelled(*_args):
-        started.set()
-        await asyncio.Event().wait()
-
-    monkeypatch.setattr(generation_tasks, 'creation_session', test_creation_session)
-    monkeypatch.setattr(generation_tasks, 'run_generation_task', wait_until_cancelled)
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(creation_generation_tasks={})))
+    monkeypatch.setattr(generation_tasks, 'run_generation_task', generated)
+    app = SimpleNamespace(state=SimpleNamespace(creation_generation_tasks={}))
     schedule_generation_task(
-        request,
-        task_id=task.id,
-        user=SimpleNamespace(id='user-cancel'),
-        form=SimpleNamespace(),
+        SimpleNamespace(app=app),
+        task_id='task-cleanup',
+        user=object(),
+        form=object(),
         kind='text-to-image',
+        on_finished=release,
     )
-    await started.wait()
+    worker = app.state.creation_generation_tasks['task-cleanup']
 
-    async with creation_sessions() as session:
-        assert await cancel_generation_task(request, session, 'other-user', task.id) is None
-    async with creation_sessions() as session:
-        cancelled = await cancel_generation_task(request, session, 'user-cancel', task.id)
+    await worker
+    await asyncio.sleep(0)
 
-    assert cancelled is not None
-    assert cancelled.status == 'failed'
-    assert cancelled.error_code == 'generation_cancelled'
-    assert task.id not in request.app.state.creation_generation_tasks
+    assert attempts == 2
+    assert app.state.creation_generation_tasks == {}
+    assert not hasattr(generation_tasks, '_pending_callbacks')
+
+
+def test_image_generation_router_has_no_user_cancel_endpoint() -> None:
+    from open_webui.extensions.creations.router import router
+
+    assert not any(route.path.endswith('/cancel') for route in router.routes)
 
 
 @pytest.mark.asyncio

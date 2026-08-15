@@ -11,7 +11,9 @@ export const groupByVendor = (
 	return groups;
 };
 
-export const vendorLogoUrl = (provider: string): string => `/assets/vendors/${provider}.webp`;
+// 对 provider 做编码，避免特殊字符（如 `/`、`..`）构成路径穿越或非法 URL。
+export const vendorLogoUrl = (provider: string): string =>
+	`/assets/vendors/${encodeURIComponent(provider)}.webp`;
 
 export const isProxyModel = (model: ImageGenerationModel): boolean => model.hosting === 'proxy';
 

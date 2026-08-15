@@ -12,8 +12,8 @@ from open_webui.extensions.creations.events import (
 @pytest.mark.asyncio
 async def test_event_bus_broadcasts_to_all_subscribers() -> None:
     bus = GenerationEventBus()
-    q1 = await bus.subscribe()
-    q2 = await bus.subscribe()
+    q1 = await bus.subscribe('u1')
+    q2 = await bus.subscribe('u1')
 
     await bus.publish({'kind': 'image', 'task_id': 't1', 'status': 'succeeded', 'user_id': 'u1'})
 
@@ -25,8 +25,8 @@ async def test_event_bus_broadcasts_to_all_subscribers() -> None:
 @pytest.mark.asyncio
 async def test_event_bus_unsubscribe_stops_delivery() -> None:
     bus = GenerationEventBus()
-    q = await bus.subscribe()
-    await bus.unsubscribe(q)
+    q = await bus.subscribe('u1')
+    await bus.unsubscribe('u1', q)
 
     await bus.publish({'kind': 'image', 'task_id': 't1', 'status': 'running', 'user_id': 'u1'})
     with pytest.raises(asyncio.TimeoutError):
@@ -34,15 +34,29 @@ async def test_event_bus_unsubscribe_stops_delivery() -> None:
 
 
 @pytest.mark.asyncio
+async def test_event_bus_only_delivers_to_matching_user() -> None:
+    # user_id 过滤：user A 的事件不应推送给 user B 的队列。
+    bus = GenerationEventBus()
+    q_a = await bus.subscribe('user-a')
+    q_b = await bus.subscribe('user-b')
+
+    await bus.publish({'kind': 'image', 'task_id': 't1', 'status': 'running', 'user_id': 'user-a'})
+
+    e_a = await asyncio.wait_for(q_a.get(), timeout=1.0)
+    assert e_a['task_id'] == 't1'
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(q_b.get(), timeout=0.2)
+
+
+@pytest.mark.asyncio
 async def test_event_bus_drops_on_full_queue_without_blocking_producer() -> None:
     # 容量 1 的总线：填满后再 publish 应被丢弃，不抛、不阻塞。
     bus = GenerationEventBus()
-    bus._subscribers.clear()  # reset singleton-free state
 
     # 直接构造一个 maxsize=1 的队列手动塞入，模拟满队列。
     small: asyncio.Queue = asyncio.Queue(maxsize=1)
     await small.put({'filler': True})
-    bus._subscribers.add(small)
+    bus._subscribers.setdefault('u2', set()).add(small)
 
     # 这条事件应被丢弃（队列满），不阻塞、不抛。
     await bus.publish({'kind': 'image', 'task_id': 't2', 'status': 'failed', 'user_id': 'u2'})
@@ -55,7 +69,8 @@ def test_format_sse_event_is_single_line_data_frame() -> None:
     assert frame.startswith('data: ')
     assert frame.endswith('\n\n')
     # 单行，无裸换行在 data 内。
-    assert frame.count('\n') == 1 or frame.count('\n') == 2  # 结尾的 \n\n
+    # SSE 帧格式为 "data: ...\n\n"，始终恰好 2 个换行。
+    assert frame.count('\n') == 2
 
 
 @pytest.mark.asyncio

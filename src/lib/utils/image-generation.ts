@@ -986,7 +986,24 @@ export const validateImagePrompt = (prompt: string) => {
 	return { ok: true as const, prompt: trimmedPrompt };
 };
 
-export const canUseImagesPage = (config: any, user: any) => {
+// canUseImagesPage 所需的最小配置/用户类型，替代原先的 any。
+// 仅声明函数实际访问的字段，保持与上游 config / user 对象的结构兼容。
+type ImagesPageConfig = {
+	features?: {
+		enable_image_generation?: boolean;
+	};
+};
+
+type ImagesPageUser = {
+	role?: string;
+	permissions?: {
+		features?: {
+			image_generation?: boolean;
+		};
+	};
+};
+
+export const canUseImagesPage = (config: ImagesPageConfig, user: ImagesPageUser) => {
 	return Boolean(
 		config?.features?.enable_image_generation &&
 		(user?.role === 'admin' || user?.permissions?.features?.image_generation)

@@ -109,6 +109,7 @@ class CreditLedger(CreditBase):
             "'accounting_correction', 'violation_deduction', 'other')",
             name='ck_ext_credit_ledger_reason_code',
         ),
+        Index('ix_ext_credit_ledger_account', 'account_id'),
         Index('ix_ext_credit_ledger_user_created', 'user_id', 'created_at'),
         Index('ix_ext_credit_ledger_created', 'created_at'),
         Index('ix_ext_credit_ledger_usage', 'usage_id'),

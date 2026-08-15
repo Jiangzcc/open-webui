@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .schemas import ModelOperationItem, ModelOperationList, ModelOperationUpdate
 from .service import list_model_operations, update_model_operation
 
-router = APIRouter(prefix='/api/v1/image-model-ops', tags=['image-model-ops'])
+router = APIRouter(prefix='/api/v1/media-model-ops', tags=['media-model-ops'])
 
 
 @router.get('/admin/models', response_model=ModelOperationList)

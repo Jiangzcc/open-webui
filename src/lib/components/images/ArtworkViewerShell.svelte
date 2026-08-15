@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
+	import type { Writable } from 'svelte/store';
+	import type { i18n as I18n } from 'i18next';
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -13,7 +15,7 @@
 	export let mediaLabel = '';
 	export let detailsClassName = 'lg:w-80';
 
-	const i18n: any = getContext('i18n');
+	const i18n = getContext<Writable<I18n>>('i18n');
 </script>
 
 <Modal

@@ -31,10 +31,6 @@ _PRIVATE_PAYLOAD_KEYS = frozenset({'prompt', 'image', 'mask', 'mask_url', 'mask_
 _TERMINAL_STATUSES = frozenset({'succeeded', 'failed'})
 
 
-class GenerationTaskNotCancellable(Exception):
-    """The caller owns the task, but no live worker can be cancelled."""
-
-
 def _now() -> int:
     return int(time.time())
 
@@ -319,7 +315,7 @@ async def run_generation_task(task_id: str, request: Request, user: object, form
             )
         await _set_task_state(task_id, status='succeeded', result=_public_result(result))
         await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
-    except asyncio.CancelledError as error:
+    except asyncio.CancelledError:
         # The billed call already returned a terminal result. A cancellation
         # arriving in the tiny window before the task-row update is too late;
         # preserve the completed result rather than reporting a false refund.
@@ -332,10 +328,8 @@ async def run_generation_task(task_id: str, request: Request, user: object, form
                 await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
             except Exception:
                 log.exception('Could not publish succeeded state for interrupted image task %s', task_id)
-            return
-        error_code = (
-            'generation_cancelled' if error.args and error.args[0] == 'generation_cancelled' else 'server_shutdown'
-        )
+            raise
+        error_code = 'server_shutdown'
         try:
             await _set_task_state(task_id, status='failed', error_code=error_code)
         except Exception:
@@ -352,6 +346,64 @@ async def run_generation_task(task_id: str, request: Request, user: object, form
         await _publish_image_task_event(request.app, task_id, user_id, 'failed', error_code=code)
 
 
+_FINISH_CALLBACK_MAX_ATTEMPTS = 3
+
+
+async def _safe_on_finished(on_finished: Callable[[], Awaitable[None]]) -> None:
+    """Retry transient cleanup failures and surface the final failure."""
+    for attempt in range(_FINISH_CALLBACK_MAX_ATTEMPTS):
+        try:
+            await on_finished()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if attempt + 1 >= _FINISH_CALLBACK_MAX_ATTEMPTS:
+                log.exception('on_finished callback failed after retries')
+                raise
+            log.warning(
+                'on_finished callback failed; retrying (%s/%s)',
+                attempt + 1,
+                _FINISH_CALLBACK_MAX_ATTEMPTS,
+                exc_info=True,
+            )
+            await asyncio.sleep(0)
+
+
+async def _run_generation_task_and_finish(
+    task_id: str,
+    request: Request,
+    user: object,
+    form: object,
+    kind: str,
+    on_finished: Callable[[], Awaitable[None]] | None,
+) -> None:
+    original_exc: BaseException | None = None
+    try:
+        await run_generation_task(task_id, request, user, form, kind)
+    except BaseException as error:
+        original_exc = error
+        raise
+    finally:
+        if on_finished is not None:
+            try:
+                await _safe_on_finished(on_finished)
+            except asyncio.CancelledError:
+                if original_exc is None:
+                    raise
+                log.warning(
+                    'on_finished cancelled for image task %s; original exception preserved',
+                    task_id,
+                )
+            except Exception:
+                if original_exc is None:
+                    raise
+                log.exception(
+                    'on_finished failed for image task %s; original exception preserved',
+                    task_id,
+                )
+
+
 def schedule_generation_task(
     request: Request,
     *,
@@ -362,49 +414,18 @@ def schedule_generation_task(
     on_finished: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     running: dict[str, asyncio.Task] = request.app.state.creation_generation_tasks
-    task = asyncio.create_task(run_generation_task(task_id, request, user, form, kind))
+    task = asyncio.create_task(_run_generation_task_and_finish(task_id, request, user, form, kind, on_finished))
     running[task_id] = task
 
     def discard_finished(finished: asyncio.Task) -> None:
         if running.get(task_id) is finished:
             running.pop(task_id, None)
-        if on_finished is not None:
-            asyncio.create_task(on_finished())
+        if not finished.cancelled():
+            # Retrieve the exception so a final cleanup failure is logged by
+            # asyncio only once while remaining observable to explicit awaiters.
+            finished.exception()
 
     task.add_done_callback(discard_finished)
-
-
-async def cancel_generation_task(
-    request: Request,
-    session: AsyncSession,
-    user_id: str,
-    task_id: str,
-) -> ImageGenerationTaskResponse | None:
-    task = await get_generation_task(session, user_id, task_id)
-    if task is None or task.status in _TERMINAL_STATUSES:
-        return task
-
-    running: dict[str, asyncio.Task] = getattr(
-        request.app.state,
-        'creation_generation_tasks',
-        {},
-    )
-    worker = running.get(task_id)
-    if worker is None or worker.done():
-        raise GenerationTaskNotCancellable()
-
-    worker.cancel('generation_cancelled')
-    await asyncio.gather(worker, return_exceptions=True)
-
-    async with creation_session() as fresh_session:
-        cancelled = await get_generation_task(fresh_session, user_id, task_id)
-    if cancelled is None:
-        return None
-    if cancelled.status not in _TERMINAL_STATUSES:
-        await _set_task_state(task_id, status='failed', error_code='generation_cancelled')
-        async with creation_session() as fresh_session:
-            cancelled = await get_generation_task(fresh_session, user_id, task_id)
-    return cancelled
 
 
 async def fail_incomplete_generation_tasks() -> int:
@@ -429,8 +450,6 @@ async def shutdown_generation_tasks(app) -> None:
 
 
 __all__ = [
-    'GenerationTaskNotCancellable',
-    'cancel_generation_task',
     'create_generation_task',
     'delete_generation_task',
     'fail_incomplete_generation_tasks',

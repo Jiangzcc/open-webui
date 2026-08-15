@@ -92,4 +92,16 @@ describe('video creation page', () => {
 		expect(source).toContain("selection = 'all'");
 		expect(source).toContain('mediaKind="video"');
 	});
+
+	test('maps CreditError codes to specific i18n messages instead of generic failure', () => {
+		// 修复 5：后端 CreditError 返回 {code, message, context}，前端需读取 code 并映射到 i18n。
+		// 验证 error code → i18n key 映射表存在且覆盖关键错误码。
+		expect(source).toContain('videoCreditErrorI18nKey');
+		expect(source).toContain('insufficient_credits: \'Insufficient credits\'');
+		expect(source).toContain('price_not_configured: \'Video price is not configured\'');
+		expect(source).toContain('rate_limited');
+		// 验证 generate() catch 块使用了映射而非通用消息
+		expect(source).toContain('videoCreditErrorI18nKey[code]');
+		expect(source).toContain("'Video generation failed'");
+	});
 });

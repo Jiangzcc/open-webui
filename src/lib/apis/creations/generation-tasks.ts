@@ -67,13 +67,6 @@ export const getImageGenerationTask = (token: string, taskId: string) =>
 		token
 	);
 
-export const cancelImageGenerationTask = (token: string, taskId: string) =>
-	requestJson<ImageGenerationTask>(
-		`/creations/generation-tasks/${encodeURIComponent(taskId)}/cancel`,
-		token,
-		{ method: 'POST' }
-	);
-
 export const deleteImageGenerationTask = (token: string, taskId: string) =>
 	requestNoContent(`/creations/generation-tasks/${encodeURIComponent(taskId)}`, token, {
 		method: 'DELETE'
@@ -90,11 +83,18 @@ export type GenerationEvent = {
 export const GENERATION_EVENT_RECONNECT_INITIAL_MS = 3_000;
 export const GENERATION_EVENT_RECONNECT_MAX_MS = 30_000;
 
-export const nextGenerationEventReconnectDelay = (current: number): number =>
-	Math.min(
+// 指数退避 + 随机抖动，避免大量客户端在服务端恢复后同时重连（惊群效应）。
+// 达到最大退避时改为向下抖动，否则 Math.min 会把所有客户端固定在同一个 30s 时刻。
+export const nextGenerationEventReconnectDelay = (current: number): number => {
+	const base = Math.min(
 		GENERATION_EVENT_RECONNECT_MAX_MS,
 		Math.max(GENERATION_EVENT_RECONNECT_INITIAL_MS, current * 2)
 	);
+	const jitter = Math.random() * 1000;
+	return base === GENERATION_EVENT_RECONNECT_MAX_MS
+		? Math.max(GENERATION_EVENT_RECONNECT_INITIAL_MS, base - jitter)
+		: Math.min(GENERATION_EVENT_RECONNECT_MAX_MS, base + jitter);
+};
 
 export const subscribeToGenerationEvents = (token: string, signal?: AbortSignal) =>
 	fetch(`${WEBUI_API_BASE_URL}/creations/generation-events`, {

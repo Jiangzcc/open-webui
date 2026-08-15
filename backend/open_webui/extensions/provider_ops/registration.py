@@ -113,12 +113,16 @@ async def _run_periodic_fal_sync() -> None:
                     result.id,
                     result.error_code,
                 )
+                # 同步失败后释放租约，允许其他 worker 在下个周期前重试
+                await _release_periodic_sync_lease()
             else:
                 log.info('Periodic fal platform sync run %s succeeded', result.id)
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception('Periodic fal platform sync pass failed')
+            # 异常时同样释放租约，避免 24h 内无人接管
+            await _release_periodic_sync_lease()
         await asyncio.sleep(_PROVIDER_SYNC_INTERVAL_SECONDS)
 
 

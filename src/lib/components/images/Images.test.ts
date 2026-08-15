@@ -5,6 +5,12 @@ import { describe, expect, test } from 'vitest';
 const source = readFileSync(fileURLToPath(new URL('./Images.svelte', import.meta.url)), 'utf-8');
 
 describe('images page controls', () => {
+	test('does not expose user cancellation for image generation tasks', () => {
+		expect(source).not.toContain('cancelImageGenerationTask');
+		expect(source).not.toContain('cancelGenerationBatch');
+		expect(source).not.toContain("$i18n.t('Cancel generation')");
+	});
+
 	test('uses concise option headings and omits generation mode helper text', () => {
 		expect(source).toContain("$i18n.t('Ratio')");
 		expect(source).toContain("$i18n.t('Resolution')");

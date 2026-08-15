@@ -169,7 +169,7 @@ async def public_video_catalog_for_user(session: AsyncSession) -> dict[str, obje
         )
     ).all()
     price_by_model = {
-        (price.resource_id, price.action): price.base_price for price in prices if isinstance(price.base_price, str)
+        (price.resource_id, price.action): price.base_price for price in prices
     }
     catalog = load_video_catalog()
     enriched: list[dict[str, object]] = []

@@ -13,9 +13,18 @@ afterEach(() => {
 
 describe('generation task events', () => {
 	test('backs off reconnects and caps the delay', () => {
-		expect(nextGenerationEventReconnectDelay(GENERATION_EVENT_RECONNECT_INITIAL_MS)).toBe(6_000);
-		expect(nextGenerationEventReconnectDelay(24_000)).toBe(30_000);
-		expect(nextGenerationEventReconnectDelay(30_000)).toBe(30_000);
+		// 指数退避后叠加 [0, 1000) ms 随机抖动，避免惊群效应。
+		// 基础退避值 = max(3_000, current * 2)，抖动后仍受 30_000 上限约束。
+		const first = nextGenerationEventReconnectDelay(GENERATION_EVENT_RECONNECT_INITIAL_MS);
+		expect(first).toBeGreaterThanOrEqual(6_000);
+		expect(first).toBeLessThan(7_000);
+		// 达到上限后仍保留向下抖动，避免所有客户端固定在同一个 30s 时刻重连。
+		const capped = nextGenerationEventReconnectDelay(24_000);
+		expect(capped).toBeGreaterThan(29_000);
+		expect(capped).toBeLessThanOrEqual(30_000);
+		const repeated = nextGenerationEventReconnectDelay(30_000);
+		expect(repeated).toBeGreaterThan(29_000);
+		expect(repeated).toBeLessThanOrEqual(30_000);
 	});
 
 	test('parses data frames and ignores heartbeat frames', async () => {

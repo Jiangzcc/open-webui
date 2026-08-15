@@ -27,12 +27,16 @@ def test_provider_ops_migration_creates_invocation_table(tmp_path) -> None:
                 'ix_ext_provider_invocation_model_created',
                 'ix_ext_provider_invocation_status_updated',
             } <= {item['name'] for item in inspector.get_indexes('ext_provider_invocation')}
+            sync_run_columns = {item['name'] for item in inspector.get_columns('ext_provider_sync_run')}
+            assert 'heartbeat_at' in sync_run_columns
+            sync_run_indexes = {item['name']: item for item in inspector.get_indexes('ext_provider_sync_run')}
+            assert sync_run_indexes['ux_ext_provider_sync_run_running']['unique'] == 1
             assert (
                 MigrationContext.configure(
                     connection,
                     opts={'version_table': 'ext_provider_ops_schema_version'},
                 ).get_current_revision()
-                == '0003_add_authoritative_requests_and_billing'
+                == '0004_add_sync_run_heartbeat_and_guard'
             )
     finally:
         engine.dispose()
@@ -58,7 +62,7 @@ def test_existing_platform_sync_schema_upgrades_to_authoritative_records(tmp_pat
                     connection,
                     opts={'version_table': 'ext_provider_ops_schema_version'},
                 ).get_current_revision()
-                == '0003_add_authoritative_requests_and_billing'
+                == '0004_add_sync_run_heartbeat_and_guard'
             )
     finally:
         engine.dispose()
