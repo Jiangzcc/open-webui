@@ -841,30 +841,7 @@
 		? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 		: ''}"
 >
-	{#if $mobile}
-		<nav class="relative z-40 shrink-0 px-3 pb-2 pt-2 backdrop-blur-xl drag-region select-none">
-			<div class="flex flex-none items-center">
-				<Tooltip
-					content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
-					interactive={true}
-				>
-					<button
-						id="sidebar-toggle-button"
-						type="button"
-						class="flex min-h-10 min-w-10 cursor-pointer items-center justify-center rounded-lg transition hover:bg-gray-100 dark:hover:bg-gray-850"
-						on:click={() => showSidebar.set(!$showSidebar)}
-						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
-					>
-						<SidebarIcon />
-					</button>
-				</Tooltip>
-			</div>
-		</nav>
-	{/if}
-
-	<div
-		class="pointer-events-none absolute inset-x-0 top-14 z-30 flex justify-center px-3 sm:top-0 sm:pt-2"
-	>
+	{#snippet videoTabs()}
 		<div
 			class="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-gray-700/80 dark:bg-gray-900/80 dark:shadow-black/30"
 			role="tablist"
@@ -903,11 +880,50 @@
 					on:click={() => (selection = 'all')}>{$i18n.t('All creations')}</button
 				>{/if}
 		</div>
-	</div>
+	{/snippet}
+
+	{#if $mobile}
+		<!-- 移动端：sidebar 图标与创作/我的作品 tab 同处顶部一行，顶到页面最上面。
+		     tab 用绝对定位相对整行居中，不被左侧 sidebar 按钮挤偏右，垂直也随行高居中。 -->
+		<nav
+			class="relative z-40 flex h-14 shrink-0 items-center px-3 backdrop-blur-xl drag-region select-none"
+		>
+			<div class="relative z-10 flex flex-none items-center">
+				<Tooltip
+					content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
+					interactive={true}
+				>
+					<button
+						id="sidebar-toggle-button"
+						type="button"
+						class="flex min-h-10 min-w-10 cursor-pointer items-center justify-center rounded-lg transition hover:bg-gray-100 dark:hover:bg-gray-850"
+						on:click={() => showSidebar.set(!$showSidebar)}
+						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
+					>
+						<SidebarIcon />
+					</button>
+				</Tooltip>
+			</div>
+			<div
+				class="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center justify-center"
+			>
+				{@render videoTabs()}
+			</div>
+		</nav>
+	{:else}
+		<!-- 桌面端：nav 不渲染，tab pill 浮动在内容区顶部。 -->
+		<div class="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-3 pt-2">
+			{@render videoTabs()}
+		</div>
+	{/if}
 
 	<!-- 两面板同时渲染，用 hidden 控制可见性，避免切换时 DOM 状态丢失（对齐 Images.svelte tabpanel 模式） -->
+	<!-- 面板自身必须是 flex-1 + min-h-0 的 flex 列，否则内部 <main class="overflow-y-auto">
+	     的父级无有界高度，滚动容器失效，sticky 输入框会被推到内容最底部（需滚到页底才可见）。
+	     对齐 Images.svelte 的 #images-generate-panel 高度链。 -->
 	<div
 		id="videos-generate-panel"
+		class="flex min-h-0 flex-1 flex-col"
 		role="tabpanel"
 		aria-labelledby="videos-tab-generate"
 		hidden={selection !== 'generate'}
@@ -918,7 +934,7 @@
 			</div>
 		{:else}
 			<div class="flex min-h-0 flex-1 flex-col">
-				<main class="flex-1 min-h-0 overflow-y-auto px-4 pt-20 sm:px-6 lg:px-8 sm:pt-20">
+				<main class="flex-1 min-h-0 overflow-y-auto px-4 pt-4 sm:px-6 lg:px-8 sm:pt-20">
 					<div class="mx-auto w-full max-w-5xl min-h-full flex flex-col sm:px-2">
 						{#if history.length === 0}
 							<section class="flex min-h-[calc(100dvh-22rem)] items-center justify-center py-12">
@@ -1194,8 +1210,7 @@
 											<svelte:fragment slot="extras" let:model>
 												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
 													{#if (model.raw as VideoModel).base_price}
-														{$i18n.t('Estimated')}
-														{(model.raw as VideoModel).base_price}{$i18n.t('credits.common.unit')}
+														{(model.raw as VideoModel).base_price} {$i18n.t('credits.common.unit')}
 													{:else}
 														{$i18n.t('credits.unconfigured')}
 													{/if}
@@ -1677,11 +1692,12 @@
 
 	<div
 		id="videos-library-panel"
+		class="flex min-h-0 flex-1 flex-col"
 		role="tabpanel"
 		aria-labelledby={selection === 'all' ? 'videos-tab-all' : 'videos-tab-mine'}
 		hidden={selection === 'generate'}
 	>
-		<div class="min-h-0 flex-1 overflow-y-auto pt-18">
+		<div class="min-h-0 flex-1 overflow-y-auto pt-4 sm:pt-18">
 			<CreationsLibrary
 				active={selection !== 'generate'}
 				scope={selection === 'all' ? 'all' : 'mine'}

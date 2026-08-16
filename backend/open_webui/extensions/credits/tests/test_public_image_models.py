@@ -399,3 +399,53 @@ async def test_images_models_enriches_public_fal_catalog_with_enabled_base_price
 
     qwen = next(model for model in result if model['id'] == 'qwen-image')
     assert qwen['base_price'] == '4'
+
+
+@pytest.mark.asyncio
+async def test_images_models_attaches_base_price_for_admin_internal_ids(monkeypatch) -> None:
+    """管理员看到的模型列表用内部 fal 路由作 id（get_fal_image_models legacy dicts），
+    而非公共 id。若 base_price 注入只能解析公共 id，admin 视图会丢失所有价格，
+    呈现「积分未配置」，而同模型在普通用户视图（公共 id）反而有价 —— 这是二开
+    回归点。默认 resolver 必须双向：公共→内部，内部→原样。"""
+    import open_webui.routers.images as images
+    from open_webui.extensions.credits.models import CreditPrice
+    from open_webui.extensions.model_ops.models import ImageModelOperation
+
+    async def fal_config():
+        return SimpleNamespace(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='fal-ai/qwen-image')
+
+    class Scalars:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    class Session:
+        async def scalars(self, statement):
+            entity = statement.column_descriptions[0]['entity'] if statement.column_descriptions else None
+            if entity is ImageModelOperation:
+                return Scalars([])
+            return Scalars(
+                [
+                    CreditPrice(
+                        service_type='image',
+                        resource_id='fal-ai/qwen-image',
+                        action='text-to-image',
+                        base_price='4',
+                        enabled=True,
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(images, 'get_image_config', fal_config)
+
+    result = await images.get_models(
+        SimpleNamespace(),
+        user=SimpleNamespace(role='admin'),
+        db=Session(),
+    )
+
+    # admin 列表保留内部 fal 路由作 id；base_price 必须仍能注入。
+    qwen = next(model for model in result if model['id'] == 'fal-ai/qwen-image')
+    assert qwen['base_price'] == '4'

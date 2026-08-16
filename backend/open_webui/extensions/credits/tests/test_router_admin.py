@@ -412,6 +412,9 @@ def test_price_events_use_the_compatibility_boundary(monkeypatch) -> None:
         async def scalars(self, _statement):
             return type('Result', (), {'all': lambda self: []})()
 
+        async def scalar(self, _statement):
+            return 0
+
     app.dependency_overrides[credits_router.get_async_session] = lambda: Session()
     calls = []
 
@@ -423,6 +426,8 @@ def test_price_events_use_the_compatibility_boundary(monkeypatch) -> None:
     response = TestClient(app).get('/api/v1/credits/admin/prices')
 
     assert response.status_code == 200
+    # 价格列表响应现在是分页结构 {items, total}，不再是裸数组。
+    assert response.json() == {'items': [], 'total': 0}
     assert calls == []
 
 

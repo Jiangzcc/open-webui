@@ -247,7 +247,13 @@ def attach_model_base_prices(
 	price in ``prices`` carries an internal ``resource_id`` (e.g.
 	``fal-ai/qwen-image``). ``id_resolver`` bridges the two namespaces by turning
 	a public id into the internal resource id that the prices table stores. When
-	omitted, it lazily falls back to ``internal_fal_image_model_id``.
+	omitted, it lazily falls back to ``normalize_fal_image_model_id``, which
+	accepts EITHER a public id (mapped to its internal route) OR an already
+	internal id (returned as-is). The bidirectional fallback matters because the
+	admin model list (``get_fal_image_models`` legacy dicts) keeps internal ids as
+	``id`` — a public-only resolver would silently drop every admin model's
+	``base_price``, so admins would see "price not configured" for models that
+	regular users can quote.
 
 	For every model we attach ``base_price`` (its text-to-image price) and/or
 	``edit_base_price`` (its image-to-image price) as strings whenever an enabled
@@ -256,9 +262,9 @@ def attach_model_base_prices(
 	mutated — each returned dict is a shallow copy with the extra keys layered on.
 	"""
 	if id_resolver is None:
-		from open_webui.utils.images.fal_models import internal_fal_image_model_id
+		from open_webui.utils.images.fal_models import normalize_fal_image_model_id
 
-		id_resolver = internal_fal_image_model_id
+		id_resolver = normalize_fal_image_model_id
 
 	index: dict[tuple[str, str], str] = {}
 	for price in prices:

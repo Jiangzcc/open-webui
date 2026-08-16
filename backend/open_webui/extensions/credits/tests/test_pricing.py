@@ -515,3 +515,36 @@ def test_attach_base_prices_handles_unknown_public_ids_gracefully():
     real = next(m for m in enriched if m['id'] == 'real')
     assert 'base_price' not in ghost
     assert real['base_price'] == '5'
+
+
+def test_attach_base_prices_default_resolver_accepts_internal_ids():
+    # 管理端模型列表（get_fal_image_models legacy dicts）直接以内部 fal 路由作为
+    # ``id``（如 fal-ai/qwen-image），而非公共 id（qwen-image）。默认 resolver 必须是
+    # 双向的 normalize_fal_image_model_id：公共 id 映射到内部路由，已内部路由原样返回。
+    # 否则管理员看到的模型列表会因 resolver 返回 None 而全部丢失 base_price，
+    # 被前端当作「积分未配置」，而普通用户走公共 id 列表反而能正常显示价格。
+    from open_webui.extensions.credits.pricing import attach_model_base_prices
+
+    models = [
+        # 内部 id 直接作为模型 id（admin legacy 路径）
+        {'id': 'fal-ai/qwen-image', 'task': 'text-to-image'},
+        # 公共 id（user public 路径）
+        {'id': 'qwen-image', 'task': 'text-to-image'},
+        # 既非公共也非内部的孤儿 id
+        {'id': 'ghost'},
+    ]
+    prices = [
+        FakePrice(
+            resource_id='fal-ai/qwen-image',
+            action='text-to-image',
+            base_price='24',
+            enabled=True,
+        )
+    ]
+
+    # 不传 id_resolver，走默认（normalize_fal_image_model_id）
+    enriched = attach_model_base_prices(models, prices)
+    by_id = {m['id']: m for m in enriched}
+    assert by_id['fal-ai/qwen-image']['base_price'] == '24'
+    assert by_id['qwen-image']['base_price'] == '24'
+    assert 'base_price' not in by_id['ghost']

@@ -687,6 +687,7 @@ async def test_admin_ledger_query_supports_permanent_filters_and_date_range(serv
         )
 
     assert [item.id for item in page.items] == ['matched']
+    assert page.total == 1
 
 
 @pytest.mark.asyncio
@@ -700,6 +701,27 @@ async def test_admin_ledger_query_without_optional_filters_returns_all_entries(s
         page = await list_admin_ledger(session, AdminLedgerQuery())
 
     assert [item.id for item in page.items] == ['entry-2', 'entry-1']
+    # 页码分页必须给出命中总数，前端分页器据此渲染页码；旧游标分页没有 total。
+    assert page.total == 2
+
+
+@pytest.mark.asyncio
+async def test_admin_ledger_paginates_with_skip_and_reports_total(service_database) -> None:
+    """管理员流水用页码分页：skip 跳过已看页、total 给出命中总数用于渲染分页器。"""
+    await create_user(service_database, 'user-1')
+    now = int(time.time())
+    await add_ledger(service_database, user_id='user-1', entry_id='entry-1', created_at=now - 5)
+    await add_ledger(service_database, user_id='user-1', entry_id='entry-2', created_at=now - 4)
+    await add_ledger(service_database, user_id='user-1', entry_id='entry-3', created_at=now - 3)
+
+    async with service_database() as session:
+        first_page = await list_admin_ledger(session, AdminLedgerQuery(limit=2, skip=0))
+        second_page = await list_admin_ledger(session, AdminLedgerQuery(limit=2, skip=2))
+
+    assert [item.id for item in first_page.items] == ['entry-3', 'entry-2']
+    assert first_page.total == 3
+    assert [item.id for item in second_page.items] == ['entry-1']
+    assert second_page.total == 3
 
 
 @pytest.mark.asyncio

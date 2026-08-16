@@ -51,8 +51,8 @@ describe('credit API client', () => {
 			.mockResolvedValueOnce(
 				success({ ledger_id: 'ledger-1', source: 'api', request_id: 'request-1' })
 			)
-			.mockResolvedValueOnce(success({ items: [], next_cursor: null }))
-			.mockResolvedValueOnce(success([]))
+			.mockResolvedValueOnce(success({ items: [], total: 0 }))
+			.mockResolvedValueOnce(success({ items: [], total: 0 }))
 			.mockResolvedValueOnce(success({ id: 'price-1' }))
 			.mockResolvedValueOnce(success({ id: 'price-1', enabled: false }))
 			.mockResolvedValueOnce(success({ id: 'price-1' }))
@@ -93,9 +93,12 @@ describe('credit API client', () => {
 		).resolves.toEqual({ ledger_id: 'ledger-1', source: 'api', request_id: 'request-1' });
 		await expect(getAdminCreditLedger('token', { user_id: 'user-1', limit: 50 })).resolves.toEqual({
 			items: [],
-			next_cursor: null
+			total: 0
 		});
-		await expect(getCreditPrices('token', { skip: 0, limit: 50 })).resolves.toEqual([]);
+		await expect(getCreditPrices('token', { skip: 0, limit: 50 })).resolves.toEqual({
+			items: [],
+			total: 0
+		});
 		await expect(
 			createCreditPrice('token', {
 				service_type: 'image',

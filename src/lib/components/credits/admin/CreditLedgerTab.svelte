@@ -1,22 +1,21 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
 
-	import {
-		getAdminCreditLedger,
-		type AdminLedgerQuery,
-		type LedgerCursor,
-		type LedgerItem
-	} from '$lib/apis/credits';
+	import { getAdminCreditLedger, type AdminLedgerQuery, type LedgerItem } from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
+	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	const i18n = getContext('i18n');
+	const pageSize = 25;
 
 	let entries: LedgerItem[] = [];
-	let nextCursor: LedgerCursor | null = null;
+	let total = 0;
+	let page = 1;
 	let loading = true;
 	let error = '';
-	let filters: AdminLedgerQuery = { limit: 50 };
+	let filters: AdminLedgerQuery = { skip: 0, limit: pageSize };
+	let mounted = false;
 
 	const asTimestamp = (value: string) =>
 		value ? Math.floor(new Date(value).getTime() / 1000) : undefined;
@@ -26,16 +25,20 @@
 			? $i18n.t(`credits.${group}.${value}`)
 			: (value ?? '—');
 
-	const loadLedger = async (append = false) => {
+	const loadLedger = async () => {
 		loading = true;
 		error = '';
 		try {
-			const result = await getAdminCreditLedger(localStorage.token, filters);
-			entries = append ? [...entries, ...result.items] : result.items;
-			nextCursor = result.next_cursor;
+			const result = await getAdminCreditLedger(localStorage.token, {
+				...filters,
+				skip: (page - 1) * pageSize,
+				limit: pageSize
+			});
+			entries = result.items;
+			total = result.total;
 		} catch (requestError) {
-			if (!append) entries = [];
-			nextCursor = null;
+			entries = [];
+			total = 0;
 			error = translateCreditApiError($i18n, requestError, 'credits.admin.ledgerLoadError');
 		} finally {
 			loading = false;
@@ -43,33 +46,33 @@
 	};
 
 	const applyFilters = () => {
-		filters = {
-			...filters,
-			cursor_created_at: undefined,
-			cursor_id: undefined
-		};
+		if (page === 1) {
+			loadLedger();
+		} else {
+			page = 1;
+		}
+	};
+
+	$: if (mounted && page > 0) {
 		loadLedger();
-	};
+	}
 
-	const loadNext = () => {
-		if (!nextCursor) return;
-		filters = {
-			...filters,
-			cursor_created_at: nextCursor.created_at,
-			cursor_id: nextCursor.id
-		};
-		loadLedger(true);
-	};
-
-	onMount(loadLedger);
+	onMount(() => {
+		mounted = true;
+	});
 </script>
 
 <div class="flex h-full flex-col gap-4">
-	<div>
-		<h2 class="text-base font-medium dark:text-gray-100">{$i18n.t('credits.admin.ledgerTitle')}</h2>
-		<p class="mt-1 text-sm text-gray-500">
-			{$i18n.t('credits.admin.ledgerDescription')}
-		</p>
+	<div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+		<div>
+			<h2 class="text-base font-medium dark:text-gray-100">
+				{$i18n.t('credits.admin.ledgerTitle')}
+			</h2>
+			<p class="mt-1 text-sm text-gray-500">
+				{$i18n.t('credits.admin.ledgerDescription')}
+			</p>
+		</div>
+		<span class="text-xs text-gray-500">{total}</span>
 	</div>
 
 	<div class="grid gap-2 md:grid-cols-3 lg:grid-cols-6">
@@ -202,16 +205,9 @@
 			</table>
 		</div>
 
-		{#if nextCursor}
-			<div class="flex justify-center">
-				<button
-					class="rounded-3xl bg-gray-100 px-4 py-2 text-sm font-medium hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700"
-					disabled={loading}
-					on:click={loadNext}
-					type="button"
-				>
-					{loading ? $i18n.t('credits.common.loading') : $i18n.t('credits.common.loadMore')}
-				</button>
+		{#if total > pageSize}
+			<div class="flex justify-end">
+				<Pagination bind:page count={total} perPage={pageSize} />
 			</div>
 		{/if}
 	{/if}

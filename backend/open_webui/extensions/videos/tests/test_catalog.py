@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
+from open_webui.extensions.fal_catalog.loader import load_video_catalog
 from open_webui.extensions.videos.catalog import (
     VideoInputError,
     build_video_provider_payload,
@@ -21,6 +24,88 @@ class _ScalarResult:
 class _CatalogSession:
     async def scalars(self, _statement):
         return _ScalarResult([])
+
+
+class _PriceSession:
+    """Fake async session that returns CreditPrice rows for the price query.
+
+    apply_model_operations is monkeypatched to a passthrough so the only
+    behavior under test is the catalog's own enrichment/filtering.
+    """
+
+    def __init__(self, prices):
+        self._prices = prices
+
+    async def scalars(self, statement):
+        return _ScalarResult(self._prices)
+
+
+@pytest.mark.asyncio
+async def test_public_catalog_hides_auto_duration_for_proportional_pricing(monkeypatch) -> None:
+    """按秒（proportional）计费的视频模型无法解析 'auto' 时长：proportional 规则
+    用 unit_size 缩放，pricing._resolve_proportional 经 _positive_decimal 解析，
+    'auto' 非数值→None→compute_price 抛 price_rule_incomplete→报价 configured=False。
+    目录层必须隐藏 'auto' 并把 default_duration 重置为具体秒数，否则用户默认进入
+    即看到"积分未配置"，而模型名后却显示有价——前后矛盾。"""
+    catalog = load_video_catalog()
+    internal_id = next(definition.id for definition in catalog.definitions if definition.public_id == 'seedance-2.0')
+    proportional_rules = {
+        'schema_version': 1,
+        'dimensions': [{'key': 'duration', 'kind': 'proportional', 'unit_size': '1'}],
+    }
+    prices = [
+        SimpleNamespace(
+            service_type='video',
+            resource_id=internal_id,
+            action='text-to-video',
+            base_price='16.8',
+            rules=proportional_rules,
+            enabled=True,
+        )
+    ]
+
+    async def passthrough(_session, models, *, admin, media_kind):
+        return [dict(model) for model in models]
+
+    monkeypatch.setattr('open_webui.extensions.videos.catalog.apply_model_operations', passthrough)
+    payload = await public_video_catalog_for_user(_PriceSession(prices))
+
+    seedance = next(model for model in payload['models'] if model['id'] == 'seedance-2.0')
+    assert seedance['base_price'] == '16.8'
+    assert 'auto' not in seedance['durations']
+    assert seedance['default_duration'] == '4'
+
+
+@pytest.mark.asyncio
+async def test_public_catalog_keeps_auto_duration_when_not_proportional(monkeypatch) -> None:
+    """非按秒计费（如 unit_blocks 或无 duration 维度）的模型仍应保留 'auto'，
+    过滤只针对 proportional。"""
+    catalog = load_video_catalog()
+    internal_id = next(definition.id for definition in catalog.definitions if definition.public_id == 'seedance-2.0')
+    unit_blocks_rules = {
+        'schema_version': 1,
+        'dimensions': [{'key': 'duration', 'kind': 'unit_blocks', 'block_size': '5', 'multiplier_per_block': '1'}],
+    }
+    prices = [
+        SimpleNamespace(
+            service_type='video',
+            resource_id=internal_id,
+            action='text-to-video',
+            base_price='600',
+            rules=unit_blocks_rules,
+            enabled=True,
+        )
+    ]
+
+    async def passthrough(_session, models, *, admin, media_kind):
+        return [dict(model) for model in models]
+
+    monkeypatch.setattr('open_webui.extensions.videos.catalog.apply_model_operations', passthrough)
+    payload = await public_video_catalog_for_user(_PriceSession(prices))
+
+    seedance = next(model for model in payload['models'] if model['id'] == 'seedance-2.0')
+    assert 'auto' in seedance['durations']
+    assert seedance['default_duration'] == 'auto'
 
 
 def test_public_catalog_hides_internal_provider_controls() -> None:

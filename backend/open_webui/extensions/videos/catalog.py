@@ -71,10 +71,7 @@ def _public_advanced_options(field: object, public_key: str) -> list[str] | None
         if isinstance(field, VideoBooleanField):
             return ['on', 'off']
         provider_options = getattr(field, 'options', None) or ()
-        return [
-            {'enabled': 'on', 'disabled': 'off', 'auto': 'auto'}.get(option, option)
-            for option in provider_options
-        ]
+        return [{'enabled': 'on', 'disabled': 'off', 'auto': 'auto'}.get(option, option) for option in provider_options]
     options = getattr(field, 'options', None)
     return list(options) if options else None
 
@@ -145,11 +142,32 @@ def public_video_catalog() -> dict[str, object]:
     return {
         'defaults': defaults,
         'models': [
-            _public_model(definition)
-            for definition in catalog.definitions
-            if _supported_by_public_editor(definition)
+            _public_model(definition) for definition in catalog.definitions if _supported_by_public_editor(definition)
         ],
     }
+
+
+def _duration_pricing_is_proportional(rules: object) -> bool:
+    """该模型的 duration 维度是否按秒（proportional）计费。
+
+    proportional 规则用 unit_size 缩放时长，pricing._resolve_proportional 会
+    调 _positive_decimal 解析维度值；'auto' 这类非数值无法解析（返回 None），
+    导致 compute_price 抛 price_rule_incomplete、报价端点返回 configured=False。
+    因此这类模型的公共目录必须隐藏 'auto' 时长选项，并把 default_duration
+    重置为具体秒数，否则用户默认进入即看到"积分未配置"而模型名后却显示有价。
+
+    用轻量 dict 判断而非 PriceRuleSet.model_validate，避免某条规则格式异常时
+    拖垮整个目录加载——catalog 层只决定可见性，定价校验仍由 pricing 层兜底。
+    """
+    if not isinstance(rules, dict):
+        return False
+    dimensions = rules.get('dimensions')
+    if not isinstance(dimensions, list):
+        return False
+    return any(
+        isinstance(dimension, dict) and dimension.get('key') == 'duration' and dimension.get('kind') == 'proportional'
+        for dimension in dimensions
+    )
 
 
 async def public_video_catalog_for_user(session: AsyncSession) -> dict[str, object]:
@@ -168,9 +186,8 @@ async def public_video_catalog_for_user(session: AsyncSession) -> dict[str, obje
             )
         )
     ).all()
-    price_by_model = {
-        (price.resource_id, price.action): price.base_price for price in prices
-    }
+    price_by_model = {(price.resource_id, price.action): price.base_price for price in prices}
+    rules_by_model = {(price.resource_id, price.action): price.rules for price in prices}
     catalog = load_video_catalog()
     enriched: list[dict[str, object]] = []
     for model in models:
@@ -181,6 +198,17 @@ async def public_video_catalog_for_user(session: AsyncSession) -> dict[str, obje
         base_price = price_by_model.get((internal_id, action))
         if base_price is not None:
             copy['base_price'] = base_price
+        # 按秒（proportional）计费的视频模型无法解析 'auto' 时长：目录层隐藏该
+        # 选项并把默认值重置为具体秒数，避免默认进入即"积分未配置"。
+        # 仅当过滤后仍有可选时长时才改写，避免把仅含 'auto' 的退化配置清空。
+        if _duration_pricing_is_proportional(rules_by_model.get((internal_id, action))):
+            durations = copy.get('durations')
+            if isinstance(durations, list) and 'auto' in durations:
+                filtered = [value for value in durations if value != 'auto']
+                if filtered:
+                    copy['durations'] = filtered
+                    if copy.get('default_duration') == 'auto':
+                        copy['default_duration'] = filtered[0]
         enriched.append(copy)
     return {**payload, 'models': enriched}
 

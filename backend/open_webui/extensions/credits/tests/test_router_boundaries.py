@@ -63,16 +63,60 @@ def test_user_ledger_accepts_the_documented_category_filter(monkeypatch) -> None
     assert response.status_code == 200
 
 
-def test_price_listing_applies_bounded_pagination() -> None:
+def test_price_listing_applies_bounded_pagination_and_filters() -> None:
     from open_webui.extensions.credits import router as credits_router
+
+    seen = {}
 
     class Session:
         async def scalars(self, statement):
-            assert statement._limit_clause.value == 100
-            assert statement._offset_clause.value == 2
+            # 页码分页：offset = skip（2），limit 受 MAX_PAGE_SIZE 约束（100）。
+            seen['offset'] = statement._offset_clause.value
+            seen['limit'] = statement._limit_clause.value
             return type('Result', (), {'all': lambda self: []})()
+
+        async def scalar(self, statement):
+            # 计数查询返回 0，驱动 {items: [], total: 0} 响应。
+            return 0
 
     client = TestClient(_admin_app(credits_router, Session()))
 
-    assert client.get('/api/v1/credits/admin/prices?skip=2&limit=100').status_code == 200
+    response = client.get('/api/v1/credits/admin/prices?skip=2&limit=100')
+    assert response.status_code == 200
+    assert response.json() == {'items': [], 'total': 0}
+    assert seen['offset'] == 2
+    assert seen['limit'] == 100
+
+    # 超出上限被 422 拒绝，与既有边界行为一致。
     assert client.get('/api/v1/credits/admin/prices?limit=101').status_code == 422
+    # 负 skip 被拒绝。
+    assert client.get('/api/v1/credits/admin/prices?skip=-1').status_code == 422
+
+
+def test_price_listing_filters_by_service_resource_action_and_enabled() -> None:
+    from open_webui.extensions.credits import router as credits_router
+
+    captured = {}
+
+    class Session:
+        async def scalars(self, statement):
+            captured['where'] = str(statement)
+            return type('Result', (), {'all': lambda self: []})()
+
+        async def scalar(self, _statement):
+            return 0
+
+    client = TestClient(_admin_app(credits_router, Session()))
+    response = client.get(
+        '/api/v1/credits/admin/prices?service_type=image'
+        '&resource_id=model-a&action=text-to-image&enabled=true&skip=0&limit=10'
+    )
+
+    assert response.status_code == 200
+    where = captured['where']
+    # 四个过滤维度都应出现在 SQL 的 WHERE 子句中。SQLAlchemy 会把绑定参数
+    # 渲染成占位符，因此只断言列名与 IS true/1=1 这类结构化片段存在。
+    assert 'service_type' in where
+    assert 'resource_id' in where
+    assert 'action' in where
+    assert 'enabled IS true' in where or 'IS 1' in where

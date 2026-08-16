@@ -251,6 +251,9 @@ class LedgerQuery(PaginationParams):
     until: int | None = Field(default=None, ge=0)
     cursor_created_at: int | None = Field(default=None, ge=0)
     cursor_id: str | None = Field(default=None, min_length=1, max_length=128)
+    # 页码分页偏移量。用户流水仍用游标分页（一年滚动窗口），skip 仅对管理员侧有意义，
+    # 因此放在基类但用户侧 service 不读取它。ge=0 保证负数被 422 拒绝。
+    skip: int = Field(default=0, ge=0)
 
     @model_validator(mode='after')
     def validate_ranges_and_cursor(self) -> 'LedgerQuery':
@@ -302,6 +305,17 @@ class ReconciliationItem(StrictModel):
 class ReconciliationPage(StrictModel):
     items: tuple[ReconciliationItem, ...]
     total: int = Field(ge=0)
+
+
+class CreditPriceQuery(StrictModel):
+    """积分价格列表的筛选 + 页码分页参数。None 表示不过滤该维度。"""
+
+    service_type: str | None = Field(default=None, min_length=1, max_length=64)
+    resource_id: str | None = Field(default=None, min_length=1, max_length=128)
+    action: str | None = Field(default=None, min_length=1, max_length=64)
+    enabled: bool | None = None
+    skip: int = Field(default=0, ge=0)
+    limit: int = Field(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)
 
 
 class CompensationRequest(StrictModel):
@@ -376,3 +390,14 @@ class LedgerItem(StrictModel):
 class Page(StrictModel, Generic[T]):
     items: tuple[T, ...]
     next_cursor: LedgerCursor | None
+
+
+class AdminLedgerPage(StrictModel, Generic[T]):
+    """管理员流水页码分页结构：页内条目 + 命中总数，用于驱动前端页码分页器。
+
+    与用户侧的游标 Page 不同——管理员需要跳页和显示总数，而流水只增不减，
+    用页码分页更直观；用户侧仍保留一年滚动窗口 + 游标，避免暴露 skip 给终端用户。
+    """
+
+    items: tuple[T, ...]
+    total: int = Field(ge=0)

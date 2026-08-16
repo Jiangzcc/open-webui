@@ -150,6 +150,7 @@ const zh = {
 				deleteMessage: '删除后，新积分计算将不再使用此价格。',
 				service: '服务',
 				basePrice: '基础价格',
+				saved: '积分价格已保存',
 				editTitle: '编辑积分价格',
 				newTitle: '新建积分价格',
 				serviceType: '服务类型',
@@ -160,7 +161,7 @@ const zh = {
 				quantityDescription: '按请求的正数数量乘以价格。',
 				unitSize: '计费单位（像素）',
 				proportionalDescription:
-					'按“基础价格 × 像素数 ÷ 计费单位”计算。每百万像素计费请填写 1000000。',
+					'按”基础价格 × 像素数 ÷ 计费单位”计算。每百万像素计费请填写 1000000。',
 				ruleKinds: {
 					exact_map: '精确映射',
 					numeric_tier: '数值分层',
@@ -354,6 +355,7 @@ const en = {
 				deleteMessage: 'This price will no longer be available for new credit calculations.',
 				service: 'Service',
 				basePrice: 'Base price',
+				saved: 'Credit price saved',
 				editTitle: 'Edit credit price',
 				newTitle: 'New credit price',
 				serviceType: 'Service type',

@@ -1212,9 +1212,71 @@
 			? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 			: ''} max-w-full"
 	>
+		{#snippet imageTabs()}
+			<div
+				class="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-gray-700/80 dark:bg-gray-900/80 dark:shadow-black/30"
+				role="tablist"
+				tabindex="-1"
+				aria-label={$i18n.t('Images')}
+				on:keydown={handleTabKeydown}
+			>
+				<button
+					id="images-generate-tab"
+					type="button"
+					role="tab"
+					aria-selected={selection === 'generate'}
+					aria-controls="images-generate-panel"
+					tabindex={selection === 'generate' ? 0 : -1}
+					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
+					'generate'
+						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+					on:click={() => selectSelection('generate')}
+				>
+					{$i18n.t('Create art')}
+				</button>
+				<button
+					id="images-library-tab"
+					type="button"
+					role="tab"
+					aria-selected={selection === 'mine'}
+					aria-controls="images-library-panel"
+					tabindex={selection === 'mine' ? 0 : -1}
+					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
+					'mine'
+						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+					on:click={() => selectSelection('mine')}
+				>
+					{$i18n.t('My creations')}
+				</button>
+				{#if isAdmin}
+					<button
+						id="images-admin-tab"
+						type="button"
+						role="tab"
+						aria-selected={selection === 'all'}
+						aria-controls="images-library-panel"
+						tabindex={selection === 'all' ? 0 : -1}
+						class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
+						'all'
+							? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
+							: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
+						on:click={() => selectSelection('all')}
+					>
+						{$i18n.t('All creations')}
+					</button>
+				{/if}
+			</div>
+		{/snippet}
+
 		{#if $mobile}
-			<nav class="relative z-40 px-3 pt-2 pb-2 backdrop-blur-xl drag-region select-none shrink-0">
-				<div class="{$showSidebar ? 'md:hidden' : ''} flex flex-none items-center">
+			<!-- 移动端：sidebar 图标与创作/我的作品 tab 同处顶部一行，顶到页面最上面。
+			     tab 用绝对定位相对整行居中，不被左侧 sidebar 按钮挤偏右，垂直也随行高居中。 -->
+			<nav
+				class="relative z-40 flex h-14 shrink-0 items-center px-3 backdrop-blur-xl drag-region select-none"
+			>
+				<div class="{$showSidebar ? 'md:hidden' : ''} relative z-10 flex flex-none items-center">
 					<Tooltip
 						content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
 						interactive={true}
@@ -1231,69 +1293,16 @@
 						</button>
 					</Tooltip>
 				</div>
+				<div class="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center justify-center">
+					{@render imageTabs()}
+				</div>
 			</nav>
-		{/if}
-
-		<!-- Floating tab switcher: lifted out of the flow so the panels beneath reclaim the height -->
-		<div
-			class="pointer-events-none absolute inset-x-0 top-14 z-30 flex justify-center px-3 sm:top-0 sm:pt-2"
-			role="tablist"
-			tabindex="-1"
-			aria-label={$i18n.t('Images')}
-			on:keydown={handleTabKeydown}
-		>
-			<div
-				class="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-gray-700/80 dark:bg-gray-900/80 dark:shadow-black/30"
-			>
-				<button
-					id="images-generate-tab"
-					type="button"
-					role="tab"
-					aria-selected={selection === 'generate'}
-					aria-controls="images-generate-panel"
-					tabindex={selection === 'generate' ? 0 : -1}
-					class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
-					'generate'
-						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
-						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-					on:click={() => selectSelection('generate')}
-				>
-					{$i18n.t('Create art')}
-				</button>
-				<button
-					id="images-library-tab"
-					type="button"
-					role="tab"
-					aria-selected={selection === 'mine'}
-					aria-controls="images-library-panel"
-					tabindex={selection === 'mine' ? 0 : -1}
-					class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
-					'mine'
-						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
-						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-					on:click={() => selectSelection('mine')}
-				>
-					{$i18n.t('My creations')}
-				</button>
-				{#if isAdmin}
-					<button
-						id="images-admin-tab"
-						type="button"
-						role="tab"
-						aria-selected={selection === 'all'}
-						aria-controls="images-library-panel"
-						tabindex={selection === 'all' ? 0 : -1}
-						class="min-h-10 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {selection ===
-						'all'
-							? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
-							: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-						on:click={() => selectSelection('all')}
-					>
-						{$i18n.t('All creations')}
-					</button>
-				{/if}
+		{:else}
+			<!-- 桌面端：nav 不渲染，tab pill 浮动在内容区顶部。 -->
+			<div class="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-3 pt-2">
+				{@render imageTabs()}
 			</div>
-		</div>
+		{/if}
 
 		<div
 			id="images-generate-panel"
@@ -1327,7 +1336,7 @@
 						</section>
 					{:else}
 						<!-- 连续流：每批一块极淡背景卡片。块内消息头→prompt→pill→图网格→操作行，space-y-3 统一间距。 -->
-						<section class="space-y-4 pb-6 pt-18 sm:pt-18" aria-live="polite">
+						<section class="space-y-4 pb-6 pt-4 sm:pt-18" aria-live="polite">
 							{#each generationBatches as batch (batch.id)}
 								{@const batchModel = getBatchModel(batch, primaryModels)}
 								<article id={`image-task-${batch.id}`} class={BATCH_ARTICLE_CLASS}>
@@ -1678,6 +1687,10 @@
 												{modelBasePrice(model.raw as ImageGenerationModel)}
 												{$i18n.t('credits.common.unit')}
 											</span>
+										{:else}
+											<span class="shrink-0 text-xs text-gray-400 dark:text-gray-500"
+												>{$i18n.t('credits.unconfigured')}</span
+											>
 										{/if}
 										{#if isProxyModel(model.raw as ImageGenerationModel)}
 											<span class="shrink-0 text-xs text-amber-600 dark:text-amber-400">
@@ -2205,13 +2218,14 @@
 		>
 			<!--
 				Top clearance belongs to the scrolling content, not to the
-				panel frame: it pushes the first row below the floating tab
-				pill on first paint, then scrolls away so later rows settle
-				flush against the top while the absolutely-positioned pill
-				keeps floating over them. Mobile sits the pill at top-14 +
-				sm:pt-2, hence the taller mobile cushion.
+				panel frame: on desktop it pushes the first row below the
+				floating tab pill on first paint, then scrolls away so later
+				rows settle flush against the top while the
+				absolutely-positioned pill keeps floating over them. On mobile
+				the pill now lives in the top navbar (in-flow), so no cushion
+				is needed there.
 			-->
-			<div class="pt-18 sm:pt-18">
+			<div class="pt-4 sm:pt-18">
 				<CreationsLibrary
 					active={view === 'library'}
 					scope={libraryScope}

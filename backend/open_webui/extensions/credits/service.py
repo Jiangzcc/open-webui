@@ -24,7 +24,7 @@ from .constants import (
 from .db import credit_session
 from .errors import CreditError
 from .metrics import credit_metrics
-from .models import CreditAccount, CreditLedger, CreditUsage
+from .models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
 from .pricing import PriceQuote, compute_price
 from .repository import (
     claim_usage_placeholder,
@@ -32,13 +32,17 @@ from .repository import (
     get_or_create_account,
     get_usage_by_idempotency_key,
     insert_ledger,
+    list_admin_ledger_page,
+    list_credit_prices,
     list_ledger,
     update_account_balance,
 )
 from .schemas import (
     AdjustmentRequest,
+    AdminLedgerPage,
     AdminLedgerQuery,
     CompensationRequest,
+    CreditPriceQuery,
     Page,
     ReconciliationItem,
     ReconciliationPage,
@@ -527,10 +531,26 @@ async def list_user_ledger(
     return Page(items=items, next_cursor=next_cursor)
 
 
-async def list_admin_ledger(session: AsyncSession, query: AdminLedgerQuery) -> Page:
-    """Return a permanently retained, bounded and filtered administrative ledger page."""
-    items, next_cursor = await list_ledger(session, query)
-    return Page(items=items, next_cursor=next_cursor)
+async def list_admin_ledger(session: AsyncSession, query: AdminLedgerQuery) -> AdminLedgerPage:
+    """Return a permanently retained, bounded and filtered administrative ledger page.
+
+    管理员侧用页码分页（skip + total），与用户侧的一年滚动游标分页区分开：管理员需要
+    跳页和显示总数，流水只增不减，页码分页更直观。条件构造复用 repository。
+    """
+    items, total = await list_admin_ledger_page(session, query)
+    return AdminLedgerPage(items=items, total=total)
+
+
+async def list_admin_credit_prices(
+    session: AsyncSession,
+    query: CreditPriceQuery,
+) -> tuple[list[CreditPrice], int]:
+    """Return one filtered, paginated credit price page and the matching total.
+
+    价格表行数有限且更新频繁，用页码分页 + total 驱动前端分页器；筛选维度
+    服务/资源/操作/启用状态由 query 传入，service 层只做透传与类型收口。
+    """
+    return await list_credit_prices(session, query)
 
 
 async def list_reconciliation_cases(
@@ -672,6 +692,7 @@ __all__ = [
     'adjust_balance',
     'begin_image_usage',
     'get_balance',
+    'list_admin_credit_prices',
     'list_admin_ledger',
     'list_reconciliation_cases',
     'compensate_reconciliation_case',

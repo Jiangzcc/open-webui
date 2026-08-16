@@ -5,7 +5,7 @@ from time import time
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .constants import MAX_CREDIT_VALUE
 from .models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
-from .schemas import AdminLedgerQuery, LedgerCursor, LedgerItem, UserLedgerQuery, UserSnapshot
+from .schemas import (
+    AdminLedgerQuery,
+    CreditPriceQuery,
+    LedgerCursor,
+    LedgerItem,
+    UserLedgerQuery,
+    UserSnapshot,
+)
 
 
 def _now() -> int:
@@ -175,6 +182,42 @@ async def get_usage_by_idempotency_key(session: AsyncSession, user_id: str, idem
     )
 
 
+def _credit_price_query_conditions(query: CreditPriceQuery) -> list[Any]:
+    """积分价格列表的过滤条件，供行查询与计数查询共用，避免两处分叉。"""
+    conditions: list[Any] = []
+    if query.service_type is not None:
+        conditions.append(CreditPrice.service_type == query.service_type)
+    if query.resource_id is not None:
+        conditions.append(CreditPrice.resource_id == query.resource_id)
+    if query.action is not None:
+        conditions.append(CreditPrice.action == query.action)
+    if query.enabled is not None:
+        conditions.append(CreditPrice.enabled.is_(query.enabled))
+    return conditions
+
+
+async def list_credit_prices(
+    session: AsyncSession,
+    query: CreditPriceQuery,
+) -> tuple[list[CreditPrice], int]:
+    """Read one offset-based credit price page and the matching total count.
+
+    价格表行数有限，页码分页 + total 足够；无需游标。按 updated_at 倒序，
+    与原有 list_credit_prices 端点排序保持一致，避免既有 UI 的默认顺序跳变。
+    """
+    conditions = _credit_price_query_conditions(query)
+    statement = (
+        select(CreditPrice)
+        .where(*conditions)
+        .order_by(CreditPrice.updated_at.desc())
+        .offset(max(query.skip, 0))
+        .limit(query.limit)
+    )
+    rows = list((await session.scalars(statement)).all())
+    total = await session.scalar(select(func.count()).select_from(CreditPrice).where(*conditions))
+    return rows, int(total or 0)
+
+
 def _query_conditions(query: UserLedgerQuery | AdminLedgerQuery) -> list[Any]:
     conditions: list[Any] = []
     if query.since is not None:
@@ -266,13 +309,68 @@ async def list_ledger(
     return tuple(_ledger_item(ledger, usage_status) for ledger, usage_status in page_rows), next_cursor
 
 
+async def count_admin_ledger(session: AsyncSession, query: AdminLedgerQuery) -> int:
+    """Count the total rows matching the admin ledger filters for pagination."""
+    conditions = _query_conditions(query)
+    for column, value in (
+        (CreditLedger.user_id, query.user_id),
+        (CreditLedger.entry_type, query.entry_type),
+        (CreditLedger.reason_code, query.reason_code),
+        (CreditLedger.service_type, query.service_type),
+        (CreditLedger.resource_id, query.resource_id),
+        (CreditLedger.action, query.action),
+    ):
+        if value is not None:
+            conditions.append(column == value)
+    total = await session.scalar(select(func.count()).select_from(CreditLedger).where(*conditions))
+    return int(total or 0)
+
+
+async def list_admin_ledger_page(
+    session: AsyncSession,
+    query: AdminLedgerQuery,
+) -> tuple[tuple[LedgerItem, ...], int]:
+    """Read one offset-based admin ledger page and the matching total count.
+
+    前端管理员流水用页码分页（可跳页、显示总数），因此用 skip/offset 而非游标。
+    条件构造与 list_ledger 保持一致，避免两处分叉；唯一差异是去掉了 limit+1
+    的“探下一页”技巧，改用单独的计数查询给出 total。
+    """
+    conditions = _query_conditions(query)
+    for column, value in (
+        (CreditLedger.user_id, query.user_id),
+        (CreditLedger.entry_type, query.entry_type),
+        (CreditLedger.reason_code, query.reason_code),
+        (CreditLedger.service_type, query.service_type),
+        (CreditLedger.resource_id, query.resource_id),
+        (CreditLedger.action, query.action),
+    ):
+        if value is not None:
+            conditions.append(column == value)
+
+    statement = (
+        select(CreditLedger, CreditUsage.status)
+        .outerjoin(CreditUsage, CreditUsage.id == CreditLedger.usage_id)
+        .where(*conditions)
+        .order_by(CreditLedger.created_at.desc(), CreditLedger.id.desc())
+        .offset(max(query.skip, 0))
+        .limit(query.limit)
+    )
+    ledger_rows: Sequence[tuple[CreditLedger, str | None]] = (await session.execute(statement)).all()
+    total = await session.scalar(select(func.count()).select_from(CreditLedger).where(*conditions))
+    return tuple(_ledger_item(ledger, usage_status) for ledger, usage_status in ledger_rows), int(total or 0)
+
+
 __all__ = [
     'claim_usage_placeholder',
+    'count_admin_ledger',
     'get_balance_if_exists',
     'get_enabled_price',
     'get_or_create_account',
     'get_usage_by_idempotency_key',
     'insert_ledger',
+    'list_admin_ledger_page',
+    'list_credit_prices',
     'list_ledger',
     'update_account_balance',
 ]

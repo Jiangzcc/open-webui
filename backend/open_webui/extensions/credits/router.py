@@ -32,6 +32,7 @@ from open_webui.extensions.credits.schemas import (
     AdjustmentRequest,
     AdminLedgerQuery,
     CompensationRequest,
+    CreditPriceQuery,
     PositivePrice,
     PriceRuleSet,
     ReconciliationQuery,
@@ -43,6 +44,7 @@ from open_webui.extensions.credits.service import (
     adjust_balance,
     compensate_reconciliation_case,
     get_balance,
+    list_admin_credit_prices,
     list_admin_ledger,
     list_reconciliation_cases,
     list_user_ledger,
@@ -742,17 +744,15 @@ async def get_credit_accounts(
 
 @router.get('/admin/prices')
 async def list_credit_prices(
-    skip: Annotated[int, Field(ge=0)] = 0,
-    limit: Annotated[int, Field(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+    query: CreditPriceQuery = Depends(),
     _user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
-) -> list[dict[str, object]]:
+) -> dict[str, object]:
     try:
-        statement = select(CreditPrice).order_by(CreditPrice.updated_at.desc()).offset(skip).limit(limit)
-        prices = (await session.scalars(statement)).all()
+        prices, total = await list_admin_credit_prices(session, query)
     except Exception as error:
         return _unexpected_error_response(error)
-    return [_price_response(price) for price in prices]
+    return {'items': [_price_response(price) for price in prices], 'total': total}
 
 
 @router.post('/admin/prices')

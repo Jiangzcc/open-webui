@@ -79,13 +79,15 @@ describe('images page controls', () => {
 		expect(source).not.toContain('selectedModelConfig?.maintenanceMessage');
 	});
 
-	test('keeps only the mobile sidebar toggle in the page header', () => {
-		const navStart = source.indexOf('<nav ');
+	test('mobile page header carries the sidebar toggle and the tabs together', () => {
+		// 移动端：侧栏图标与创作/我的作品 tab 同处顶部 nav 一行，顶到页面最上面，
+		// 不再让 tab 浮在侧栏图标下方单独一行。桌面端 tab 仍浮动在内容区顶部、不进 nav。
+		const navStart = source.indexOf('<nav');
 		const navEnd = source.indexOf('</nav>', navStart);
 		const nav = source.slice(navStart, navEnd);
 
 		expect(nav).toContain('SidebarIcon');
-		expect(nav).not.toContain("$i18n.t('Images')");
+		expect(nav).toContain('{@render imageTabs()}');
 		expect(nav).not.toContain('bind:this={modelSelectorElement}');
 	});
 

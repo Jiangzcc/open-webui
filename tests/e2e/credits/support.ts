@@ -17,6 +17,11 @@ type CreditPrice = {
 	action: string;
 };
 
+type CreditPricePage = {
+	items: CreditPrice[];
+	total: number;
+};
+
 type ProviderCalls = {
 	mode: 'success' | 'failure';
 	total: number;
@@ -75,12 +80,22 @@ const signin = (account: SignupAccount) =>
 		body: { email: account.email, password: account.password }
 	}).then(expectSuccessful);
 
-const listCreditPrices = (admin: SessionUser) =>
-	requestJson<CreditPrice[]>({
+const CREDIT_PRICE_PAGE_SIZE = 100;
+
+const listCreditPrices = (admin: SessionUser, skip = 0): Cypress.Chainable<CreditPrice[]> =>
+	requestJson<CreditPricePage>({
 		method: 'GET',
-		url: `${API_URL}/api/v1/credits/admin/prices`,
+		url: `${API_URL}/api/v1/credits/admin/prices?skip=${skip}&limit=${CREDIT_PRICE_PAGE_SIZE}`,
 		headers: authHeaders(admin.token)
-	}).then(expectSuccessful);
+	})
+		.then(expectSuccessful)
+		.then((page) => {
+			const nextSkip = skip + page.items.length;
+			if (page.items.length === 0 || nextSkip >= page.total) {
+				return cy.wrap(page.items, { log: false });
+			}
+			return listCreditPrices(admin, nextSkip).then((remaining) => [...page.items, ...remaining]);
+		});
 
 const TEST_PRICE_RESOURCE_IDS = new Set(['dall-e-2', 'ui-multidimensional-e2e']);
 

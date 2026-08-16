@@ -77,6 +77,11 @@ export type Page<T> = {
 	next_cursor: LedgerCursor | null;
 };
 
+export type AdminLedgerPage = {
+	items: LedgerItem[];
+	total: number;
+};
+
 export type LedgerQuery = {
 	category?: 'income' | 'consumption' | 'adjustment';
 	since?: number;
@@ -95,8 +100,7 @@ export type AdminLedgerQuery = {
 	action?: string;
 	since?: number;
 	until?: number;
-	cursor_created_at?: number;
-	cursor_id?: string;
+	skip?: number;
 	limit?: number;
 };
 
@@ -177,8 +181,17 @@ export type CreditPrice = {
 };
 
 export type CreditPriceQuery = {
+	service_type?: string;
+	resource_id?: string;
+	action?: string;
+	enabled?: boolean;
 	skip?: number;
 	limit?: number;
+};
+
+export type CreditPricePage = {
+	items: CreditPrice[];
+	total: number;
 };
 
 export type CreditDimensions = {
@@ -363,13 +376,26 @@ export const getAdminCreditLedger = (
 	query: AdminLedgerQuery,
 	signal?: AbortSignal
 ) =>
-	requestCredits<Page<LedgerItem>>({ method: 'GET', path: '/admin/ledger', token, query, signal });
+	requestCredits<AdminLedgerPage>({
+		method: 'GET',
+		path: '/admin/ledger',
+		token,
+		query,
+		signal
+	});
 
 export const getCreditPrices = (
 	token: string,
 	query: CreditPriceQuery = {},
 	signal?: AbortSignal
-) => requestCredits<CreditPrice[]>({ method: 'GET', path: '/admin/prices', token, query, signal });
+) =>
+	requestCredits<CreditPricePage>({
+		method: 'GET',
+		path: '/admin/prices',
+		token,
+		query,
+		signal
+	});
 
 export const createCreditPrice = (token: string, input: CreditPriceInput, signal?: AbortSignal) =>
 	requestCredits<CreditPrice>({
