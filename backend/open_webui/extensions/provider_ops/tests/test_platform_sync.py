@@ -340,6 +340,7 @@ async def test_overview_aggregates_complete_window_and_separates_matched_cost(tm
     assert overview.matched_provider_request_count == 1
     assert overview.billing_event_count == 2
     assert overview.matched_billing_event_count == 1
+    assert overview.unbilled_success_count == 0
     assert Decimal(overview.exact_costs['USD']) == Decimal('0.075')
     assert Decimal(overview.matched_exact_costs['USD']) == Decimal('0.045')
     await engine.dispose()

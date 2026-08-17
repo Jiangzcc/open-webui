@@ -201,6 +201,26 @@ async def try_start_provider_invocation(
     return DatabaseProviderInvocationObserver(row.id)
 
 
+async def try_resume_provider_invocation(
+    *,
+    task_id: str,
+    provider_request_id: str | None = None,
+) -> DatabaseProviderInvocationObserver | None:
+    """Return the existing invocation observer; never create a second attempt."""
+    try:
+        async with provider_ops_session() as session:
+            statement = select(ProviderInvocation.id).where(ProviderInvocation.task_id == task_id)
+            if provider_request_id:
+                statement = statement.where(ProviderInvocation.provider_request_id == provider_request_id)
+            invocation_id = await session.scalar(
+                statement.order_by(ProviderInvocation.created_at.desc(), ProviderInvocation.id.desc()).limit(1)
+            )
+    except Exception:
+        log.exception('Failed to load provider invocation for recovered task %s', task_id)
+        return None
+    return DatabaseProviderInvocationObserver(invocation_id) if invocation_id else None
+
+
 async def list_provider_invocations(
     session: AsyncSession,
     *,
@@ -287,5 +307,6 @@ __all__ = [
     'DatabaseProviderInvocationObserver',
     'list_provider_invocations',
     'summarize_provider_models',
+    'try_resume_provider_invocation',
     'try_start_provider_invocation',
 ]

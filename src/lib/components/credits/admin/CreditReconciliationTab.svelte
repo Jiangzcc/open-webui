@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
+	import type { i18n as I18n } from 'i18next';
+	import type { Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -12,7 +14,7 @@
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
-	const i18n = getContext('i18n');
+	const i18n = getContext<Writable<I18n>>('i18n');
 	const pageSize = 15;
 	let items: ReconciliationItem[] = [];
 	let total = 0;
@@ -156,9 +158,7 @@
 	{:else}
 		<div class="flex flex-col gap-2">
 			{#each items as item (item.usage_id)}
-				<article
-					class="rounded-xl border border-gray-200 p-3 dark:border-gray-800"
-				>
+				<article class="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
 					<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 						<div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
 							<span
@@ -166,6 +166,17 @@
 								>{$i18n.t(item.status === 'failed' ? 'Failed' : 'Unknown')}</span
 							>
 							<strong class="truncate text-sm dark:text-gray-100">{item.resource_id}</strong>
+							{#if item.execution_mode}
+								<span
+									class="whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+								>
+									{$i18n.t(
+										item.execution_mode === 'mock'
+											? 'credits.admin.mockMode'
+											: 'credits.admin.realFalMode'
+									)}
+								</span>
+							{/if}
 							<span
 								class="whitespace-nowrap text-sm font-medium tabular-nums text-amber-700 dark:text-amber-300"
 								>-{item.charged_credits} {$i18n.t('credits.common.unit')}</span
@@ -220,7 +231,8 @@
 	bind:show={showCompensationConfirm}
 	title={$i18n.t('credits.admin.compensationConfirmTitle')}
 	message={$i18n.t('credits.admin.compensationConfirmMessage', {
-		user: pendingCompensation?.user_name_snapshot ??
+		user:
+			pendingCompensation?.user_name_snapshot ??
 			pendingCompensation?.user_email_snapshot ??
 			pendingCompensation?.user_id ??
 			'',

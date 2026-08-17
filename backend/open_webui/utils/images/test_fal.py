@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import types
 from types import SimpleNamespace
 
 import pytest
 from open_webui.utils.images.fal import (
+    FalImageError,
     FalImageSizeError,
     build_fal_image_payload,
     get_mock_fal_image_result,
+    resume_fal_queue,
     run_fal_queue,
     validate_fal_image_size,
 )
@@ -191,6 +194,9 @@ class _FakeSession:
             return _FakeResponse(self.status_responses.pop(0))
         return _FakeResponse({'images': [{'url': 'https://example.test/result.png'}]})
 
+    def put(self, *_args, **_kwargs):
+        return _FakeResponse({})
+
 
 class _RecordingObserver:
     def __init__(self):
@@ -229,6 +235,110 @@ async def test_fal_queue_reports_submission_status_and_completion(monkeypatch) -
     assert [event[0] for event in observer.events] == ['submitted', 'status', 'status', 'succeeded']
     assert observer.events[0][1]['request_id'] == 'request-1'
     assert observer.events[2][1]['metrics']['inference_time'] == 0.4
+
+
+@pytest.mark.asyncio
+async def test_fal_queue_preserves_completed_state_when_result_fetch_fails(monkeypatch) -> None:
+    import open_webui.utils.images.fal as fal
+
+    class Session(_FakeSession):
+        def get(self, url, **_kwargs):
+            if url.endswith('/status'):
+                return _FakeResponse({'status': 'COMPLETED'})
+            return _FakeResponse({'detail': 'temporary response failure'}, status=503)
+
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(Session()))
+
+    with pytest.raises(FalImageError) as captured:
+        await run_fal_queue(
+            'fal-ai/example',
+            {'prompt': 'test'},
+            'secret',
+            'https://queue.test',
+        )
+
+    assert captured.value.status_code == 503
+    assert captured.value.provider_submitted is True
+    assert captured.value.provider_completed is True
+
+
+@pytest.mark.asyncio
+async def test_fal_queue_cancels_remote_request_when_worker_is_cancelled(monkeypatch) -> None:
+    import open_webui.utils.images.fal as fal
+
+    cancelled_urls: list[str] = []
+
+    class Session(_FakeSession):
+        def put(self, url, **_kwargs):
+            cancelled_urls.append(url)
+            return _FakeResponse({})
+
+    async def cancel_during_poll(_seconds):
+        raise asyncio.CancelledError
+
+    observer = _RecordingObserver()
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(Session()))
+    monkeypatch.setattr(fal.asyncio, 'sleep', cancel_during_poll)
+
+    with pytest.raises(asyncio.CancelledError) as captured:
+        await run_fal_queue(
+            'fal-ai/example',
+            {'prompt': 'test'},
+            'secret',
+            'https://queue.test',
+            observer=observer,
+        )
+
+    assert cancelled_urls == ['https://queue.test/cancel']
+    assert captured.value.provider_submitted is True
+    assert captured.value.provider_completed is False
+    assert [event[0] for event in observer.events] == ['submitted', 'status', 'failed']
+
+
+@pytest.mark.asyncio
+async def test_resume_fal_queue_only_polls_and_fetches_existing_response(monkeypatch) -> None:
+    import open_webui.utils.images.fal as fal
+
+    class Session(_FakeSession):
+        def post(self, *_args, **_kwargs):
+            raise AssertionError('resume must not submit another request')
+
+    observer = _RecordingObserver()
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(Session()))
+    monkeypatch.setattr(fal.asyncio, 'sleep', lambda _seconds: _async_value(None))
+
+    result = await resume_fal_queue(
+        status_url='https://queue.test/status',
+        response_url='https://queue.test/result',
+        api_key='secret',
+        observer=observer,
+    )
+
+    assert result['images'][0]['url'] == 'https://example.test/result.png'
+    assert [event[0] for event in observer.events] == ['status', 'status', 'succeeded']
+
+
+@pytest.mark.asyncio
+async def test_resume_fal_queue_preserves_completed_state_on_response_failure(monkeypatch) -> None:
+    import open_webui.utils.images.fal as fal
+
+    class Session(_FakeSession):
+        def get(self, url, **_kwargs):
+            if url.endswith('/status'):
+                return _FakeResponse({'status': 'COMPLETED'})
+            return _FakeResponse({'detail': 'temporary response failure'}, status=503)
+
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(Session()))
+
+    with pytest.raises(FalImageError) as captured:
+        await resume_fal_queue(
+            status_url='https://queue.test/status',
+            response_url='https://queue.test/result',
+            api_key='secret',
+        )
+
+    assert captured.value.provider_submitted is True
+    assert captured.value.provider_completed is True
 
 
 async def _async_value(value):

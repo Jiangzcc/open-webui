@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass
+from pathlib import Path
 
 import aiohttp
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
@@ -230,8 +231,8 @@ async def _try_clip_from_video(
     )
 
 
-def extract_poster_from_video(video_bytes: bytes) -> tuple[bytes, str] | None:
-    """Decode the first frame of ``video_bytes`` into a webp still.
+def extract_poster_from_video(video_source: bytes | Path) -> tuple[bytes, str] | None:
+    """Decode the first frame of a video payload or file into a webp still.
 
     Used when Pexels does not provide a usable poster image. Returns
     ``(webp_bytes, 'image/webp')`` or ``None`` when decoding is unavailable.
@@ -244,7 +245,7 @@ def extract_poster_from_video(video_bytes: bytes) -> tuple[bytes, str] | None:
         log.debug('pyav unavailable; cannot synthesize poster')
         return None
     try:
-        container = av.open(io.BytesIO(video_bytes))
+        container = av.open(str(video_source) if isinstance(video_source, Path) else io.BytesIO(video_source))
     except Exception:
         log.debug('pexels mock poster: could not open video bytes for frame extraction')
         return None
@@ -265,6 +266,31 @@ def extract_poster_from_video(video_bytes: bytes) -> tuple[bytes, str] | None:
             pass
 
 
+def probe_video_duration(video_path: Path) -> int | None:
+    """Read the actual container duration without loading the video into memory."""
+    try:
+        import av
+    except ImportError:
+        return None
+    try:
+        container = av.open(str(video_path))
+    except Exception:
+        log.debug('could not open generated video for duration probing')
+        return None
+    try:
+        if container.duration is not None:
+            return max(1, round(container.duration / av.time_base))
+        stream = container.streams.video[0]
+        if stream.duration is not None and stream.time_base is not None:
+            return max(1, round(float(stream.duration * stream.time_base)))
+        return None
+    except Exception:
+        log.debug('could not determine generated video duration')
+        return None
+    finally:
+        container.close()
+
+
 async def fetch_pexels_mock_clip() -> PexelsMockClip | None:
     """Public seam used by the generator.
 
@@ -281,4 +307,5 @@ __all__ = [
     'extract_poster_from_video',
     'fetch_pexels_mock_clip',
     'pexels_api_key',
+    'probe_video_duration',
 ]

@@ -6,6 +6,7 @@
 
 	import {
 		getProviderOverview,
+		getVideoRuntimeStatus,
 		listProviderAnalytics,
 		listProviderBillingEvents,
 		listProviderModelSummary,
@@ -13,7 +14,8 @@
 		type ProviderAnalytics,
 		type ProviderBillingEvent,
 		type ProviderModelSummary,
-		type ProviderOverview
+		type ProviderOverview,
+		type VideoRuntimeStatus
 	} from '$lib/apis/provider-ops';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
@@ -21,6 +23,7 @@
 	let provider = 'fal';
 	let windowHours = 24;
 	let overview: ProviderOverview | null = null;
+	let videoRuntime: VideoRuntimeStatus | null = null;
 	let models: ProviderModelSummary[] = [];
 	let billingEvents: ProviderBillingEvent[] = [];
 	let analytics: ProviderAnalytics[] = [];
@@ -69,14 +72,17 @@
 		const sequence = ++loadSequence;
 		loading = true;
 		try {
-			const [nextOverview, nextModels, nextBillingEvents, nextAnalytics] = await Promise.all([
-				getProviderOverview(localStorage.token, provider, windowHours),
-				listProviderModelSummary(localStorage.token, provider, windowHours),
-				listProviderBillingEvents(localStorage.token, provider, windowHours, 100),
-				listProviderAnalytics(localStorage.token, provider, windowHours, 500)
-			]);
+			const [nextOverview, nextRuntime, nextModels, nextBillingEvents, nextAnalytics] =
+				await Promise.all([
+					getProviderOverview(localStorage.token, provider, windowHours),
+					getVideoRuntimeStatus(localStorage.token),
+					listProviderModelSummary(localStorage.token, provider, windowHours),
+					listProviderBillingEvents(localStorage.token, provider, windowHours, 100),
+					listProviderAnalytics(localStorage.token, provider, windowHours, 500)
+				]);
 			if (sequence !== loadSequence) return;
 			overview = nextOverview;
+			videoRuntime = nextRuntime;
 			models = nextModels;
 			billingEvents = nextBillingEvents;
 			analytics = nextAnalytics;
@@ -162,6 +168,58 @@
 	{#if loading && !overview}
 		<div class="flex min-h-64 items-center justify-center"><Spinner className="size-5" /></div>
 	{:else if overview}
+		{#if videoRuntime}
+			<section
+				class="grid min-w-0 gap-2 rounded-2xl border border-gray-200 p-3 dark:border-gray-800 sm:grid-cols-2 sm:p-4 lg:grid-cols-4"
+				aria-label={$i18n.t('Video runtime status')}
+			>
+				<div class="min-w-0">
+					<div class="text-xs text-gray-500">{$i18n.t('Video execution mode')}</div>
+					<div class="mt-1 text-sm font-medium dark:text-gray-100">
+						{$i18n.t(
+							videoRuntime.engine === 'fal'
+								? 'Real FAL'
+								: videoRuntime.engine === 'mock'
+									? 'Mock'
+									: 'Invalid'
+						)}
+					</div>
+				</div>
+				<div class="min-w-0">
+					<div class="text-xs text-gray-500">{$i18n.t('FAL API key')}</div>
+					<div class="mt-1 text-sm font-medium dark:text-gray-100">
+						{$i18n.t(videoRuntime.fal_api_key_configured ? 'Configured' : 'Not configured')}
+					</div>
+				</div>
+				<div class="min-w-0">
+					<div class="text-xs text-gray-500">{$i18n.t('Active video tasks')}</div>
+					<div class="mt-1 text-sm font-medium tabular-nums dark:text-gray-100">
+						{videoRuntime.active_task_count}
+					</div>
+				</div>
+				<div class="min-w-0">
+					<div class="text-xs text-gray-500">{$i18n.t('Delivery retries')}</div>
+					<div class="mt-1 text-sm font-medium tabular-nums dark:text-gray-100">
+						{videoRuntime.delivery_max_attempts}
+					</div>
+				</div>
+				<div class="min-w-0 sm:col-span-2 lg:col-span-4">
+					<div class="text-xs text-gray-500">{$i18n.t('Real video policy')}</div>
+					<p class="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">
+						{$i18n.t('Allowed models')}: {videoRuntime.allowed_models.length
+							? videoRuntime.allowed_models.join(', ')
+							: $i18n.t('All enabled models')}
+						· {$i18n.t('Per-request limit')}: {videoRuntime.max_credits_per_request ??
+							$i18n.t('Not set')}
+					</p>
+					{#if videoRuntime.configuration_error}
+						<p class="mt-2 break-all text-xs text-red-600 dark:text-red-300" role="alert">
+							{$i18n.t('Configuration error')}: {videoRuntime.configuration_error}
+						</p>
+					{/if}
+				</div>
+			</section>
+		{/if}
 		<section
 			class="grid grid-cols-2 gap-2 lg:grid-cols-5"
 			aria-label={$i18n.t('Provider overview')}
@@ -222,6 +280,12 @@
 			<span>{$i18n.t('Last synchronized')}: {dateTime(overview.last_synced_at)}</span>
 			<span>
 				{$i18n.t('Provider requests matched')}: {overview.matched_provider_request_count} / {overview.provider_request_count}
+			</span>
+			<span
+				class:font-medium={overview.unbilled_success_count > 0}
+				class:text-amber-600={overview.unbilled_success_count > 0}
+			>
+				{$i18n.t('Successful requests awaiting billing')}: {overview.unbilled_success_count}
 			</span>
 		</div>
 

@@ -1,6 +1,6 @@
-# 设计：视频首尾帧 / 图生视频执行体落地（方案骨架，不实现）
+# 设计：视频首尾帧 / 图生视频执行体落地
 
-> 状态：**本轮只给方案 + TDD 骨架，不落地真实 fal 视频集成**。用户明确指示"#1 做，#4 给方案骨架不落地"。
+> 状态：**已于 2026-08-17 落地**。实现位于 `backend/open_webui/extensions/videos/executor.py`；默认保留 mock，显式设置 `VIDEO_GENERATION_ENGINE=fal` 才调用真实 FAL。本文其余内容保留为实施前的设计记录，当前运维契约以 `docs/extensions/extensions-operations.md` 为准。
 > 配对：`docs/extensions/extensions-operations.md`（视频扩展运维手册）、`docs/superpowers/specs/2026-08-14-credit-cost-reconciliation-design.md`（对账链路，依赖本任务）。
 
 ## 现状（实测，非推测）
@@ -62,7 +62,7 @@ result = await executor.invoke(request, user, task, definition, provider_payload
 # 终态事务不变：mark_usage_succeeded_in_session([result['url']]) + 写 CreationMediaItem
 ```
 
-### 2. asset file_id → provider *_url 的桥接
+### 2. asset file_id → provider \*\_url 的桥接
 
 fal 的 image-to-video / video-to-video 需要 `start_image_url` / `end_image_url` / `video_url`，这些是**公网可访问 URL**。本地 `file_id` 要先转成内部 `/api/v1/files/{id}/content` URL（`get_file_content_by_id` 的 `url_path_for`，图片侧 `service.py:381` 已用）。
 

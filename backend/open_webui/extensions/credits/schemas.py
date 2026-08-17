@@ -294,6 +294,7 @@ class ReconciliationItem(StrictModel):
     resource_id: str
     action: str
     channel: str
+    execution_mode: Literal['mock', 'fal'] | None = None
     error_code: str | None
     error_summary: str | None
     consumption_ledger_id: str | None

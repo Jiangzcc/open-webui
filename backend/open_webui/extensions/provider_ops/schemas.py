@@ -188,10 +188,22 @@ class ProviderOverview(StrictModel):
     matched_provider_request_count: int = Field(ge=0)
     billing_event_count: int = Field(ge=0)
     matched_billing_event_count: int = Field(ge=0)
+    unbilled_success_count: int = Field(ge=0)
     exact_costs: dict[str, str]
     matched_exact_costs: dict[str, str]
     last_sync_status: Literal['running', 'succeeded', 'failed'] | None
     last_synced_at: int | None
+
+
+class VideoRuntimeStatus(StrictModel):
+    engine: Literal['mock', 'fal', 'invalid']
+    fal_api_key_configured: bool
+    allowed_models: tuple[str, ...]
+    max_credits_per_request: int | None = Field(default=None, ge=1)
+    delivery_max_attempts: int = Field(ge=1)
+    result_max_bytes: int = Field(ge=1)
+    active_task_count: int = Field(ge=0)
+    configuration_error: str | None
 
 
 __all__ = [
@@ -215,4 +227,5 @@ __all__ = [
     'ProviderSyncTimeframe',
     'ProviderUsageItem',
     'ProviderUsageList',
+    'VideoRuntimeStatus',
 ]

@@ -4,6 +4,7 @@ import random
 import re
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
 from open_webui.utils.images.fal_models import (
@@ -570,6 +571,22 @@ async def _notify_provider(observer: 'ProviderInvocationObserver | None', method
         log.exception('Provider invocation observer failed during %s', method)
 
 
+async def _cancel_fal_request(session: Any, cancel_url: str, headers: dict[str, str]) -> None:
+    """Best-effort remote cancellation used only when the local worker is cancelled."""
+    parsed = urlparse(cancel_url)
+    if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password:
+        log.warning('Ignoring invalid FAL cancellation URL')
+        return
+    try:
+        async with session.put(cancel_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
+            if response.status >= 400:
+                log.warning('FAL cancellation returned HTTP %s', response.status)
+    except Exception:
+        # Shutdown must continue even when the provider cancellation endpoint is
+        # unavailable. Billing retains the prepaid charge for reconciliation.
+        log.exception('Could not cancel the remote FAL request')
+
+
 async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notifications share one error boundary
     model: str,
     payload: dict[str, Any],
@@ -577,9 +594,13 @@ async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notificati
     base_url: str,
     *,
     observer: 'ProviderInvocationObserver | None' = None,
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     headers = _headers(api_key)
     session = await get_session()
+    cancel_url: str | None = None
+    provider_submitted = False
+    provider_completed = False
 
     try:
         async with session.post(
@@ -593,8 +614,12 @@ async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notificati
             submitted = await response.json(content_type=None)
 
         if isinstance(submitted, dict):
+            provider_submitted = True
+            candidate_cancel_url = submitted.get('cancel_url')
+            cancel_url = candidate_cancel_url if isinstance(candidate_cancel_url, str) else None
             await _notify_provider(observer, 'submitted', submitted)
-            if 'images' in submitted or 'image' in submitted or 'url' in submitted:
+            if 'images' in submitted or 'image' in submitted or 'video' in submitted or 'url' in submitted:
+                provider_completed = True
                 await _notify_provider(observer, 'succeeded')
                 return submitted
 
@@ -604,7 +629,9 @@ async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notificati
         if not response_url:
             raise FalImageError('fal.ai response did not include a response_url')
 
-        deadline = asyncio.get_running_loop().time() + FAL_REQUEST_TIMEOUT_SECONDS
+        deadline = asyncio.get_running_loop().time() + (
+            FAL_REQUEST_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        )
 
         while status_url and asyncio.get_running_loop().time() < deadline:
             async with session.get(status_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
@@ -616,6 +643,7 @@ async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notificati
                 await _notify_provider(observer, 'status', status)
             request_status = status.get('status') if isinstance(status, dict) else None
             if request_status == 'COMPLETED':
+                provider_completed = True
                 break
             if request_status in {'FAILED', 'CANCELLED'}:
                 raise FalImageError(f'fal.ai request {request_status.lower()}: {status}')
@@ -632,9 +660,78 @@ async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notificati
         await _notify_provider(observer, 'succeeded')
         return result
     except asyncio.CancelledError as error:
+        if cancel_url is not None and not provider_completed:
+            await _cancel_fal_request(session, cancel_url, headers)
+        setattr(error, 'provider_submitted', provider_submitted)
+        setattr(error, 'provider_completed', provider_completed)
         await _notify_provider(observer, 'failed', error)
         raise
     except Exception as error:
+        setattr(error, 'provider_submitted', provider_submitted)
+        setattr(error, 'provider_completed', provider_completed)
+        await _notify_provider(observer, 'failed', error)
+        raise
+
+
+async def resume_fal_queue(  # noqa: C901 - queue status and response recovery share one state boundary
+    *,
+    status_url: str | None,
+    response_url: str,
+    api_key: str,
+    observer: 'ProviderInvocationObserver | None' = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Resume an already-submitted FAL queue request without another POST.
+
+    The URLs come from FAL's original submission response and are persisted by
+    the video extension.  Recovery deliberately has no generation endpoint, so
+    it cannot accidentally create a second paid request.
+    """
+    for value in (status_url, response_url):
+        if value is None:
+            continue
+        parsed = urlparse(value)
+        if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password:
+            raise FalImageError('fal.ai recovery URL is invalid')
+
+    headers = _headers(api_key)
+    session = await get_session()
+    provider_completed = status_url is None
+    try:
+        deadline = asyncio.get_running_loop().time() + (
+            FAL_REQUEST_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        )
+        while status_url and asyncio.get_running_loop().time() < deadline:
+            async with session.get(status_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
+                if response.status >= 400:
+                    raise await _response_error(response)
+                status = await response.json(content_type=None)
+            if isinstance(status, dict):
+                await _notify_provider(observer, 'status', status)
+            request_status = status.get('status') if isinstance(status, dict) else None
+            if request_status == 'COMPLETED':
+                provider_completed = True
+                break
+            if request_status in {'FAILED', 'CANCELLED'}:
+                raise FalImageError(f'fal.ai request {request_status.lower()}: {status}')
+            await asyncio.sleep(FAL_POLL_INTERVAL_SECONDS)
+        else:
+            if status_url:
+                raise FalImageError('fal.ai request timed out')
+
+        async with session.get(response_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
+            if response.status >= 400:
+                raise await _response_error(response)
+            result = await response.json(content_type=None)
+        await _notify_provider(observer, 'succeeded')
+        return result
+    except asyncio.CancelledError as error:
+        setattr(error, 'provider_submitted', True)
+        setattr(error, 'provider_completed', provider_completed)
+        raise
+    except Exception as error:
+        setattr(error, 'provider_submitted', True)
+        setattr(error, 'provider_completed', provider_completed)
         await _notify_provider(observer, 'failed', error)
         raise
 

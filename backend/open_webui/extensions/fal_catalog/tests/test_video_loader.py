@@ -119,6 +119,11 @@ def test_loads_packaged_video_catalog() -> None:
         tasks = {definition.task for definition in catalog.definitions if definition.provider == provider}
         assert tasks & {'text-to-video', 'image-to-video'}, f'{provider} has no generation model'
 
+    for definition in catalog.definitions:
+        assert definition.output_field
+        assert definition.output_mime_types
+        assert all(mime_type.startswith('video/') for mime_type in definition.output_mime_types)
+
 
 def test_packaged_video_models_require_their_primary_asset() -> None:
     catalog = load_video_catalog()

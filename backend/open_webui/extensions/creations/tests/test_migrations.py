@@ -78,6 +78,8 @@ EXPECTED_CHECKS = {
     'ck_ext_image_task_expected_count',
     'ck_ext_video_task_status',
     'ck_ext_video_task_kind',
+    'ck_ext_video_task_execution_mode',
+    'ck_ext_video_task_delivery_attempts',
     'ck_ext_creation_category_sort_order',
 }
 BIGINT_COLUMNS = {
@@ -130,7 +132,7 @@ def test_upgrade_creates_only_creation_objects_and_preserves_upstream_sentinel(s
         assert names == {'user', *TABLE_NAMES, 'ext_creation_schema_version'}
         assert 'alembic_version' not in names
         assert connection.execute(text('SELECT version_num FROM ext_creation_schema_version')).scalar_one() == (
-            '0007_add_video_creations_and_tasks'
+            '0008_add_video_delivery_recovery'
         )
         assert connection.execute(
             text('SELECT id, display_name, enabled, sort_order FROM ext_creation_category ORDER BY sort_order')

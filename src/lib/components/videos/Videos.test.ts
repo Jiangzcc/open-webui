@@ -97,11 +97,27 @@ describe('video creation page', () => {
 		// 修复 5：后端 CreditError 返回 {code, message, context}，前端需读取 code 并映射到 i18n。
 		// 验证 error code → i18n key 映射表存在且覆盖关键错误码。
 		expect(source).toContain('videoCreditErrorI18nKey');
-		expect(source).toContain('insufficient_credits: \'Insufficient credits\'');
-		expect(source).toContain('price_not_configured: \'Video price is not configured\'');
+		expect(source).toContain("insufficient_credits: 'Insufficient credits'");
+		expect(source).toContain("price_not_configured: 'Video price is not configured'");
 		expect(source).toContain('rate_limited');
 		// 验证 generate() catch 块使用了映射而非通用消息
 		expect(source).toContain('videoCreditErrorI18nKey[code]');
 		expect(source).toContain("'Video generation failed'");
+	});
+
+	test('explains provider and local delivery failures separately', () => {
+		expect(source).toContain('videoTaskErrorI18nKey');
+		expect(source).toContain(
+			"video_delivery_failed: 'The provider generated the video, but local delivery failed'"
+		);
+		expect(source).toContain("video_provider_timeout: 'The video provider timed out'");
+		expect(source).toContain('toast.error(videoTaskErrorMessage(next))');
+	});
+
+	test('reuses the same idempotency key after an uncertain network failure', () => {
+		expect(source).toContain("const PENDING_VIDEO_SUBMISSION_KEY = 'pending-video-submission'");
+		expect(source).toContain('stored?.fingerprint === fingerprint');
+		expect(source).toContain('const idempotencyKey = await idempotencyKeyFor(submission)');
+		expect(source).toContain('![408, 429].includes(error.status)');
 	});
 });

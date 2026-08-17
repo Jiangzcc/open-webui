@@ -28,4 +28,9 @@ describe('video API errors', () => {
 		expect(parseVideoRequestError({ detail: 'invalid_duration' }).code).toBe('invalid_duration');
 		expect(parseVideoRequestError({}).code).toBe('video_request_failed');
 	});
+
+	test('preserves HTTP status so uncertain server failures keep the idempotency key', () => {
+		expect(parseVideoRequestError({ detail: 'temporarily_unavailable' }, 503).status).toBe(503);
+		expect(parseVideoRequestError({ detail: 'invalid_duration' }, 422).status).toBe(422);
+	});
 });

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -17,12 +18,16 @@ from open_webui.extensions.credits.service import (
     mark_usage_failed,
     mark_usage_invoking,
     mark_usage_succeeded_in_session,
+    touch_usage_invoking,
 )
 from open_webui.extensions.fal_catalog import load_video_catalog
 from open_webui.extensions.videos.schemas import VideoTaskResponse, VideoTaskSubmitForm
 
 _USAGE_FAILURE_MAX_ATTEMPTS = 3
 _USAGE_FAILURE_RETRY_SECONDS = 0.1
+_USAGE_HEARTBEAT_SECONDS = 60
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,7 @@ class VideoBillingContext:
     channel: str
     dimensions: Mapping[str, str | int]
     request_hash: str
+    execution_mode: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, 'dimensions', MappingProxyType(dict(self.dimensions)))
@@ -93,7 +99,7 @@ def _request_hash(task: VideoTaskResponse) -> str:
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
 
-def video_billing_context(task: VideoTaskResponse) -> VideoBillingContext:
+def video_billing_context(task: VideoTaskResponse, *, execution_mode: str | None = None) -> VideoBillingContext:
     internal_id = _resolve_internal_model_id(task.model_id)
     return VideoBillingContext(
         service_type='video',
@@ -102,6 +108,7 @@ def video_billing_context(task: VideoTaskResponse) -> VideoBillingContext:
         channel='web',
         dimensions=video_quote_dimensions(task),
         request_hash=_request_hash(task),
+        execution_mode=execution_mode,
     )
 
 
@@ -139,7 +146,7 @@ async def quote_video_usage(user: object, submission: VideoTaskSubmitForm) -> Vi
         )
 
 
-async def begin_video_usage(user: object, task: VideoTaskResponse):
+async def begin_video_usage(user: object, task: VideoTaskResponse, *, execution_mode: str):
     snapshot = UserSnapshot(
         id=getattr(user, 'id'),
         name=getattr(user, 'name', None),
@@ -149,7 +156,7 @@ async def begin_video_usage(user: object, task: VideoTaskResponse):
         return await begin_image_usage(
             session,
             snapshot,
-            video_billing_context(task),
+            video_billing_context(task, execution_mode=execution_mode),
             f'video:{task.id}',
         )
 
@@ -159,17 +166,31 @@ async def mark_video_usage_invoking(usage_id: str) -> None:
         raise RuntimeError('video usage invoking transition failed')
 
 
-async def mark_video_usage_failed(usage_id: str, code: str) -> None:
-    # 视频任务失败默认退预扣积分，对齐图片 cancel 路径的 restore_prepaid=True
-    # （image_billing.py:377-378）。否则失败后积分会卡在 invoking，只能等
-    # 后台 recovery worker 标 unknown 再对账，用户拿不到即时退款。
+async def heartbeat_video_usage(usage_id: str) -> None:
+    """Keep a long real-provider call out of the 15-minute stale recovery path."""
+    while True:
+        await asyncio.sleep(_USAGE_HEARTBEAT_SECONDS)
+        try:
+            if await touch_usage_invoking(usage_id) != 1:
+                log.warning('Video usage heartbeat no longer owns invoking usage %s', usage_id)
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Observability/recovery coordination must not replace the provider result.
+            log.exception('Could not refresh video usage heartbeat for %s', usage_id)
+
+
+async def mark_video_usage_failed(usage_id: str, code: str, *, restore_prepaid: bool = True) -> None:
+    # 供应商调用前/供应商明确失败时即时退款；FAL 已完成或提交状态不确定时，
+    # 调用方传 restore_prepaid=False 保留扣费，等待真实账单对账。
     error = SafeProviderError(code=code[:64], summary='Video generation failed')
     for attempt in range(_USAGE_FAILURE_MAX_ATTEMPTS):
         try:
             await mark_usage_failed(
                 usage_id,
                 error,
-                restore_prepaid=True,
+                restore_prepaid=restore_prepaid,
             )
             return
         except asyncio.CancelledError:
@@ -184,6 +205,7 @@ __all__ = [
     'VideoQuoteResult',
     'begin_video_usage',
     'credit_session',
+    'heartbeat_video_usage',
     'mark_usage_succeeded_in_session',
     'mark_video_usage_failed',
     'mark_video_usage_invoking',

@@ -121,32 +121,36 @@ export class VideoRequestError extends Error {
 	code: string;
 	publicMessage?: string;
 	preferPublicMessage: boolean;
+	status?: number;
 
-	constructor(code: string, publicMessage?: string, preferPublicMessage = false) {
+	constructor(code: string, publicMessage?: string, preferPublicMessage = false, status?: number) {
 		super(code);
 		this.name = 'VideoRequestError';
 		this.code = code;
 		this.publicMessage = publicMessage;
 		this.preferPublicMessage = preferPublicMessage;
+		this.status = status;
 	}
 }
 
-export const parseVideoRequestError = (payload: unknown): VideoRequestError => {
-	if (!payload || typeof payload !== 'object') return new VideoRequestError('video_request_failed');
+export const parseVideoRequestError = (payload: unknown, status?: number): VideoRequestError => {
+	if (!payload || typeof payload !== 'object')
+		return new VideoRequestError('video_request_failed', undefined, false, status);
 
 	const body = payload as Record<string, unknown>;
 	if (body.detail && typeof body.detail === 'object') {
 		const detail = body.detail as Record<string, unknown>;
 		const code = typeof detail.code === 'string' ? detail.code : 'video_request_failed';
 		const publicMessage = typeof detail.message === 'string' ? detail.message : undefined;
-		return new VideoRequestError(code, publicMessage, true);
+		return new VideoRequestError(code, publicMessage, true, status);
 	}
-	if (typeof body.detail === 'string') return new VideoRequestError(body.detail);
+	if (typeof body.detail === 'string')
+		return new VideoRequestError(body.detail, undefined, false, status);
 	if (typeof body.code === 'string') {
 		const publicMessage = typeof body.message === 'string' ? body.message : undefined;
-		return new VideoRequestError(body.code, publicMessage);
+		return new VideoRequestError(body.code, publicMessage, false, status);
 	}
-	return new VideoRequestError('video_request_failed');
+	return new VideoRequestError('video_request_failed', undefined, false, status);
 };
 
 const request = async <T>(token: string, path: string, init?: RequestInit): Promise<T> => {
@@ -161,7 +165,7 @@ const request = async <T>(token: string, path: string, init?: RequestInit): Prom
 	});
 	if (!response.ok) {
 		const payload = await response.json().catch(() => ({}));
-		throw parseVideoRequestError(payload);
+		throw parseVideoRequestError(payload, response.status);
 	}
 	return response.status === 204 ? (undefined as T) : response.json();
 };

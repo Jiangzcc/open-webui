@@ -11,6 +11,12 @@ from open_webui.extensions.credits.http import public_credit_error_response
 from open_webui.extensions.model_ops.service import ensure_model_enabled
 from open_webui.extensions.videos.billing import quote_video_usage
 from open_webui.extensions.videos.catalog import VideoInputError, public_video_catalog_for_user
+from open_webui.extensions.videos.executor import (
+    FalVideoExecutor,
+    VideoExecutionError,
+    enforce_fal_video_policy,
+    resolve_video_executor,
+)
 from open_webui.extensions.videos.limits import (
     acquire_video_generation_slot,
     enforce_video_generation_rate,
@@ -28,6 +34,7 @@ from open_webui.extensions.videos.service import (
     get_video_task_by_idempotency_key,
     list_video_tasks,
     schedule_video_task,
+    video_task_matches_submission,
 )
 from open_webui.internal.db import get_async_session
 from open_webui.utils.auth import get_verified_user
@@ -63,7 +70,13 @@ async def submit_video_task(  # noqa: C901 - admission, idempotency, and slot cl
     )
     existing = await get_video_task_by_idempotency_key(session, user.id, key)
     if existing is not None:
+        if not video_task_matches_submission(existing, submission):
+            return JSONResponse(status_code=409, content={'detail': 'idempotency_key_conflict'})
         return existing
+    try:
+        executor = resolve_video_executor(request)
+    except VideoExecutionError as error:
+        return JSONResponse(status_code=503, content={'detail': error.code})
     # 提交速率限流：在落库前拦截刷量请求，避免无效任务占据 DB 行 + 调度槽。
     # 与 images/limits.py 一致：Redis 滚窗 + 内存兜底；超限返回 429。
     try:
@@ -74,11 +87,20 @@ async def submit_video_task(  # noqa: C901 - admission, idempotency, and slot cl
     # 浪费 DB 行 + 用户看到「生成失败」而非「余额不足」的清晰提示。
     # quote 只读账户与定价表，不扣费、不占位。
     try:
-        await quote_video_usage(user, submission)
+        quote = await quote_video_usage(user, submission)
     except VideoInputError as error:
         return JSONResponse(status_code=422, content={'detail': str(error)})
     except CreditError as error:
         return public_credit_error_response(error)
+    if isinstance(executor, FalVideoExecutor):
+        try:
+            enforce_fal_video_policy(
+                model_id=submission.model,
+                charged_credits=quote.charged_credits or 0,
+            )
+        except VideoExecutionError as error:
+            status_code = 503 if error.code == 'video_fal_policy_invalid' else 403
+            return JSONResponse(status_code=status_code, content={'detail': error.code})
     # 并发槽：每用户进行中任务上限。acquire 后无论后续成功失败都必须 release。
     try:
         await acquire_video_generation_slot(user.id)

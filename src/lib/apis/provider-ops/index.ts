@@ -13,10 +13,22 @@ export type ProviderOverview = {
 	matched_provider_request_count: number;
 	billing_event_count: number;
 	matched_billing_event_count: number;
+	unbilled_success_count: number;
 	exact_costs: Record<string, string>;
 	matched_exact_costs: Record<string, string>;
 	last_sync_status: 'running' | 'succeeded' | 'failed' | null;
 	last_synced_at: number | null;
+};
+
+export type VideoRuntimeStatus = {
+	engine: 'mock' | 'fal' | 'invalid';
+	fal_api_key_configured: boolean;
+	allowed_models: string[];
+	max_credits_per_request: number | null;
+	delivery_max_attempts: number;
+	result_max_bytes: number;
+	active_task_count: number;
+	configuration_error: string | null;
 };
 
 export type ProviderModelSummary = {
@@ -97,6 +109,9 @@ const query = (provider: string, windowHours: number, limit?: number) => {
 
 export const getProviderOverview = (token: string, provider: string, windowHours: number) =>
 	request<ProviderOverview>(`/admin/overview?${query(provider, windowHours)}`, token);
+
+export const getVideoRuntimeStatus = (token: string) =>
+	request<VideoRuntimeStatus>('/admin/video-runtime', token);
 
 export const listProviderModelSummary = (token: string, provider: string, windowHours: number) =>
 	request<{ items: ProviderModelSummary[] }>(

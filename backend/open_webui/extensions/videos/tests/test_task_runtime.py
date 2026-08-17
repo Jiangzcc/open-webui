@@ -337,3 +337,248 @@ def test_cancellation_during_terminal_commit_uses_persisted_usage_status(monkeyp
         assert credit_session_calls == 2
 
     asyncio.run(scenario())
+
+
+def test_recovery_resumes_existing_fal_request_without_new_generation(monkeypatch, tmp_path) -> None:  # noqa: C901
+    async def scenario() -> None:  # noqa: C901 - recovery collaborators are isolated explicitly
+        states: list[str] = []
+        resumed: dict[str, object] = {}
+        row = SimpleNamespace(
+            id='task-1',
+            user_id='user-1',
+            idempotency_key='key-1',
+            status='running',
+            task='text-to-video',
+            prompt='A paper boat',
+            model_id='kling-video-v3-pro',
+            params_json={'duration': '5'},
+            assets_json=[],
+            result_json=None,
+            error_code=None,
+            usage_id='usage-1',
+            execution_mode='fal',
+            provider_request_id='request-1',
+            provider_status_url='https://queue.fal.run/status/request-1',
+            provider_response_url='https://queue.fal.run/response/request-1',
+            provider_result_url=None,
+            delivery_attempts=0,
+            created_at=1,
+            started_at=1,
+            completed_at=None,
+            updated_at=1,
+        )
+
+        class _Context:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args) -> None:
+                return None
+
+            def begin(self):
+                return self
+
+            async def scalar(self, _statement):
+                return row
+
+        output_path = tmp_path / 'recovered.mp4'
+        output_path.write_bytes(b'video')
+        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+
+        async def resume(self, _task, _definition, **kwargs):
+            resumed.update(kwargs)
+            return service.VideoExecutionOutput(output_path, 'video/mp4', 5)
+
+        async def unexpected_invoke(*_args, **_kwargs):
+            raise AssertionError('recovery must not invoke a new provider generation')
+
+        async def no_existing(*_args, **_kwargs):
+            return None
+
+        async def set_state(_task_id, status, **_kwargs) -> None:
+            states.append(status)
+
+        async def no_op(*_args, **_kwargs) -> None:
+            return None
+
+        async def finalize(*_args, **_kwargs):
+            return {'url': '/api/v1/files/result/content'}
+
+        async def succeed(*_args, **_kwargs):
+            return 1
+
+        monkeypatch.setattr(service.FalVideoExecutor, 'resume', resume)
+        monkeypatch.setattr(service.FalVideoExecutor, 'invoke', unexpected_invoke)
+        monkeypatch.setattr(service, 'resolve_video_executor', lambda _request: real)
+        monkeypatch.setattr(service, 'creation_session', lambda: _Context())
+        monkeypatch.setattr(service, 'credit_session', lambda: _Context())
+        monkeypatch.setattr(service, '_existing_creation_result', no_existing)
+        monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
+        monkeypatch.setattr(service, '_finalize_real_video', finalize)
+        monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
+        monkeypatch.setattr(service, '_set_task_state', set_state)
+        monkeypatch.setattr(service, '_publish_video_task_event', no_op)
+        monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission: (object(), {}, {}))
+
+        await service.recover_video_task(
+            'task-1',
+            SimpleNamespace(app=SimpleNamespace(url_path_for=lambda *_args, **_kwargs: '/content')),
+            SimpleNamespace(id='user-1'),
+        )
+
+        assert resumed['response_url'] == row.provider_response_url
+        assert states == ['succeeded']
+        assert not output_path.exists()
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_keeps_submitted_fal_task_recoverable(monkeypatch) -> None:  # noqa: C901
+    async def scenario() -> None:  # noqa: C901 - shutdown billing collaborators are isolated explicitly
+        states: list[tuple[str, str | None]] = []
+        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+        task = VideoTaskResponse(
+            id='task-1',
+            status='running',
+            task='text-to-video',
+            prompt='A paper boat',
+            model_id='kling-video-v3-pro',
+            params={'duration': '5'},
+            assets=(),
+            result=None,
+            error_code=None,
+            created_at=1,
+            updated_at=1,
+        )
+
+        class _Context:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args) -> None:
+                return None
+
+        async def invoke(*_args, **_kwargs):
+            error = asyncio.CancelledError()
+            setattr(error, 'provider_submitted', True)
+            raise error
+
+        async def set_state(_task_id, status, **kwargs) -> None:
+            states.append((status, kwargs.get('error_code')))
+
+        async def get_task(*_args, **_kwargs):
+            return task
+
+        async def begin_usage(*_args, **_kwargs):
+            return SimpleNamespace(outcome='new', usage=SimpleNamespace(id='usage-1'))
+
+        async def no_op(*_args, **_kwargs) -> None:
+            return None
+
+        async def unexpected_fail(*_args, **_kwargs) -> None:
+            raise AssertionError('submitted FAL usage must remain invoking for recovery')
+
+        monkeypatch.setattr(service.FalVideoExecutor, 'invoke', invoke)
+        monkeypatch.setattr(service, 'resolve_video_executor', lambda _request: real)
+        monkeypatch.setattr(service, '_set_task_state', set_state)
+        monkeypatch.setattr(service, '_publish_video_task_event', no_op)
+        monkeypatch.setattr(service, 'creation_session', lambda: _Context())
+        monkeypatch.setattr(service, 'get_video_task', get_task)
+        monkeypatch.setattr(service, 'begin_video_usage', begin_usage)
+        monkeypatch.setattr(service, '_set_task_usage_id', no_op)
+        monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
+        monkeypatch.setattr(service, 'heartbeat_video_usage', no_op)
+        monkeypatch.setattr(service, 'mark_video_usage_failed', unexpected_fail)
+        monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission: (object(), {}, {}))
+
+        try:
+            await service.run_video_task(
+                'task-1',
+                SimpleNamespace(app=SimpleNamespace()),
+                SimpleNamespace(id='user-1'),
+            )
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError('shutdown cancellation was swallowed')
+
+        assert states == [('running', None), ('running', 'video_recovery_pending')]
+
+    asyncio.run(scenario())
+
+
+def test_uncertain_submitted_fal_failure_resumes_without_refund(monkeypatch) -> None:  # noqa: C901
+    async def scenario() -> None:
+        states: list[tuple[str, str | None]] = []
+        recovered: list[str] = []
+        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+        task = VideoTaskResponse(
+            id='task-1',
+            status='running',
+            task='text-to-video',
+            prompt='A paper boat',
+            model_id='kling-video-v3-pro',
+            params={'duration': '5'},
+            assets=(),
+            result=None,
+            error_code=None,
+            created_at=1,
+            updated_at=1,
+        )
+
+        class _Context:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args) -> None:
+                return None
+
+        async def invoke(*_args, **_kwargs):
+            raise service.VideoExecutionError(
+                'video_provider_failed',
+                provider_submitted=True,
+                retryable=True,
+            )
+
+        async def set_state(_task_id, status, **kwargs) -> None:
+            states.append((status, kwargs.get('error_code')))
+
+        async def get_task(*_args, **_kwargs):
+            return task
+
+        async def begin_usage(*_args, **_kwargs):
+            return SimpleNamespace(outcome='new', usage=SimpleNamespace(id='usage-1'))
+
+        async def no_op(*_args, **_kwargs) -> None:
+            return None
+
+        async def recover(task_id, *_args, **_kwargs) -> None:
+            recovered.append(task_id)
+
+        async def unexpected_fail(*_args, **_kwargs) -> None:
+            raise AssertionError('uncertain submitted usage must remain invoking for recovery')
+
+        monkeypatch.setattr(service.FalVideoExecutor, 'invoke', invoke)
+        monkeypatch.setattr(service, 'resolve_video_executor', lambda _request: real)
+        monkeypatch.setattr(service, '_set_task_state', set_state)
+        monkeypatch.setattr(service, '_publish_video_task_event', no_op)
+        monkeypatch.setattr(service, 'creation_session', lambda: _Context())
+        monkeypatch.setattr(service, 'get_video_task', get_task)
+        monkeypatch.setattr(service, 'begin_video_usage', begin_usage)
+        monkeypatch.setattr(service, '_set_task_usage_id', no_op)
+        monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
+        monkeypatch.setattr(service, 'heartbeat_video_usage', no_op)
+        monkeypatch.setattr(service, 'mark_video_usage_failed', unexpected_fail)
+        monkeypatch.setattr(service, 'recover_video_task', recover)
+        monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission: (object(), {}, {}))
+
+        await service.run_video_task(
+            'task-1',
+            SimpleNamespace(app=SimpleNamespace()),
+            SimpleNamespace(id='user-1'),
+        )
+
+        assert states == [('running', None), ('running', 'video_delivery_pending')]
+        assert recovered == ['task-1']
+
+    asyncio.run(scenario())

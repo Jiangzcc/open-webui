@@ -301,6 +301,10 @@ class FalVideoModelDefinition(_StrictModel):
 
     @model_validator(mode='after')
     def validate_capabilities(self) -> FalVideoModelDefinition:  # noqa: C901
+        if len(self.output_mime_types) != len(set(self.output_mime_types)) or any(
+            not value.startswith('video/') for value in self.output_mime_types
+        ):
+            raise ValueError('video outputs must use unique video MIME types')
         if bool(self.durations) == bool(self.duration_min is not None or self.duration_max is not None):
             if self.durations is not None or self.duration_min is not None or self.duration_max is not None:
                 raise ValueError('video duration must use either options or numeric range')

@@ -721,6 +721,18 @@ async def get_provider_overview(
     matched_exact_costs = {
         currency: _decimal(matched_cost_values.get(currency, Decimal(0))) for currency in exact_cost_values
     }
+    unbilled_success_count = int(
+        await session.scalar(
+            select(func.count(ProviderInvocation.id)).where(
+                ProviderInvocation.provider == provider,
+                ProviderInvocation.status == 'succeeded',
+                ProviderInvocation.created_at >= since_ms,
+                ProviderInvocation.created_at < until_ms,
+                ProviderInvocation.actual_cost_total.is_(None),
+            )
+        )
+        or 0
+    )
     return ProviderOverview(
         provider=provider,
         window_start_at=since_ms,
@@ -734,6 +746,7 @@ async def get_provider_overview(
         matched_provider_request_count=provider_request_stats[1] or 0,
         billing_event_count=billing_event_count,
         matched_billing_event_count=matched_billing_event_count,
+        unbilled_success_count=unbilled_success_count,
         exact_costs=exact_costs,
         matched_exact_costs=matched_exact_costs,
         last_sync_status=last_sync.status if last_sync is not None else None,

@@ -46,6 +46,13 @@ def test_video_billing_context_uses_internal_model_and_normalized_dimensions() -
     }
 
 
+def test_video_billing_context_records_execution_mode_without_changing_pricing_dimensions() -> None:
+    context = video_billing_context(_task(), execution_mode='fal')
+
+    assert context.execution_mode == 'fal'
+    assert 'execution_mode' not in context.dimensions
+
+
 def test_video_billing_request_hash_is_stable_and_input_sensitive() -> None:
     first = video_billing_context(_task()).request_hash
     repeated = video_billing_context(_task()).request_hash
@@ -109,6 +116,38 @@ def test_mark_video_usage_failed_retries_transient_storage_failure(monkeypatch) 
 
         await billing.mark_video_usage_failed('usage-1', 'video_generation_failed')
         assert attempts == 3
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_video_usage_heartbeat_refreshes_invoking_usage(monkeypatch) -> None:
+    from open_webui.extensions.videos import billing
+
+    async def scenario() -> None:
+        refreshed = billing.asyncio.Event()
+        block = billing.asyncio.Event()
+        sleep_calls = 0
+
+        async def controlled_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls > 1:
+                await block.wait()
+
+        async def touch(usage_id: str) -> int:
+            assert usage_id == 'usage-1'
+            refreshed.set()
+            return 1
+
+        monkeypatch.setattr(billing.asyncio, 'sleep', controlled_sleep)
+        monkeypatch.setattr(billing, 'touch_usage_invoking', touch)
+        task = billing.asyncio.create_task(billing.heartbeat_video_usage('usage-1'))
+        await refreshed.wait()
+        task.cancel()
+        await billing.asyncio.gather(task, return_exceptions=True)
+        assert sleep_calls >= 1
 
     import asyncio
 

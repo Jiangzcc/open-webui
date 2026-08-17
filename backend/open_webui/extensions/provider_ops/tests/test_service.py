@@ -9,6 +9,7 @@ from open_webui.extensions.provider_ops.models import ProviderInvocation
 from open_webui.extensions.provider_ops.service import (
     list_provider_invocations,
     summarize_provider_models,
+    try_resume_provider_invocation,
     try_start_provider_invocation,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -39,6 +40,9 @@ async def test_observer_records_provider_lifecycle_without_storing_input(monkeyp
     )
     assert observer is not None
     await observer.submitted({'request_id': 'request-1', 'gateway_request_id': 'gateway-1', 'queue_position': 3})
+    resumed = await try_resume_provider_invocation(task_id='task-1', provider_request_id='request-1')
+    assert resumed is not None
+    assert resumed.invocation_id == observer.invocation_id
     await observer.status({'status': 'IN_QUEUE', 'queue_position': 2})
     await observer.status({'status': 'IN_PROGRESS'})
     await observer.status({'status': 'COMPLETED', 'metrics': {'inference_time': 1.25, 'secret': 'ignored'}})

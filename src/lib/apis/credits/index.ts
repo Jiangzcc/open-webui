@@ -211,6 +211,7 @@ export type ReconciliationItem = {
 	resource_id: string;
 	action: string;
 	channel: string;
+	execution_mode: 'mock' | 'fal' | null;
 	error_code: string | null;
 	error_summary: string | null;
 	consumption_ledger_id: string | null;

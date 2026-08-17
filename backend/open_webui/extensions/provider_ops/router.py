@@ -3,7 +3,8 @@ from __future__ import annotations
 from time import time
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from open_webui.extensions.videos.executor import video_runtime_diagnostics
 from open_webui.internal.db import get_async_session
 from open_webui.utils.auth import get_admin_user
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,10 +29,19 @@ from .schemas import (
     ProviderSyncForm,
     ProviderSyncResult,
     ProviderUsageList,
+    VideoRuntimeStatus,
 )
 from .service import list_provider_invocations, summarize_provider_models
 
 router = APIRouter(prefix='/api/v1/provider-ops', tags=['provider-ops'])
+
+
+@router.get('/admin/video-runtime', response_model=VideoRuntimeStatus)
+async def get_admin_video_runtime_status(
+    request: Request,
+    _user=Depends(get_admin_user),
+):
+    return VideoRuntimeStatus.model_validate(video_runtime_diagnostics(request))
 
 
 @router.get('/admin/invocations', response_model=ProviderInvocationList)

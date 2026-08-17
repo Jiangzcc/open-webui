@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { getContext, onDestroy, onMount, tick } from 'svelte';
+	import type { i18n as I18n } from 'i18next';
+	import type { Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 	import { v4 as uuidv4 } from 'uuid';
 
@@ -52,7 +54,53 @@
 		videoAdvancedFieldValue
 	} from '$lib/utils/video-generation';
 
-	const i18n = getContext('i18n');
+	const i18n = getContext<Writable<I18n>>('i18n');
+	const PENDING_VIDEO_SUBMISSION_KEY = 'pending-video-submission';
+	type PendingVideoSubmission = { fingerprint: string; idempotencyKey: string };
+	let pendingVideoSubmission: PendingVideoSubmission | null = null;
+
+	const submissionFingerprint = async (payload: object) => {
+		const bytes = new TextEncoder().encode(JSON.stringify(payload));
+		const digest = await crypto.subtle.digest('SHA-256', bytes);
+		return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
+			''
+		);
+	};
+
+	const idempotencyKeyFor = async (payload: object) => {
+		const fingerprint = await submissionFingerprint(payload);
+		if (pendingVideoSubmission?.fingerprint === fingerprint) {
+			return pendingVideoSubmission.idempotencyKey;
+		}
+		try {
+			const stored = JSON.parse(
+				sessionStorage.getItem(PENDING_VIDEO_SUBMISSION_KEY) ?? 'null'
+			) as PendingVideoSubmission | null;
+			if (stored?.fingerprint === fingerprint && stored.idempotencyKey) {
+				pendingVideoSubmission = stored;
+				return stored.idempotencyKey;
+			}
+		} catch {
+			// Replace malformed browser state below.
+		}
+		const idempotencyKey = uuidv4();
+		pendingVideoSubmission = { fingerprint, idempotencyKey };
+		try {
+			sessionStorage.setItem(PENDING_VIDEO_SUBMISSION_KEY, JSON.stringify(pendingVideoSubmission));
+		} catch {
+			// In-memory reuse still protects retries when sessionStorage is unavailable.
+		}
+		return idempotencyKey;
+	};
+
+	const clearPendingVideoSubmission = () => {
+		pendingVideoSubmission = null;
+		try {
+			sessionStorage.removeItem(PENDING_VIDEO_SUBMISSION_KEY);
+		} catch {
+			// Nothing else to clear when browser storage is unavailable.
+		}
+	};
 	const taskOptions: { id: VideoTask; label: string; hint: string }[] = [
 		{ id: 'text-to-video', label: 'Text to Video', hint: 'Describe the motion and scene' },
 		{ id: 'image-to-video', label: 'Image to Video', hint: 'Animate a start frame' },
@@ -330,8 +378,28 @@
 		invalid_aspect_ratio: 'Invalid aspect ratio',
 		invalid_resolution: 'Invalid resolution',
 		invalid_audio_mode: 'Invalid audio mode',
-		video_model_unavailable: 'This model is temporarily unavailable.'
+		idempotency_key_conflict: 'The video submission changed; please try again',
+		video_model_unavailable: 'This model is temporarily unavailable.',
+		video_fal_not_configured: 'Real video generation is not configured',
+		video_fal_model_not_allowed: 'This model is not allowed for real video generation',
+		video_fal_cost_limit_exceeded: 'This video exceeds the per-request cost limit',
+		video_mock_scenario_invalid: 'The mock video scenario is invalid'
 	};
+
+	const videoTaskErrorI18nKey: Record<string, string> = {
+		video_delivery_failed: 'The provider generated the video, but local delivery failed',
+		video_provider_failed: 'The video provider failed to generate this video',
+		video_provider_timeout: 'The video provider timed out',
+		video_provider_rate_limited: 'The video provider rate limited this request',
+		video_result_missing: 'The video provider returned no video',
+		video_result_download_failed: 'The generated video could not be downloaded',
+		video_result_too_large: 'The generated video is too large',
+		video_result_invalid_type: 'The video provider returned an invalid file',
+		server_shutdown: 'Video generation was interrupted by a server restart'
+	};
+
+	const videoTaskErrorMessage = (record: VideoGenerationTask) =>
+		$i18n.t(videoTaskErrorI18nKey[record.error_code ?? ''] ?? 'Generation failed');
 
 	const resetForModel = (model: VideoModel | null) => {
 		const next: Record<string, string | number | boolean | null> = {};
@@ -518,7 +586,7 @@
 			creationRevision += 1;
 			toast.success($i18n.t('Video generated'));
 		} else if (next.status === 'failed' && previous?.status !== 'failed') {
-			toast.error($i18n.t('Video generation failed'));
+			toast.error(videoTaskErrorMessage(next));
 		}
 	};
 
@@ -598,25 +666,35 @@
 			return;
 		}
 		submitting = true;
+		const submission = {
+			task,
+			model: selectedModel.id,
+			prompt: prompt.trim(),
+			assets: Object.entries(assets).flatMap(([role, items]) =>
+				(items ?? []).map((item) => ({ role: role as VideoAssetRole, file_id: item.id }))
+			),
+			params: submittedParams
+		};
 		try {
-			const created = await submitVideoTask(
-				localStorage.token,
-				{
-					task,
-					model: selectedModel.id,
-					prompt: prompt.trim(),
-					assets: Object.entries(assets).flatMap(([role, items]) =>
-						(items ?? []).map((item) => ({ role: role as VideoAssetRole, file_id: item.id }))
-					),
-					params: submittedParams
-				},
-				uuidv4()
-			);
+			const idempotencyKey = await idempotencyKeyFor(submission);
+			const created = await submitVideoTask(localStorage.token, submission, idempotencyKey);
+			clearPendingVideoSubmission();
 			// 新任务插入列表顶部，立刻可见其生成进度。
 			// SSE 可能先于 POST 响应写入同一任务；此时保留 SSE 读到的较新状态，
 			// 既避免重复卡片，也避免用 queued 响应覆盖 running/succeeded。
 			if (!history.some((item) => item.id === created.id)) history = [created, ...history];
 		} catch (error) {
+			// A structured HTTP response is definitive. A network failure is not:
+			// retain the same key so a retry cannot create a second paid request.
+			if (
+				error instanceof VideoRequestError &&
+				error.status !== undefined &&
+				error.status >= 400 &&
+				error.status < 500 &&
+				![408, 429].includes(error.status)
+			) {
+				clearPendingVideoSubmission();
+			}
 			const code = error instanceof VideoRequestError ? error.code : '';
 			const i18nKey = videoCreditErrorI18nKey[code];
 			toast.error(
@@ -720,7 +798,7 @@
 	const videoTaskStatusLabel = (record: VideoGenerationTask) => {
 		if (record.status === 'queued') return $i18n.t('Queued');
 		if (record.status === 'running') return $i18n.t('Generating');
-		if (record.status === 'failed') return $i18n.t('Generation failed');
+		if (record.status === 'failed') return videoTaskErrorMessage(record);
 		return $i18n.t('Completed');
 	};
 

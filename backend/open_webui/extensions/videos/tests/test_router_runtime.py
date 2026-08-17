@@ -52,6 +52,7 @@ def test_idempotent_retry_returns_existing_before_admission_checks(monkeypatch) 
 
         monkeypatch.setattr(router, 'ensure_model_enabled', ensure_enabled)
         monkeypatch.setattr(router, 'get_video_task_by_idempotency_key', get_existing)
+        monkeypatch.setattr(router, 'video_task_matches_submission', lambda *_args: True)
         monkeypatch.setattr(
             router,
             'enforce_video_generation_rate',
@@ -68,6 +69,33 @@ def test_idempotent_retry_returns_existing_before_admission_checks(monkeypatch) 
         )
 
         assert result is existing
+
+    asyncio.run(scenario())
+
+
+def test_idempotency_key_reuse_with_different_payload_returns_conflict(monkeypatch) -> None:
+    async def scenario() -> None:
+        async def ensure_enabled(*_args, **_kwargs) -> None:
+            return None
+
+        async def get_existing(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+            return _task()
+
+        monkeypatch.setattr(router, 'ensure_model_enabled', ensure_enabled)
+        monkeypatch.setattr(router, 'get_video_task_by_idempotency_key', get_existing)
+        monkeypatch.setattr(router, 'video_task_matches_submission', lambda *_args: False)
+
+        response = await router.submit_video_task(
+            SimpleNamespace(),
+            _submission(),
+            'reused-key',
+            SimpleNamespace(id='user-1'),
+            object(),
+            object(),
+        )
+
+        assert response.status_code == 409
+        assert b'idempotency_key_conflict' in response.body
 
     asyncio.run(scenario())
 

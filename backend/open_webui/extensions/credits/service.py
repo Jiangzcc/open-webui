@@ -126,7 +126,14 @@ def _validate_idempotency_key(value: str) -> None:
 
 
 def _request_snapshot(context: ImageBillingContext) -> dict[str, object]:
-    return {'request_hash': context.request_hash, 'dimensions': dict(context.dimensions)}
+    snapshot: dict[str, object] = {
+        'request_hash': context.request_hash,
+        'dimensions': dict(context.dimensions),
+    }
+    execution_mode = getattr(context, 'execution_mode', None)
+    if execution_mode in {'mock', 'fal'}:
+        snapshot['execution_mode'] = execution_mode
+    return snapshot
 
 
 def _pricing_snapshot(quote: PriceQuote) -> dict[str, object]:
@@ -319,6 +326,17 @@ async def mark_usage_invoking(usage_id: str) -> int:
     if changed == 1:
         credit_metrics.usage_status(status='invoking')
     return changed
+
+
+async def touch_usage_invoking(usage_id: str) -> int:
+    """Refresh an active provider call without changing its billing state."""
+    async with credit_session() as session, session.begin():
+        result = await session.execute(
+            update(CreditUsage)
+            .where(CreditUsage.id == usage_id, CreditUsage.status == 'invoking')
+            .values(updated_at=_now())
+        )
+        return int(result.rowcount or 0)
 
 
 async def mark_usage_succeeded_in_session(
@@ -578,9 +596,12 @@ async def list_reconciliation_cases(
     # compensated 过滤引用了 refund 别名；计数查询必须带上与行查询相同的 outerjoin，
     # 否则 WHERE 中的 refund.id 会引用未连接的表。未筛选补偿状态时不加 join，
     # 保持原有计数计划不变。
+    # Both automatic restoration (accounting_correction) and an administrator's
+    # manual refund compensate the original consumption. Treat either as
+    # compensated so mock/provider failures cannot appear eligible twice.
     refund_join = and_(
         refund.related_ledger_id == CreditUsage.ledger_id,
-        refund.reason_code == 'manual_refund',
+        refund.amount > 0,
     )
     count_select = select(func.count()).select_from(CreditUsage)
     if query.compensated is not None:
@@ -599,6 +620,8 @@ async def list_reconciliation_cases(
     items = []
     for usage, refund_id in rows:
         error = usage.error_snapshot if isinstance(usage.error_snapshot, dict) else {}
+        request_snapshot = usage.request_snapshot if isinstance(usage.request_snapshot, dict) else {}
+        execution_mode = request_snapshot.get('execution_mode')
         items.append(
             ReconciliationItem(
                 usage_id=usage.id,
@@ -610,6 +633,7 @@ async def list_reconciliation_cases(
                 resource_id=usage.resource_id,
                 action=usage.action,
                 channel=usage.channel,
+                execution_mode=execution_mode if execution_mode in {'mock', 'fal'} else None,
                 error_code=error.get('code') if isinstance(error.get('code'), str) else None,
                 error_summary=error.get('summary') if isinstance(error.get('summary'), str) else None,
                 consumption_ledger_id=usage.ledger_id,
@@ -700,6 +724,7 @@ __all__ = [
     'mark_stale_usage_unknown',
     'mark_usage_failed',
     'mark_usage_invoking',
+    'touch_usage_invoking',
     'mark_usage_succeeded',
     'mark_usage_succeeded_in_session',
 ]

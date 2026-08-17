@@ -11,6 +11,7 @@ and the generator-side dispatch in ``service._finalize_mock_video``:
 
 from __future__ import annotations
 
+import sys
 import types
 
 import pytest
@@ -22,6 +23,23 @@ from open_webui.extensions.videos.schemas import VideoTaskResponse
 # --------------------------------------------------------------------------- #
 # candidate selection helpers (pure functions, no network)
 # --------------------------------------------------------------------------- #
+def test_probe_video_duration_uses_container_duration(monkeypatch, tmp_path) -> None:
+    closed = False
+
+    class Container:
+        duration = 5_000_000
+
+        def close(self):
+            nonlocal closed
+            closed = True
+
+    fake_av = types.SimpleNamespace(open=lambda _path: Container(), time_base=1_000_000)
+    monkeypatch.setitem(sys.modules, 'av', fake_av)
+
+    assert pexels_mock.probe_video_duration(tmp_path / 'video.mp4') == 5
+    assert closed is True
+
+
 def test_pick_smallest_mp4_prefers_lowest_resolution() -> None:
     video = {
         'video_files': [

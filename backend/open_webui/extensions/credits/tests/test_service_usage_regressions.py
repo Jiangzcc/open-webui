@@ -7,10 +7,11 @@ import open_webui.extensions.credits.service as credit_service
 import pytest
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
-from open_webui.extensions.credits.schemas import UserLedgerQuery
+from open_webui.extensions.credits.schemas import ReconciliationQuery, UserLedgerQuery
 from open_webui.extensions.credits.service import (
     SafeProviderError,
     begin_image_usage,
+    list_reconciliation_cases,
     mark_stale_usage_unknown,
     mark_usage_failed,
     mark_usage_invoking,
@@ -186,6 +187,36 @@ async def test_state_machine_prevents_terminal_regression_and_marks_stale_withou
     assert usage.error_snapshot is None
     assert account is not None
     assert account.balance == 7
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_recognizes_automatic_refund_and_mock_mode(service_database, monkeypatch) -> None:
+    user = await create_user(service_database, 'mock-refund-user')
+    await credit_user(service_database, user)
+    await add_price(service_database)
+    monkeypatch.setattr(credit_service, 'credit_session', lambda: credit_session_for_test(service_database))
+    async with service_database() as session:
+        result = await begin_image_usage(session, user, image_context(), 'mock-refund-key')
+    async with service_database() as session, session.begin():
+        usage = await session.get(CreditUsage, result.usage.id)
+        usage.request_snapshot = {**usage.request_snapshot, 'execution_mode': 'mock'}
+
+    assert await mark_usage_invoking(result.usage.id) == 1
+    assert (
+        await mark_usage_failed(
+            result.usage.id,
+            SafeProviderError(code='mock_failed', summary='Mock generation failed'),
+            restore_prepaid=True,
+        )
+        == 1
+    )
+
+    async with service_database() as session:
+        page = await list_reconciliation_cases(session, ReconciliationQuery())
+
+    assert page.total == 1
+    assert page.items[0].execution_mode == 'mock'
+    assert page.items[0].compensation_ledger_id is not None
 
 
 @pytest.mark.asyncio

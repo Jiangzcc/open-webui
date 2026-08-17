@@ -56,6 +56,8 @@ _REQUIRED_CHECKS = {
         {
             'ck_ext_video_task_status',
             'ck_ext_video_task_kind',
+            'ck_ext_video_task_execution_mode',
+            'ck_ext_video_task_delivery_attempts',
         }
     ),
     'ext_creation_category': frozenset({'ck_ext_creation_category_sort_order'}),
