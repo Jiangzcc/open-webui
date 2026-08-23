@@ -1,4 +1,5 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { extRequest } from '$lib/apis/extRequest';
 
 export type ProviderOverview = {
 	provider: string;
@@ -95,21 +96,8 @@ export type ProviderSyncResult = {
 	completed_at: number | null;
 };
 
-const request = async <T>(path: string, token: string, init?: RequestInit): Promise<T> => {
-	const response = await fetch(`${WEBUI_API_BASE_URL}/provider-ops${path}`, {
-		...init,
-		headers: {
-			Accept: 'application/json',
-			...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-			authorization: `Bearer ${token}`,
-			...(init?.headers ?? {})
-		}
-	});
-	if (!response.ok) throw await response.json().catch(() => null);
-	// 204 No Content 无响应体，直接返回 undefined。
-	if (response.status === 204) return undefined as T;
-	return (await response.json()) as T;
-};
+const request = <T>(path: string, token: string, init?: RequestInit): Promise<T> =>
+	extRequest<T>(`${WEBUI_API_BASE_URL}/provider-ops${path}`, { ...init, token });
 
 const query = (provider: string, windowHours: number, limit?: number) => {
 	const params = new URLSearchParams({ provider, window_hours: String(windowHours) });

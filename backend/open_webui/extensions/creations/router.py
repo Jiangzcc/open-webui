@@ -88,7 +88,7 @@ PersonalScope = Annotated[Literal['mine'], Query(description='Personal creations
 
 
 def _invalid_cursor_response() -> JSONResponse:
-    return JSONResponse(status_code=422, content={'detail': 'invalid cursor'})
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content={'detail': 'invalid cursor'})
 
 
 @router.post(
@@ -112,13 +112,13 @@ async def create_image_generation_task(
             else CreateImageForm.model_validate(submission.payload)
         )
     except ValidationError as error:
-        return JSONResponse(status_code=422, content=jsonable_encoder(error.errors()))
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=jsonable_encoder(error.errors()))
 
     key = (idempotency_key or str(uuid4())).strip()
     if not key or len(key) > 128:
-        raise HTTPException(status_code=422, detail='invalid idempotency key')
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='invalid idempotency key')
     try:
-        enforce_image_generation_rate(user.id)
+        await enforce_image_generation_rate(user.id)
         await acquire_image_generation_slot(user.id)
     except CreditError as error:
         return JSONResponse(status_code=error.status_code, content=error.to_envelope())
@@ -134,7 +134,7 @@ async def create_image_generation_task(
         # 幂等键命中但载荷不一致：拒绝而不是静默复用旧任务丢弃新载荷
         #（与视频端 idempotency_key_conflict 契约一致）。
         await release_image_generation_slot(user.id)
-        return JSONResponse(status_code=409, content={'detail': 'idempotency_key_conflict'})
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={'detail': 'idempotency_key_conflict'})
     except Exception:
         await release_image_generation_slot(user.id)
         raise
@@ -178,7 +178,7 @@ async def get_image_generation_task(
 ):
     task = await get_generation_task(session, user.id, task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail='generation task not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='generation task not found')
     return task
 
 
@@ -190,12 +190,12 @@ async def delete_image_generation_task(
 ):
     task = await get_generation_task(session, user.id, task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail='generation task not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='generation task not found')
     if task.status not in {'succeeded', 'failed'}:
-        raise HTTPException(status_code=409, detail='active generation task cannot be deleted')
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='active generation task cannot be deleted')
     removed = await delete_generation_task(session, user.id, task_id)
     if not removed:
-        raise HTTPException(status_code=404, detail='generation task not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='generation task not found')
 
 
 @router.get('/generation-events')
@@ -259,7 +259,7 @@ async def get_media(
 ):
     detail = await get_personal_detail(session, user.id, creation_id)
     if detail is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     return detail
 
 
@@ -274,16 +274,16 @@ async def update_media(
         form = CaptionUpdateForm.model_validate(payload)
     except ValidationError as error:
         return JSONResponse(
-            status_code=422,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=jsonable_encoder(error.errors()),
         )
     detail = await update_caption(session, user.id, creation_id, form.caption)
     if detail is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     return detail
 
 
-@router.delete('/media/{creation_id}', status_code=204)
+@router.delete('/media/{creation_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_media(
     creation_id: str,
     user=Depends(get_verified_user),
@@ -291,7 +291,7 @@ async def delete_media(
 ):
     removed = await soft_delete(session, user.id, creation_id)
     if not removed:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     return None
 
 
@@ -314,13 +314,13 @@ async def publish_media(
     try:
         publication = await publish_creation(session, user.id, creation_id, form)
     except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     if publication is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     return publication
 
 
-@router.delete('/media/{creation_id}/publish', status_code=204)
+@router.delete('/media/{creation_id}/publish', status_code=status.HTTP_204_NO_CONTENT)
 async def withdraw_media(
     creation_id: str,
     user=Depends(get_verified_user),
@@ -328,7 +328,7 @@ async def withdraw_media(
 ):
     withdrawn = await withdraw_creation(session, user.id, creation_id)
     if not withdrawn:
-        raise HTTPException(status_code=404, detail='publication not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='publication not found')
     return None
 
 
@@ -371,7 +371,7 @@ async def get_discover_post(
 ):
     post = await get_discovery_post(session, user.id, post_id)
     if post is None:
-        raise HTTPException(status_code=404, detail='post not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post not found')
     return post
 
 
@@ -384,7 +384,7 @@ async def add_discover_reaction(
 ):
     reaction = await set_reaction(session, user.id, post_id, kind, True)
     if reaction is None:
-        raise HTTPException(status_code=404, detail='post not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post not found')
     return reaction
 
 
@@ -397,7 +397,7 @@ async def remove_discover_reaction(
 ):
     reaction = await set_reaction(session, user.id, post_id, kind, False)
     if reaction is None:
-        raise HTTPException(status_code=404, detail='post not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post not found')
     return reaction
 
 
@@ -409,11 +409,11 @@ async def get_discover_post_content(
 ):
     file = await get_published_content_file(session, post_id)
     if file is None or not getattr(file, 'path', None):
-        raise HTTPException(status_code=404, detail='post content not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post content not found')
     try:
         file_path = Path(await asyncio.to_thread(Storage.get_file, file.path))
         if not file_path.is_file():
-            raise HTTPException(status_code=404, detail='post content not found')
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post content not found')
         meta = getattr(file, 'meta', None) or {}
         content_type = meta.get('content_type') if isinstance(meta, dict) else None
         return FileResponse(file_path, media_type=content_type)
@@ -421,7 +421,7 @@ async def get_discover_post_content(
         raise
     except Exception as error:
         log.exception('Error getting discovery post content: %s', error)
-        raise HTTPException(status_code=400, detail='error getting post content') from error
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='error getting post content') from error
 
 
 @router.get('/discover/posts/{post_id}/poster')
@@ -432,11 +432,11 @@ async def get_discover_post_poster(
 ):
     file = await get_published_poster_file(session, post_id)
     if file is None or not getattr(file, 'path', None):
-        raise HTTPException(status_code=404, detail='post poster not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post poster not found')
     try:
         file_path = Path(await asyncio.to_thread(Storage.get_file, file.path))
         if not file_path.is_file():
-            raise HTTPException(status_code=404, detail='post poster not found')
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post poster not found')
         meta = getattr(file, 'meta', None) or {}
         content_type = meta.get('content_type') if isinstance(meta, dict) else None
         return FileResponse(file_path, media_type=content_type)
@@ -444,7 +444,7 @@ async def get_discover_post_poster(
         raise
     except Exception as error:
         log.exception('Error getting discovery post poster: %s', error)
-        raise HTTPException(status_code=400, detail='error getting post poster') from error
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='error getting post poster') from error
 
 
 @router.get('/admin/media', response_model=AdminCreationListResponse)
@@ -479,9 +479,9 @@ async def update_admin_discovery_post(
     try:
         publication = await update_discovery_operation(session, post_id, form)
     except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     if publication is None:
-        raise HTTPException(status_code=404, detail='post not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='post not found')
     return publication
 
 
@@ -516,9 +516,9 @@ async def update_admin_discover_category(
     try:
         category = await update_discovery_category(session, category_id, form)
     except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if category is None:
-        raise HTTPException(status_code=404, detail='category not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='category not found')
     return category
 
 
@@ -530,11 +530,11 @@ async def delete_admin_discover_category(
 ):
     result = await delete_discovery_category(session, category_id)
     if result == 'not_found':
-        raise HTTPException(status_code=404, detail='category not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='category not found')
     if result == 'protected':
-        raise HTTPException(status_code=409, detail='default category cannot be deleted')
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='default category cannot be deleted')
     if result == 'in_use':
-        raise HTTPException(status_code=409, detail='category is in use')
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='category is in use')
     return None
 
 
@@ -546,7 +546,7 @@ async def get_admin_media(
 ):
     detail = await get_admin_detail(session, creation_id)
     if detail is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     return detail
 
 
@@ -559,7 +559,7 @@ async def publish_admin_media(
 ):
     detail = await get_admin_detail(session, creation_id)
     if detail is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     try:
         publication = await publish_creation(
             session,
@@ -569,13 +569,13 @@ async def publish_admin_media(
             allow_hidden=True,
         )
     except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
     if publication is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     return publication
 
 
-@router.delete('/admin/media/{creation_id}/publish', status_code=204)
+@router.delete('/admin/media/{creation_id}/publish', status_code=status.HTTP_204_NO_CONTENT)
 async def withdraw_admin_media(
     creation_id: str,
     user=Depends(get_admin_user),
@@ -583,14 +583,14 @@ async def withdraw_admin_media(
 ):
     detail = await get_admin_detail(session, creation_id)
     if detail is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     withdrawn = await withdraw_creation(session, detail.owner.user_id, creation_id)
     if not withdrawn:
-        raise HTTPException(status_code=404, detail='publication not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='publication not found')
     return None
 
 
-@router.delete('/admin/media/{creation_id}', status_code=204)
+@router.delete('/admin/media/{creation_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def delete_admin_media(
     creation_id: str,
     user=Depends(get_admin_user),
@@ -598,10 +598,10 @@ async def delete_admin_media(
 ):
     detail = await get_admin_detail(session, creation_id)
     if detail is None:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     removed = await soft_delete(session, detail.owner.user_id, creation_id)
     if not removed:
-        raise HTTPException(status_code=404, detail='creation not found')
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='creation not found')
     return None
 
 

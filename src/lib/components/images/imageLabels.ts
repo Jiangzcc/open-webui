@@ -28,3 +28,23 @@ export const imageQualityLabelKey = (quality: string): string => {
 			return quality;
 	}
 };
+
+// 图片任务失败态的 error_code → i18n key 映射（对齐 videoLabels 的
+// videoTaskErrorI18nKey 模式）。复盘 #18：此前 ImageBatchCard 只翻译 3 个码，
+// 其余（provider_failed 含模型禁用降级、insufficient_credits 等）会把裸码
+// 直接显示给用户。
+export const imageTaskErrorI18nKey: Record<string, string> = {
+	image_generation_failed: 'Image generation failed',
+	server_shutdown: 'Image generation was interrupted by a server restart',
+	provider_failed: 'The image provider failed to process this request',
+	insufficient_credits: 'Insufficient credits',
+	price_not_configured: 'Image price is not configured',
+	price_rule_incomplete: 'Image price is not configured',
+	credit_service_unavailable: 'Credit service is unavailable',
+	usage_processing: 'Your previous request is still processing',
+	idempotency_key_conflict: 'The submission changed; please try again',
+	credit_account_conflict: 'Credit account was updated concurrently; please retry',
+	invalid_image_size: 'Image size is invalid',
+	rate_limited: 'Too many image generation requests',
+	generation_cancelled: 'Cancelled'
+};

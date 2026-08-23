@@ -73,7 +73,7 @@ describe('operations center', () => {
 		expect(modelOperations).toContain('max-h-[min(62vh,44rem)]');
 		expect(modelOperations).toContain('role="dialog"');
 		expect(modelOperations).toContain('item.media_kind');
-		expect(modelOperations).toContain('value="video"');
+		expect(modelOperations).toContain("{ value: 'video', label: $i18n.t('Video') }");
 		expect(modelOperations).toContain("'text-to-video'");
 	});
 

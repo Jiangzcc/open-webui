@@ -3,6 +3,7 @@
 
 	import { getAdminCreditDimensions, type CreditDimensions } from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
+import Select from '$lib/components/common/Select.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	const i18n = getContext('i18n');
@@ -41,14 +42,19 @@
 				{$i18n.t('credits.admin.dimensionsDescription')}
 			</p>
 		</div>
-		<select
-			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={serviceType}
-			on:change={loadDimensions}
-		>
-			<option value="image">{$i18n.t('credits.admin.imageService')}</option>
-			<option value="video">{$i18n.t('credits.admin.videoService')}</option>
-		</select>
+		<Select
+			value={serviceType}
+			items={[
+				{ value: 'image', label: $i18n.t('credits.admin.imageService') },
+				{ value: 'video', label: $i18n.t('credits.admin.videoService') }
+			]}
+			ariaLabel={$i18n.t('credits.admin.imageService')}
+			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+			onChange={(value) => {
+				serviceType = value;
+				loadDimensions();
+			}}
+		/>
 	</div>
 
 	<div

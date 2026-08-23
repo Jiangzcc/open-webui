@@ -170,14 +170,9 @@ def _result_urls(result: object) -> list[str]:
             raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
         return urls
 
-    if not isinstance(result, Sequence) or isinstance(result, (str, bytes)) or not result:
-        raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-    legacy_urls: list[str] = []
-    for item in result:
-        if not isinstance(item, Mapping) or not isinstance(item.get('url'), str):
-            raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-        legacy_urls.append(_normalize_internal_url(item['url']))
-    return legacy_urls
+    # 复盘：未上线无历史包袱，旧 list[{url}] 形态的兼容提取分支已删——
+    # invoke 契约恒为 CapturedImageBatch（images 属性）。
+    raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
 
 
 def _replay_result(usage: object) -> list[dict[str, str]]:

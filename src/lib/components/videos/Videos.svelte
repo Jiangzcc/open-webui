@@ -298,7 +298,7 @@
 		const room = capability.max_count - existing.length;
 		const selected = Array.from(files).slice(0, capability.multiple ? room : 1);
 		try {
-			const uploaded = await Promise.all(
+			const uploadedFiles = await Promise.all(
 				selected.map(async (file) => {
 					if (!capability.mime_types.includes(file.type)) throw new Error('unsupported_type');
 					if (file.size > capability.max_bytes) throw new Error('too_large');
@@ -309,18 +309,27 @@
 						false,
 						false
 					);
-					return {
-						id: result.id,
-						name: file.name,
-						url: URL.createObjectURL(file),
-						mime_type: file.type
-					};
+					return { file, id: result.id };
 				})
 			);
+			// 复盘：ObjectURL 统一在上传全部成功后创建——任一文件失败时本轮
+			// 不产生需要清理的已建 URL（原先在 map 内创建，Promise.all 中途
+			// 失败即泄漏）。
+			const uploaded = uploadedFiles.map(({ file, id }) => ({
+				id,
+				name: file.name,
+				url: URL.createObjectURL(file),
+				mime_type: file.type
+			}));
+			const previousUrls = existing.map((item) => item.url);
 			assets = {
 				...assets,
 				[capability.role]: capability.multiple ? [...existing, ...uploaded] : uploaded
 			};
+			// 复盘：单选角色覆盖旧资产时必须释放其 ObjectURL。
+			if (!capability.multiple) {
+				for (const url of previousUrls) URL.revokeObjectURL(url);
+			}
 		} catch (error) {
 			toast.error(
 				videoRequestErrorMessage(
@@ -389,61 +398,64 @@
 
 	const generate = async () => {
 		if (!selectedModel || submitting) return;
-		if (selectedModel.prompt_required && !prompt.trim()) {
-			toast.error($i18n.t('Please enter a prompt'));
-			return;
-		}
-		for (const capability of selectedModel.asset_inputs ?? []) {
-			if (capability.required && !(assets[capability.role]?.length ?? 0)) {
-				toast.error(`${$i18n.t(videoAssetLabels[capability.role])} ${$i18n.t('is required')}`);
+		// 复盘：submitting 必须先于任何 await 置位——原先在 refreshQuote() 之后，
+		// 报价请求的网络往返期间二次点击会重入提交流程（首单成功清理幂等键后，
+		// 第二次点击拿到新键即产生真实的重复扣费请求）。
+		submitting = true;
+		try {
+			if (selectedModel.prompt_required && !prompt.trim()) {
+				toast.error($i18n.t('Please enter a prompt'));
 				return;
 			}
-		}
-		if (advancedError) {
-			const error = advancedError.error;
-			toast.error(
-				`${$i18n.t(videoAdvancedFieldLabels[advancedError.field.key])}: ${$i18n.t(
-					error.key,
-					error.value === undefined ? {} : { value: error.value }
-				)}`
-			);
-			return;
-		}
-		const negativePromptText = String(params['negative_prompt'] ?? '');
-		const submittedParams = normalizeVideoParamsForModel(selectedModel, {
-			...params,
-			...(negativePromptText ? { negative_prompt: negativePromptText } : {})
-		});
-		// 用户已填写的负面提示词被模型参数归一化丢弃时明确提示，不得静默（审查发现 #6）。
-		const submittedNegative = negativePromptText.trim();
-		if (submittedNegative && !('negative_prompt' in submittedParams)) {
-			toast.error(
-				$i18n.t('This model does not support negative prompts; remove it or pick another model.')
-			);
-			return;
-		}
-		const latestQuote = await refreshQuote();
-		if (!latestQuote?.configured) {
-			toast.error($i18n.t('Video price is not configured'));
-			return;
-		}
-		if (!latestQuote.exempt && !latestQuote.sufficient) {
-			toast.error($i18n.t('Insufficient credits'));
-			return;
-		}
-		submitting = true;
-		const submission = {
-			task,
-			model: selectedModel.id,
-			prompt: prompt.trim(),
-			assets: Object.entries(assets).flatMap(([role, items]) =>
-				(items ?? []).map((item) => ({ role: role as VideoAssetRole, file_id: item.id }))
-			),
-			params: submittedParams
-			// 提示词是所见即所得的纯文本（点击标签直接插入 insert_text）；
-			// 若用户手动残留 ⟦id⟧ token，服务端仍会从标签库解析展开。
-		};
-		try {
+			for (const capability of selectedModel.asset_inputs ?? []) {
+				if (capability.required && !(assets[capability.role]?.length ?? 0)) {
+					toast.error(`${$i18n.t(videoAssetLabels[capability.role])} ${$i18n.t('is required')}`);
+					return;
+				}
+			}
+			if (advancedError) {
+				const error = advancedError.error;
+				toast.error(
+					`${$i18n.t(videoAdvancedFieldLabels[advancedError.field.key])}: ${$i18n.t(
+						error.key,
+						error.value === undefined ? {} : { value: error.value }
+					)}`
+				);
+				return;
+			}
+			const negativePromptText = String(params['negative_prompt'] ?? '');
+			const submittedParams = normalizeVideoParamsForModel(selectedModel, {
+				...params,
+				...(negativePromptText ? { negative_prompt: negativePromptText } : {})
+			});
+			// 用户已填写的负面提示词被模型参数归一化丢弃时明确提示，不得静默（审查发现 #6）。
+			const submittedNegative = negativePromptText.trim();
+			if (submittedNegative && !('negative_prompt' in submittedParams)) {
+				toast.error(
+					$i18n.t('This model does not support negative prompts; remove it or pick another model.')
+				);
+				return;
+			}
+			const latestQuote = await refreshQuote();
+			if (!latestQuote?.configured) {
+				toast.error($i18n.t('Video price is not configured'));
+				return;
+			}
+			if (!latestQuote.exempt && !latestQuote.sufficient) {
+				toast.error($i18n.t('Insufficient credits'));
+				return;
+			}
+			const submission = {
+				task,
+				model: selectedModel.id,
+				prompt: prompt.trim(),
+				assets: Object.entries(assets).flatMap(([role, items]) =>
+					(items ?? []).map((item) => ({ role: role as VideoAssetRole, file_id: item.id }))
+				),
+				params: submittedParams
+				// 提示词是所见即所得的纯文本（点击标签直接插入 insert_text），
+				// 没有服务端 token 解析层。
+			};
 			const idempotencyKey = await videoSubmissionIdempotency.idempotencyKeyFor(submission);
 			const created = await submitVideoTask(localStorage.token, submission, idempotencyKey);
 			videoSubmissionIdempotency.clearPendingSubmission();

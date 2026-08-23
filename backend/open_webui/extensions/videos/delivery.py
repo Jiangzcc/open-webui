@@ -293,15 +293,10 @@ async def _finalize_real_video(
     try:
         poster = await asyncio.to_thread(extract_poster_from_video, output.video_path)
         if poster is None:
-            if not _MOCK_POSTER_PATH.is_file():
-                raise VideoExecutionError('video_poster_generation_failed', provider_completed=True)
-            poster_bytes = await asyncio.to_thread(_MOCK_POSTER_PATH.read_bytes)
-            poster_content_type = 'image/webp'
-        else:
-            poster_bytes, poster_content_type = poster
-        poster_filename = (
-            'generated-video-poster.jpg' if poster_content_type == 'image/jpeg' else 'generated-video-poster.webp'
-        )
+            # 复盘 P1：封面是展示增强而非视频本体——提取失败（如 ffmpeg 不可
+            # 用或视频无法解码）时按无封面交付，不得静默降级 mock 欢迎图
+            # （违反 mock 与生产路径隔离，付费作品会全站显示欢迎页封面）。
+            log.warning('Poster extraction failed for real video %s; delivering without poster', task.id)
         metadata = {'video_generation_provider': 'fal', 'video_generation_mock': False}
         video_file = await _upload_video_file(
             request,
@@ -312,25 +307,32 @@ async def _finalize_real_video(
             metadata=metadata,
         )
         uploaded_files.append(video_file)
-        poster_file = await _upload_video_file(
-            request,
-            user,
-            poster_bytes,
-            poster_filename,
-            poster_content_type,
-            metadata=metadata,
-        )
-        uploaded_files.append(poster_file)
+        poster_file: object | None = None
+        if poster is not None:
+            poster_bytes, poster_content_type = poster
+            poster_filename = (
+                'generated-video-poster.jpg' if poster_content_type == 'image/jpeg' else 'generated-video-poster.webp'
+            )
+            poster_file = await _upload_video_file(
+                request,
+                user,
+                poster_bytes,
+                poster_filename,
+                poster_content_type,
+                metadata=metadata,
+            )
+            uploaded_files.append(poster_file)
         created_at = int(video_file.created_at or _now())
         duration = output.duration_seconds or _duration_seconds(task.params)
         creation_id = uuid4().hex
+        poster_file_id: str | None = getattr(poster_file, 'id', None)
         session.add(
             CreationMediaItem(
                 id=creation_id,
                 user_id=getattr(user, 'id'),
                 kind='video',
                 file_id=video_file.id,
-                poster_file_id=poster_file.id,
+                poster_file_id=poster_file_id,
                 duration_seconds=duration,
                 caption=None,
                 prompt=task.prompt,
@@ -351,9 +353,13 @@ async def _finalize_real_video(
         return VideoTaskResult(
             creation_id=creation_id,
             file_id=video_file.id,
-            poster_file_id=poster_file.id,
+            poster_file_id=poster_file_id,
             url=str(request.app.url_path_for('get_file_content_by_id', id=video_file.id)),
-            poster_url=str(request.app.url_path_for('get_file_content_by_id', id=poster_file.id)),
+            poster_url=(
+                str(request.app.url_path_for('get_file_content_by_id', id=poster_file_id))
+                if poster_file_id
+                else None
+            ),
             duration_seconds=duration,
         ).model_dump()
     except asyncio.CancelledError as error:

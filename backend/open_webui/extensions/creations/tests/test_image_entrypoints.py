@@ -20,6 +20,13 @@ import pytest
 _IMAGES_PATH = Path(__file__).resolve().parents[3] / 'routers' / 'images.py'
 _MIDDLEWARE_PATH = Path(__file__).resolve().parents[3] / 'utils' / 'middleware.py'
 _BUILTIN_PATH = Path(__file__).resolve().parents[3] / 'tools' / 'builtin.py'
+_GENERATION_TASKS_PATH = Path(__file__).resolve().parents[1] / 'generation_tasks.py'
+
+_GATE_CALLS = (
+    'enforce_image_generation_rate(',
+    'acquire_image_generation_slot(',
+    'release_image_generation_slot(',
+)
 
 
 def _load(path: Path) -> ast.Module:
@@ -61,24 +68,22 @@ def images_funcs(images_tree):
 
 
 def test_image_generations_and_edits_require_authorization_scope(images_funcs) -> None:
-    gen_params = [a.arg for a in images_funcs['image_generations'].args.args]
-    edit_params = [a.arg for a in images_funcs['image_edits'].args.args]
     # metadata/user：二开新增 —— 由 creations 调度链传入（任务捕获等）。
-    assert gen_params == [
-        'request',
-        'form_data',
-        'authorization_scope',
-        'metadata',
-        'user',
-    ]
-    assert edit_params == [
-        'request',
-        'form_data',
-        'authorization_scope',
-        'metadata',
-        'user',
-    ]
-    for name in ('image_generations', 'image_edits'):
+    # 门禁包装器与 core 函数共享同一位置签名（复盘 P0-3 下沉后 core 承载原函数体）。
+    for name in (
+        'image_generations',
+        'image_edits',
+        '_image_generations_core',
+        '_image_edits_core',
+    ):
+        params = [a.arg for a in images_funcs[name].args.args]
+        assert params == [
+            'request',
+            'form_data',
+            'authorization_scope',
+            'metadata',
+            'user',
+        ], name
         args = images_funcs[name].args
         scope_arg = next(a for a in args.args if a.arg == 'authorization_scope')
         scope_idx = args.args.index(scope_arg)
@@ -106,8 +111,51 @@ def test_edit_wrapper_passes_direct_scope(images_funcs) -> None:
     assert "image_edits(request, form_data, 'direct'" in body or ('image_edits(' in body and "'direct'" in body)
 
 
+def test_entry_points_enforce_gate_with_slot_opt_out(images_funcs) -> None:
+    """复盘 P0-3：限流/并发门禁必须挂在 image_generations/image_edits 汇合点上。
+
+    chat 中间件、内置工具与 edit 直连端点此前完全绕过门禁；下沉后所有路径
+    默认经过包装器，仅异步任务运行器可通过 kw-only 参数声明槽位已由提交端
+    持有而跳过（避免双重占用）。
+    """
+    for wrapper, core in (
+        ('image_generations', '_image_generations_core'),
+        ('image_edits', '_image_edits_core'),
+    ):
+        func = images_funcs[wrapper]
+        kwonly = dict(zip((arg.arg for arg in func.args.kwonlyargs), func.args.kw_defaults))
+        assert 'concurrency_slot_held_by_caller' in kwonly, wrapper
+        default = kwonly['concurrency_slot_held_by_caller']
+        assert isinstance(default, ast.Constant) and default.value is False, wrapper
+        body = ast.unparse(func)
+        for call in _GATE_CALLS:
+            assert call in body, (wrapper, call)
+        assert f'await {core}(' in body, wrapper
+        # 跳过分支必须直接走 core，不得重复占用槽位。
+        assert body.index('if concurrency_slot_held_by_caller:') < body.index(f'await {core}(')
+
+
+def test_core_and_direct_endpoints_do_not_wrap_gate_calls(images_funcs) -> None:
+    """门禁只存在于包装器一层：core 函数与直连端点不得重复包装门禁。"""
+    for name in (
+        '_image_generations_core',
+        '_image_edits_core',
+        'generate_images',
+        'edit_images',
+    ):
+        body = ast.unparse(images_funcs[name])
+        for call in _GATE_CALLS:
+            assert call not in body, (name, call)
+
+
+def test_generation_task_runner_declares_slot_already_held() -> None:
+    """异步任务执行路径（image/image-to-image 两处）显式声明槽位已由提交端持有。"""
+    source = _GENERATION_TASKS_PATH.read_text(encoding='utf-8')
+    assert source.count('concurrency_slot_held_by_caller=True') == 2
+
+
 def test_generation_invoke_closure_ignores_prepared_and_uses_provider_form(images_funcs) -> None:
-    body = ast.unparse(images_funcs['image_generations'])
+    body = ast.unparse(images_funcs['_image_generations_core'])
     assert '_invoke_image_generations(request, provider_form' in body
 
 
@@ -165,26 +213,36 @@ def test_invoke_image_edits_branches_return_captured_batch(images_funcs) -> None
 
 
 def test_fal_generation_gates_mock_by_admin_toggle_and_uploads_results(images_funcs) -> None:
-    body = ast.unparse(images_funcs['_invoke_image_generations'])
-    assert 'if image_config.FAL_MOCK_ENABLED:' in body
-    assert 'res = get_mock_fal_image_result(fal_model, form_data)' in body
-    assert 'res = await run_fal_queue(' in body
-    assert 'extract_fal_image_urls(res)' in body
-    assert 'get_image_data(image_url)' in body
-    assert 'upload_image(' in body
-    assert 'CapturedImageResult(' in body
-    assert 'ReusedImageResult(' not in body
+    # 复盘 P2：fal 管线提取至 _run_fal_image_pipeline（generations/edits 共享）。
+    invoke = ast.unparse(images_funcs['_invoke_image_generations'])
+    pipeline = ast.unparse(images_funcs['_run_fal_image_pipeline'])
+    assert '_run_fal_image_pipeline(' in invoke
+    assert 'api_key=image_config.FAL_API_KEY' in invoke
+    assert 'if image_config.FAL_MOCK_ENABLED:' in pipeline
+    assert 'res = get_mock_fal_image_result(fal_model, form_data)' in pipeline
+    assert 'res = await run_fal_queue(' in pipeline
+    assert 'extract_fal_image_urls(res)' in pipeline
+    assert 'get_image_data(image_url)' in pipeline
+    assert 'upload_image(' in pipeline
+    assert 'CapturedImageResult(' in pipeline
+    assert 'ReusedImageResult(' not in invoke
+    assert 'ReusedImageResult(' not in pipeline
 
 
 def test_fal_edit_gates_mock_by_admin_toggle_and_uploads_results(images_funcs) -> None:
-    body = ast.unparse(images_funcs['_invoke_image_edits'])
-    assert 'if image_config.FAL_MOCK_ENABLED:' in body
-    assert 'res = get_mock_fal_image_result(edit_model, form_data)' in body
-    assert 'res = await run_fal_queue(' in body
-    assert 'extract_fal_image_urls(res)' in body
-    assert 'get_image_data(image_url)' in body
-    assert 'upload_image(' in body
-    assert 'CapturedImageResult(' in body
+    # 复盘 P2：fal 管线提取至 _run_fal_image_pipeline；edit 专属差异在
+    # 调用点（模型解析、参考图 URL、编辑专用 API key 回退）。
+    invoke = ast.unparse(images_funcs['_invoke_image_edits'])
+    pipeline = ast.unparse(images_funcs['_run_fal_image_pipeline'])
+    assert '_run_fal_image_pipeline(' in invoke
+    assert 'api_key=image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY' in invoke
+    assert 'if image_config.FAL_MOCK_ENABLED:' in pipeline
+    assert 'res = get_mock_fal_image_result(fal_model, form_data)' in pipeline
+    assert 'res = await run_fal_queue(' in pipeline
+    assert 'extract_fal_image_urls(res)' in pipeline
+    assert 'get_image_data(image_url)' in pipeline
+    assert 'upload_image(' in pipeline
+    assert 'CapturedImageResult(' in pipeline
 
 
 def test_real_provider_branches_project_captured_image_result(images_funcs) -> None:

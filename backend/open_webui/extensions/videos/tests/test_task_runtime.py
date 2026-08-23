@@ -1023,6 +1023,51 @@ def test_recovery_stops_after_max_delivery_attempts(monkeypatch) -> None:
     asyncio.run(scenario())
 
 
+def test_recovery_mock_switch_counts_delivery_attempt_and_retries(monkeypatch) -> None:
+    """复盘 P1：FAL 配置被切走（如管理端开 mock）时，fal 模式存量任务必须先
+    计一次投递尝试再抛可重试错误——短暂切换可在重试窗口内自愈；持续缺失则
+    耗尽上限后转终态。原先计数不增长导致无限滞留、预扣积分永久占用。"""
+
+    async def scenario() -> None:
+        states: list[tuple[str, str | None]] = []
+        increments: list[str] = []
+        failed_usage: dict[str, object] = {}
+        row = _recovery_row()
+
+        async def resolve_mock_executor():
+            return MockVideoExecutor()
+
+        async def mark_failed(usage_id, code, *, restore_prepaid):
+            failed_usage.update(usage_id=usage_id, code=code, restore_prepaid=restore_prepaid)
+
+        async def set_state(_task_id, status, **kwargs) -> None:
+            states.append((status, kwargs.get('error_code')))
+
+        async def increment(task_id) -> None:
+            increments.append(task_id)
+
+        async def no_op(*_args, **_kwargs) -> None:
+            return None
+
+        monkeypatch.setattr(service, 'resolve_video_executor', resolve_mock_executor)
+        monkeypatch.setattr(service, '_increment_delivery_attempts', increment)
+        monkeypatch.setattr(service, 'creation_session', lambda: _SessionContext(row))
+        monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
+        monkeypatch.setattr(service, '_existing_creation_result', no_op)
+        monkeypatch.setattr(service, 'mark_video_usage_failed', mark_failed)
+        monkeypatch.setattr(service, '_set_task_state', set_state)
+        monkeypatch.setattr(service, '_publish_video_task_event', no_op)
+
+        await service.recover_video_task('task-1', SimpleNamespace(app=SimpleNamespace()), SimpleNamespace(id='user-1'))
+
+        # 重试语义保留（不立即终态、不退款），但尝试计数必须增长。
+        assert increments == ['task-1']
+        assert states == [('running', 'video_delivery_pending')]
+        assert failed_usage == {}
+
+    asyncio.run(scenario())
+
+
 def test_recovery_state_missing_without_submission_refunds(monkeypatch) -> None:
     """复盘 #4：恢复状态缺失且从未持久化提交状态 ⇒ 无法确认 FAL 是否
     受理过请求，与在线路径一致按未受理退款，而不是永久保留预扣。"""
@@ -1411,3 +1456,81 @@ def test_recovery_scan_schedules_qualified_queued_task(monkeypatch) -> None:
         assert observed['states'] == []
 
     asyncio.run(scenario())
+
+
+def test_finalize_real_video_without_poster_delivers_no_poster(monkeypatch, tmp_path) -> None:
+    """复盘 P1：真实视频封面提取失败必须按无封面交付——不得静默降级为
+    mock 欢迎图（违反 mock 与生产路径隔离，付费作品会全站显示欢迎页封面）。"""
+
+    async def scenario() -> None:
+        from pathlib import Path
+
+        from open_webui.extensions.videos import delivery as delivery_module
+        from open_webui.extensions.videos.executor import VideoExecutionOutput
+
+        class FakeVideoFile:
+            id = 'file:video-1'
+            created_at = 1700000000
+
+        uploaded_filenames: list[str] = []
+
+        async def fake_upload_video_file(_request, _user, payload, filename, content_type, *, metadata=None):
+            uploaded_filenames.append(filename)
+            return FakeVideoFile()
+
+        class RecordingSession:
+            added: list[object] = []
+
+            def add(self, obj: object) -> None:
+                self.added.append(obj)
+
+            async def flush(self) -> None:
+                pass
+
+        monkeypatch.setattr(delivery_module, 'extract_poster_from_video', lambda _path: None)
+        monkeypatch.setattr(delivery_module, '_upload_video_file', fake_upload_video_file)
+
+        output = VideoExecutionOutput(
+            video_path=Path(tmp_path) / 'video.mp4',
+            content_type='video/mp4',
+            duration_seconds=5,
+        )
+        result = await service._finalize_real_video(
+            _FakeVideoRequest(), SimpleNamespace(id='user-1'), _video_task(), RecordingSession(), output
+        )
+
+        # 只上传视频本体：无 poster 文件、结果里 poster 字段为 None。
+        assert uploaded_filenames == ['generated-video.mp4']
+        assert result['poster_file_id'] is None
+        assert result['poster_url'] is None
+        assert result['file_id'] == 'file:video-1'
+        assert result['url'] == '/api/v1/files/file:video-1/content'
+        creation = RecordingSession.added[0]
+        assert creation.poster_file_id is None
+
+    asyncio.run(scenario())
+
+
+class _FakeVideoRequest:
+    class _App:
+        @staticmethod
+        def url_path_for(name: str, *, id: str) -> str:
+            return f'/api/v1/files/{id}/content'
+
+    app = _App()
+
+
+def _video_task() -> VideoTaskResponse:
+    return VideoTaskResponse(
+        id='task-poster',
+        status='running',
+        task='text-to-video',
+        prompt='A paper boat',
+        model_id='kling-video-v3-pro',
+        params={'duration': '5'},
+        assets=(),
+        result=None,
+        error_code=None,
+        created_at=1,
+        updated_at=1,
+    )

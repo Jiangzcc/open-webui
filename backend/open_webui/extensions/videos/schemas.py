@@ -4,8 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from open_webui.extensions.creations.task_states import GenerationTaskStatus
+
 VideoTask = Literal['text-to-video', 'image-to-video', 'video-to-video']
-VideoTaskStatus = Literal['queued', 'running', 'succeeded', 'failed']
+# 复盘 P2：任务状态枚举收敛至 task_states 单一事实源（此前 6+ 处散落）。
+VideoTaskStatus = GenerationTaskStatus
 
 
 class _StrictModel(BaseModel):
@@ -40,9 +43,13 @@ class VideoTaskSubmitForm(_StrictModel):
 class VideoTaskResult(_StrictModel):
     creation_id: str
     file_id: str
-    poster_file_id: str
+    # 复盘 P1：封面是展示增强而非视频本体——真实视频封面提取失败时按
+    # 无封面交付（此前静默降级 mock 欢迎图，违反 mock 与生产路径隔离）。
+    # 前端已把 poster_url 视为可空（列表回退 content_url、video poster 传
+    # undefined）。
+    poster_file_id: str | None = None
     url: str
-    poster_url: str
+    poster_url: str | None = None
     duration_seconds: int = Field(gt=0)
     mime_type: Literal['video/mp4'] = 'video/mp4'
 

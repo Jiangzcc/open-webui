@@ -93,3 +93,40 @@ async def test_publish_generation_event_skips_when_no_subscribers() -> None:
         status='running',
         user_id='u3',
     )
+
+
+@pytest.mark.asyncio
+async def test_publish_and_sse_fallback_channels_are_symmetric(monkeypatch) -> None:
+    """复盘 #18：发布侧与 SSE 侧在 app.state 未挂载总线时都回退全局单例——
+    不对称时发布侧丢弃、订阅侧挂全局单例，两条通道永不相交。"""
+    from types import SimpleNamespace
+
+    import open_webui.extensions.creations.events as events
+    from open_webui.extensions.creations.events import (
+        get_generation_event_bus,
+        publish_generation_event,
+        sse_generation_events_generator,
+    )
+
+    # 重置全局单例，隔离其他测试的影响。
+    monkeypatch.setattr(events, '_bus', None)
+    bus = get_generation_event_bus()
+    queue = await bus.subscribe('user-a')
+
+    # 无 app.state.generation_event_bus 的 app：两侧都应回退全局单例。
+    app = SimpleNamespace(state=SimpleNamespace())
+    generator = sse_generation_events_generator(app, 'user-a')
+    hello = await asyncio.wait_for(generator.__anext__(), timeout=1)
+
+    # 生成器订阅建立后再发布：全局单例的订阅者（手动 queue + 生成器 queue）
+    # 都应收到。若发布侧不回退全局单例，第二个 __anext__ 会等到 keepalive
+    # 超时（wait_for 1s 先失败）。
+    await publish_generation_event(
+        app, kind='video', task_id='t1', status='succeeded', user_id='user-a'
+    )
+    event_frame = await asyncio.wait_for(generator.__anext__(), timeout=1)
+    await generator.aclose()
+
+    assert hello.startswith('data: {"type":"hello"')
+    assert '"task_id":"t1"' in event_frame
+    assert queue.qsize() == 1

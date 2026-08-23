@@ -986,42 +986,6 @@ export const validateImagePrompt = (prompt: string) => {
 	return { ok: true as const, prompt: trimmedPrompt };
 };
 
-// canUseImagesPage 所需的最小配置/用户类型，替代原先的 any。
-// 仅声明函数实际访问的字段，保持与上游 config / user 对象的结构兼容。
-type ImagesPageConfig = {
-	features?: {
-		enable_image_generation?: boolean;
-	};
-};
-
-type ImagesPageUser = {
-	role?: string;
-	permissions?: {
-		features?: {
-			image_generation?: boolean;
-		};
-	};
-};
-
-export const canUseImagesPage = (config: ImagesPageConfig, user: ImagesPageUser) => {
-	return Boolean(
-		config?.features?.enable_image_generation &&
-		(user?.role === 'admin' || user?.permissions?.features?.image_generation)
-	);
-};
-
-export const normalizeReferenceImages = (images: string[]) => {
-	if (images.length === 0) {
-		return undefined;
-	}
-
-	if (images.length === 1) {
-		return images[0];
-	}
-
-	return [...images];
-};
-
 export const buildImageGenerationPayload = ({
 	prompt,
 	aspectRatio = DEFAULT_IMAGE_ASPECT_RATIO,
@@ -1054,9 +1018,16 @@ export const buildImageGenerationPayload = ({
 			model.supportsAspectRatioField !== undefined);
 	const supportsAspectRatio = capability.aspectRatios.length > 0;
 	const hasAspectRatioSizeMap = Object.keys(capability.aspectRatioSizes).length > 0;
+	// 分辨率档位模型（目录声明 resolutions 且带比例尺寸表，如 seedream 的 1K/2K/4K）：
+	// 比例基线 size 不随请求下发，档位 × 基线的合成由后端统一完成（校验/计价同源），
+	// 否则派生基线会抢占档位语义（复盘 P0-2：UI 选 4K 实际生成 1K 的根因）。
+	const usesResolutionSelector =
+		usesExplicitPayloadCapability && capability.resolutions.length > 0 && hasAspectRatioSizeMap;
 	const outputSize =
 		trimmedSize ??
-		(supportsAspectRatio ? getImageSizeForAspectRatio(aspectRatio, model) : undefined);
+		(supportsAspectRatio && !usesResolutionSelector
+			? getImageSizeForAspectRatio(aspectRatio, model)
+			: undefined);
 	const trimmedNegativePrompt = trimOptional(negative_prompt);
 
 	if (trimmedModel) {
@@ -1073,7 +1044,8 @@ export const buildImageGenerationPayload = ({
 	}
 	if (
 		supportsAspectRatio &&
-		(!usesExplicitPayloadCapability ||
+		(usesResolutionSelector ||
+			!usesExplicitPayloadCapability ||
 			capability.supportsAspectRatioField ||
 			(!capability.sizeField && !hasAspectRatioSizeMap))
 	) {
@@ -1118,6 +1090,18 @@ export const buildImageGenerationPayload = ({
 	return payload;
 };
 
+const normalizeReferenceImages = (images: string[]) => {
+	if (images.length === 0) {
+		return undefined;
+	}
+
+	if (images.length === 1) {
+		return images[0];
+	}
+
+	return [...images];
+};
+
 export const buildImageEditPayload = ({
 	referenceImages,
 	background,
@@ -1140,10 +1124,6 @@ export const buildImageEditPayload = ({
 	}
 
 	return payload;
-};
-
-export const removeReferenceImage = (images: string[], index: number) => {
-	return images.filter((_, imageIndex) => imageIndex !== index);
 };
 
 export const filterImageFiles = (
@@ -1175,28 +1155,4 @@ export const filterImageFiles = (
 	}
 
 	return { accepted, rejected };
-};
-
-export const normalizeImageResults = (result: unknown): GeneratedImage[] => {
-	const items = Array.isArray(result)
-		? result
-		: Array.isArray((result as { data?: unknown[] })?.data)
-			? (result as { data: unknown[] }).data
-			: [];
-
-	return items.flatMap((item) => {
-		if (typeof item === 'string') {
-			return [{ url: item }];
-		}
-
-		if (item && typeof item === 'object' && typeof (item as { url?: unknown }).url === 'string') {
-			return [{ ...(item as Record<string, unknown>), url: (item as { url: string }).url }];
-		}
-
-		return [];
-	});
-};
-
-export const prependGeneratedImages = (existing: GeneratedImage[], incoming: GeneratedImage[]) => {
-	return [...incoming, ...existing];
 };

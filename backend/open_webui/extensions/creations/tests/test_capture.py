@@ -585,3 +585,75 @@ async def test_capture_reference_snapshots_propagates_upload_failure(monkeypatch
             ),
             user=SimpleNamespace(id='user-1'),
         )
+
+
+@pytest.mark.asyncio
+async def test_finalize_preloads_existing_rows_in_one_batched_query(creation_session, monkeypatch) -> None:
+    """复盘 P2：N 图 finalize 原先逐张 SELECT（N+1）；现在批量预载只查一次。"""
+    context = make_context()
+    images = tuple(
+        CapturedImageResult(
+            url=f'/api/v1/files/result-{index}/content',
+            file_id=f'result-{index}',
+            file_user_id='user-1',
+            file_created_at=11,
+            mime_type='image/png',
+        )
+        for index in range(3)
+    )
+    batch = CapturedImageBatch(images=images, references=())
+
+    real_batch = capture._load_existing_batch
+    queries = 0
+
+    async def counting_batch(session_, file_ids):
+        nonlocal queries
+        queries += 1
+        assert sorted(file_ids) == ['result-0', 'result-1', 'result-2']
+        return await real_batch(session_, file_ids)
+
+    monkeypatch.setattr(capture, '_load_existing_batch', counting_batch)
+
+    async with creation_session() as session, session.begin():
+        await finalize_created_images(session, context, batch)
+
+    assert queries == 1
+    async with creation_session() as session:
+        rows = (await session.execute(select(CreationMediaItem))).scalars().all()
+    assert len(rows) == 3
+
+
+@pytest.mark.asyncio
+async def test_finalize_concurrent_duplicate_insert_replays_committed_row(creation_session, monkeypatch) -> None:
+    """复盘 P1：同 file_id 并发捕获撞唯一约束时按已提交行回退 replay 校验
+    （SAVEPOINT 只回滚本条插入，不动计费 terminal 事务）——一致的幂等重放
+    放行，已生成的付费结果不整体失败。"""
+    context = make_context()
+    batch = make_batch(reference_ids=('ref-1',))
+
+    # 另一事务已提交同一结果的 creation 行（内容与本次一致）。
+    async with creation_session() as session, session.begin():
+        await finalize_created_images(session, make_context(), make_batch(reference_ids=('ref-1',)))
+
+    real_load_existing = capture._load_existing
+    fallback_loads = 0
+
+    async def load_batch_missing(session_, file_ids):
+        # 并发窗口：批量预载读不到另一事务已提交的行，误判为首次插入。
+        return {}
+
+    async def count_fallback_load(session_, file_id):
+        nonlocal fallback_loads
+        fallback_loads += 1
+        return await real_load_existing(session_, file_id)
+
+    monkeypatch.setattr(capture, '_load_existing_batch', load_batch_missing)
+    monkeypatch.setattr(capture, '_load_existing', count_fallback_load)
+
+    async with creation_session() as session, session.begin():
+        await finalize_created_images(session, context, batch)
+
+    assert fallback_loads == 1
+    async with creation_session() as session:
+        rows = (await session.execute(select(CreationMediaItem))).scalars().all()
+    assert len(rows) == 1

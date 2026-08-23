@@ -19,6 +19,7 @@ from open_webui.extensions.creations.schemas import (
     ReusedImageResult,
 )
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -217,9 +218,9 @@ def build_creation_capture_context(
 
     raw_negative = getattr(raw_form, 'negative_prompt', None)
     negative_prompt = _normalize_negative_prompt(raw_negative, provider_input)
-    # raw_form 保留 token 形态（⟦id⟧ 占位符）：作品捕获层存储的是用户可见
-    # 形态，真实提示词（insert_text）只进 provider payload，不落库。
-    # provider_input 仅作兜底（与 negative_prompt 的 raw 优先口径一致）。
+    # 捕获层存储用户可见的提示词原文（标签点击插入的就是纯文本，无 token
+    # 占位形态）；provider_input 仅作兜底（与 negative_prompt 的 raw 优先
+    # 口径一致）。
     prompt = getattr(raw_form, 'prompt', '') or getattr(provider_input, 'prompt', '')
 
     return CreationCaptureContext(
@@ -247,6 +248,17 @@ def _reference_ids_match(existing: object, incoming: list[str]) -> bool:
 async def _load_existing(session: AsyncSession, file_id: str) -> CreationMediaItem | None:
     result = await session.execute(select(CreationMediaItem).where(CreationMediaItem.file_id == file_id).limit(1))
     return result.scalar_one_or_none()
+
+
+async def _load_existing_batch(
+    session: AsyncSession,
+    file_ids: list[str],
+) -> dict[str, CreationMediaItem]:
+    """批量预载既有 creation 行（复盘 P2：原先逐张 SELECT，N 图任务即 N 次查询）。"""
+    if not file_ids:
+        return {}
+    rows = (await session.execute(select(CreationMediaItem).where(CreationMediaItem.file_id.in_(file_ids)))).scalars().all()
+    return {row.file_id: row for row in rows}
 
 
 async def _insert_creation(
@@ -332,13 +344,26 @@ async def finalize_created_images(
 
     try:
         for result in images:
-            if not isinstance(result, CapturedImageResult):
-                continue
-            if result.file_user_id != context.user_id:
+            if isinstance(result, CapturedImageResult) and result.file_user_id != context.user_id:
                 raise RuntimeError('creation file ownership mismatch')
-            existing = await _load_existing(session, result.file_id)
+        captured = [item for item in images if isinstance(item, CapturedImageResult)]
+        existing_by_file = await _load_existing_batch(session, [item.file_id for item in captured])
+        for result in captured:
+            existing = existing_by_file.get(result.file_id)
             if existing is None:
-                await _insert_creation(session, context, result, reference_ids)
+                try:
+                    # SAVEPOINT 包裹插入：finalize 运行在计费 terminal 事务
+                    # 里，撞唯一约束只能回滚本条插入，不能 rollback 整个事务。
+                    async with session.begin_nested():
+                        await _insert_creation(session, context, result, reference_ids)
+                except IntegrityError:
+                    # 复盘 P1：同 file_id 的并发捕获（在线路径与恢复路径重复
+                    # 投递）撞唯一约束——按已有行回退到 replay 校验：一致的
+                    # 幂等重放放行，不能让已生成的付费结果整体失败。
+                    existing = await _load_existing(session, result.file_id)
+                    if existing is None:
+                        raise
+                    await _verify_replay(existing, context, result, reference_ids)
             else:
                 await _verify_replay(existing, context, result, reference_ids)
     except Exception:

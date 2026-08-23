@@ -30,7 +30,11 @@ def _install_collaborators(monkeypatch):  # type: ignore[no-untyped-def]
         return SimpleNamespace(id='task-1'), True
 
     monkeypatch.setattr(router, 'create_generation_task', fake_create)
-    monkeypatch.setattr(router, 'enforce_image_generation_rate', lambda *_args: None)
+
+    async def fake_rate(*_args) -> None:
+        return None
+
+    monkeypatch.setattr(router, 'enforce_image_generation_rate', fake_rate)
 
     async def fake_acquire(*_args, **_kwargs) -> None:
         return None

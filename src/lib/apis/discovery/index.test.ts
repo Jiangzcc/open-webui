@@ -18,7 +18,7 @@ describe('discovery API client', () => {
 			'/api/v1/creations/admin/discover/categories/category_photo',
 			expect.objectContaining({
 				method: 'DELETE',
-				headers: expect.objectContaining({ authorization: 'Bearer token' })
+				headers: expect.objectContaining({ Authorization: 'Bearer token' })
 			})
 		);
 	});

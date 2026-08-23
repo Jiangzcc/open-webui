@@ -15,6 +15,7 @@ from open_webui.extensions.creations.models import (
     CreationPostMedia,
     ImageGenerationTask,
 )
+from open_webui.extensions.creations.task_states import ACTIVE_GENERATION_TASK_STATUSES
 from open_webui.extensions.creations.schemas import (
     ImageGenerationTaskListResponse,
     ImageGenerationTaskResponse,
@@ -166,23 +167,11 @@ async def delete_generation_task(session: AsyncSession, user_id: str, task_id: s
     if task is None:
         return False
 
-    # New task-backed generations use task.id as their creation batch_id. Keep
-    # the legacy credit-usage mapping so batches created before this change are
-    # cleaned up by the same owner-scoped transaction as well.
-    from open_webui.extensions.credits.models import CreditUsage
-
-    legacy_usage_id = await session.scalar(
-        select(CreditUsage.id).where(
-            CreditUsage.user_id == user_id,
-            CreditUsage.idempotency_key == task.idempotency_key,
-        )
-    )
-    batch_ids = {task.id}
-    if legacy_usage_id:
-        batch_ids.add(legacy_usage_id)
+    # 任务型生成的 creation batch_id 恒为 task.id（复盘：未上线无历史包袱，
+    # 旧 credit-usage 映射的兼容清理分支已删）。
     creation_ids = select(CreationMediaItem.id).where(
         CreationMediaItem.user_id == user_id,
-        CreationMediaItem.batch_id.in_(batch_ids),
+        CreationMediaItem.batch_id == task.id,
     )
     post_ids = select(CreationPostMedia.post_id).where(CreationPostMedia.creation_id.in_(creation_ids))
     now = _now()
@@ -195,7 +184,7 @@ async def delete_generation_task(session: AsyncSession, user_id: str, task_id: s
         update(CreationMediaItem)
         .where(
             CreationMediaItem.user_id == user_id,
-            CreationMediaItem.batch_id.in_(batch_ids),
+            CreationMediaItem.batch_id == task.id,
         )
         .values(soft_deleted=True, updated_at=now)
     )
@@ -222,7 +211,7 @@ async def list_generation_tasks(
         stmt = stmt.where(
             or_(
                 ImageGenerationTask.created_at >= since,
-                ImageGenerationTask.status.in_(['queued', 'running']),
+                ImageGenerationTask.status.in_(ACTIVE_GENERATION_TASK_STATUSES),
             )
         )
     if cursor:
@@ -310,6 +299,52 @@ def _public_result(result: object) -> list[dict[str, object]]:
     return public
 
 
+async def _completed_result_from_creations(
+    request: Request,
+    task_id: str,
+    user_id: str,
+) -> list[dict[str, object]] | None:
+    """关停终态核对：按 creation 捕获行判断被取消任务的计费是否已提交。
+
+    异步任务的计费 finalize 与 creation 捕获行同事务提交，batch_id 即
+    task_id（capture.build_creation_capture_context）；行存在即证明用户
+    已扣费且作品已落库。取消若落在该事务提交之后、结果返回之前的小窗口，
+    必须据此恢复 succeeded，否则任务误标 failed——用户已扣费却看到失败，
+    重试还会二次扣费。镜像 videos/service.py 的关停终态核对。
+    """
+    try:
+        async with creation_session() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(CreationMediaItem)
+                        .where(
+                            CreationMediaItem.batch_id == task_id,
+                            CreationMediaItem.user_id == user_id,
+                            CreationMediaItem.soft_deleted.is_(False),
+                        )
+                        .order_by(CreationMediaItem.created_at, CreationMediaItem.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+    except Exception:
+        # 进程关停中 DB 也可能不可用：退回失败路径，已提交的 creation 行
+        # 仍可由对账流程核对（与视频路径一致）。
+        log.exception('Could not verify completed creations for interrupted image task %s', task_id)
+        return None
+    if not rows:
+        return None
+    app = getattr(request, 'app', None)
+    if app is None:
+        return None
+    return [
+        {'url': str(app.url_path_for('get_file_content_by_id', id=row.file_id))}
+        for row in rows
+    ]
+
+
 def _error_code(error: Exception) -> str:
     code = getattr(error, 'code', None)
     if isinstance(code, str) and code:
@@ -331,6 +366,8 @@ async def run_generation_task(
         await _publish_image_task_event(request.app, task_id, user_id, 'running')
         from open_webui.routers.images import image_edits, image_generations
 
+        # 提交端（creations/router.py）已计入限流并占用任务全程的并发槽位，
+        # 执行时显式声明跳过门禁，避免双重占用（复盘 P0-3 门禁下沉的配套）。
         if kind == 'image-to-image':
             result = await image_edits(
                 request,
@@ -338,6 +375,7 @@ async def run_generation_task(
                 'direct',
                 metadata={'generation_task_id': task_id},
                 user=user,
+                concurrency_slot_held_by_caller=True,
             )
         else:
             result = await image_generations(
@@ -346,6 +384,7 @@ async def run_generation_task(
                 'direct',
                 metadata={'generation_task_id': task_id},
                 user=user,
+                concurrency_slot_held_by_caller=True,
             )
         await _set_task_state(task_id, status='succeeded', result=_public_result(result))
         await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
@@ -353,6 +392,11 @@ async def run_generation_task(
         # The billed call already returned a terminal result. A cancellation
         # arriving in the tiny window before the task-row update is too late;
         # preserve the completed result rather than reporting a false refund.
+        # 复盘 P1：取消还可能落在计费 finalize 事务已提交、结果尚未返回的
+        # 窗口——以 creation 捕获行为准恢复终态（镜像视频路径的 usage 终态
+        # 核对），避免已扣费的任务被误标 failed。
+        if result is None:
+            result = await _completed_result_from_creations(request, task_id, user_id)
         if result is not None:
             try:
                 await _set_task_state(task_id, status='succeeded', result=_public_result(result))
@@ -469,7 +513,7 @@ async def fail_incomplete_generation_tasks() -> int:
     async with creation_session() as session:
         result = await session.execute(
             update(ImageGenerationTask)
-            .where(ImageGenerationTask.status.in_(('queued', 'running')))
+            .where(ImageGenerationTask.status.in_(ACTIVE_GENERATION_TASK_STATUSES))
             .values(status='failed', error_code='server_restarted', completed_at=now, updated_at=now)
         )
         await session.commit()

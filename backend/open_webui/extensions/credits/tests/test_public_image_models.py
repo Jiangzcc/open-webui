@@ -105,9 +105,6 @@ def test_public_fal_catalog_exposes_only_curated_advanced_image_fields() -> None
 def test_public_fal_model_mapping_is_bidirectional_and_fail_closed() -> None:
     from open_webui.extensions.fal_images import models as fal_models
 
-    assert fal_models.internal_fal_image_model_id('z-image-turbo') == 'fal-ai/z-image/turbo'
-    assert fal_models.internal_fal_image_model_id('nano-banana/edit') == 'fal-ai/nano-banana/edit'
-    assert fal_models.internal_fal_image_model_id('unknown-model') is None
     assert fal_models.public_fal_image_model_id('fal-ai/z-image/turbo') == 'z-image-turbo'
     assert fal_models.public_fal_image_model_id('fal-ai/nano-banana/edit') == 'nano-banana/edit'
     assert fal_models.public_fal_image_model_id('fal-ai/unknown/model') is None

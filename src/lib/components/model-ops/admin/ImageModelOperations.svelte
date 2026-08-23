@@ -8,7 +8,8 @@
 		updateMediaModelOperation,
 		type ImageModelOperation
 	} from '$lib/apis/media-model-ops';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Select from '$lib/components/common/Select.svelte';
+import Spinner from '$lib/components/common/Spinner.svelte';
 
 	const i18n = getContext('i18n');
 	let items: ImageModelOperation[] = [];
@@ -110,51 +111,68 @@
 			on:input={resetPage}
 			placeholder={$i18n.t('Search models')}
 		/>
-		<select
-			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			bind:value={mediaKind}
-			on:change={() => {
+		<Select
+			value={mediaKind}
+			items={[
+				{ value: '', label: $i18n.t('All media types') },
+				{ value: 'image', label: $i18n.t('Image') },
+				{ value: 'video', label: $i18n.t('Video') }
+			]}
+			ariaLabel={$i18n.t('All media types')}
+			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+			onChange={(kind) => {
+				mediaKind = kind;
 				task = '';
 				resetPage();
 			}}
-		>
-			<option value="">{$i18n.t('All media types')}</option>
-			<option value="image">{$i18n.t('Image')}</option>
-			<option value="video">{$i18n.t('Video')}</option>
-		</select>
-		<select
-			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			bind:value={task}
-			on:change={resetPage}
-		>
-			<option value="">{$i18n.t('All tasks')}</option>
-			<option value="text-to-image">{$i18n.t('Text to image')}</option>
-			<option value="image-to-image">{$i18n.t('Image to image')}</option>
-			<option value="text-to-video">{$i18n.t('Text to Video')}</option>
-			<option value="image-to-video">{$i18n.t('Image to Video')}</option>
-			<option value="video-to-video">{$i18n.t('Video to Video')}</option>
-		</select>
-		<select
-			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			bind:value={statusFilter}
-			on:change={resetPage}
-		>
-			<option value="">{$i18n.t('All statuses')}</option>
-			<option value="recommended">{$i18n.t('Recommended')}</option>
-			<option value="disabled">{$i18n.t('Disabled')}</option>
-			<option value="hidden">{$i18n.t('Hidden')}</option>
-			<option value="maintenance">{$i18n.t('With maintenance message')}</option>
-		</select>
-		<select
-			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			bind:value={pageSize}
-			on:change={resetPage}
-			aria-label={$i18n.t('Rows per page')}
-		>
-			<option value={25}>25 / {$i18n.t('page')}</option>
-			<option value={50}>50 / {$i18n.t('page')}</option>
-			<option value={100}>100 / {$i18n.t('page')}</option>
-		</select>
+		/>
+		<Select
+			value={task}
+			items={[
+				{ value: '', label: $i18n.t('All tasks') },
+				{ value: 'text-to-image', label: $i18n.t('Text to image') },
+				{ value: 'image-to-image', label: $i18n.t('Image to image') },
+				{ value: 'text-to-video', label: $i18n.t('Text to Video') },
+				{ value: 'image-to-video', label: $i18n.t('Image to Video') },
+				{ value: 'video-to-video', label: $i18n.t('Video to Video') }
+			]}
+			ariaLabel={$i18n.t('All tasks')}
+			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+			onChange={(value) => {
+				task = value;
+				resetPage();
+			}}
+		/>
+		<Select
+			value={statusFilter}
+			items={[
+				{ value: '', label: $i18n.t('All statuses') },
+				{ value: 'recommended', label: $i18n.t('Recommended') },
+				{ value: 'disabled', label: $i18n.t('Disabled') },
+				{ value: 'hidden', label: $i18n.t('Hidden') },
+				{ value: 'maintenance', label: $i18n.t('With maintenance message') }
+			]}
+			ariaLabel={$i18n.t('All statuses')}
+			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+			onChange={(value) => {
+				statusFilter = value;
+				resetPage();
+			}}
+		/>
+		<Select
+			value={String(pageSize)}
+			items={[
+				{ value: '25', label: `25 / ${$i18n.t('page')}` },
+				{ value: '50', label: `50 / ${$i18n.t('page')}` },
+				{ value: '100', label: `100 / ${$i18n.t('page')}` }
+			]}
+			ariaLabel={$i18n.t('Rows per page')}
+			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+			onChange={(value) => {
+				pageSize = Number(value);
+				resetPage();
+			}}
+		/>
 	</div>
 
 	{#if loading}

@@ -11,7 +11,7 @@
 		videoAdvancedOptionLabels,
 		videoAssetLabels,
 		videoAudioLabels,
-		videoTaskErrorI18nKey
+		videoTaskErrorLookup
 	} from './videoLabels';
 
 	const i18n = getContext<Writable<I18n>>('i18n');
@@ -27,7 +27,7 @@
 
 	// 视频任务文案：复用图片结果区的状态标签口径，保持一致。
 	const videoTaskErrorMessage = (task: VideoGenerationTask) =>
-		$i18n.t(videoTaskErrorI18nKey[task.error_code ?? ''] ?? 'Generation failed');
+		$i18n.t(videoTaskErrorLookup(task.error_code));
 
 	const videoTaskStatusLabel = (task: VideoGenerationTask) => {
 		if (task.status === 'queued') return $i18n.t('Queued');
@@ -213,7 +213,7 @@
 	<div class="flex flex-wrap items-center gap-1.5">
 		<button
 			type="button"
-			class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+			class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 			on:click={() => onRegenerate(record)}
 			aria-label={$i18n.t('Regenerate')}
 		>
@@ -252,25 +252,29 @@
 			{/if}
 			{$i18n.t('Download')}
 		</button>
-		<button
-			type="button"
-			class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-			on:click={() => onViewDetails(record)}
-			aria-label={$i18n.t('View details')}
-		>
-			<svg
-				class="size-3.5"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				aria-hidden="true"
-				><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
+		{#if record.result?.creation_id}
+			<!-- 复盘：仅已产出 creation 的任务可看详情——queued/running/failed 没有
+			     creation_id，渲染按钮只会打开空白弹窗。 -->
+			<button
+				type="button"
+				class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				on:click={() => onViewDetails(record)}
+				aria-label={$i18n.t('View details')}
 			>
-			{$i18n.t('View details')}
-		</button>
+				<svg
+					class="size-3.5"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+					><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
+				>
+				{$i18n.t('View details')}
+			</button>
+		{/if}
 		<button
 			type="button"
 			class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"

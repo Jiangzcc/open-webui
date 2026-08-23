@@ -16,6 +16,7 @@ from open_webui.extensions.credits.image_adapter import prepare_edit_call, prepa
 from open_webui.extensions.credits.metrics import credit_metrics
 from open_webui.extensions.credits.pricing import compute_price
 from open_webui.extensions.credits.redemption import redeem_code
+from open_webui.extensions.videos.billing import normalize_video_duration_dimension
 from open_webui.extensions.credits.repository import get_balance_if_exists, get_enabled_price
 from open_webui.extensions.credits.router_admin import admin_router
 from open_webui.extensions.credits.router_support import (
@@ -64,17 +65,10 @@ class VideoQuoteRequest(BaseModel):
 
 
 def _normalize_video_quote_dimensions(values: Mapping[str, str | int]) -> dict[str, str | int]:
+    # 复盘 #18：duration 归一化与 videos/billing 统一为单一实现。
     dimensions = dict(values)
-    duration = dimensions.get('duration')
-    if isinstance(duration, str):
-        if duration in {'auto', '0'}:
-            return dimensions
-        parsed_duration = float(duration)
-        if not parsed_duration.is_integer() or parsed_duration < 1:
-            raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_duration'})
-        dimensions['duration'] = int(parsed_duration)
-    elif duration is not None and (isinstance(duration, bool) or duration < 1):
-        raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_duration'})
+    if 'duration' in dimensions:
+        dimensions['duration'] = normalize_video_duration_dimension(dimensions['duration'])
     return dimensions
 
 

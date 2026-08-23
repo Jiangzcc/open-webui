@@ -1,4 +1,6 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { extRequest } from '$lib/apis/extRequest';
+import type { GenerationTaskStatus } from '$lib/utils/generation-task-status';
 
 export type VideoTask = 'text-to-video' | 'image-to-video' | 'video-to-video';
 export type VideoAssetRole =
@@ -94,16 +96,17 @@ export type VideoModel = {
 export type VideoTaskResult = {
 	creation_id: string;
 	file_id: string;
-	poster_file_id: string;
+	// 封面提取失败的真实视频按无封面交付（复盘 P1：不再降级 mock 欢迎图）。
+	poster_file_id: string | null;
 	url: string;
-	poster_url: string;
+	poster_url: string | null;
 	duration_seconds: number;
 	mime_type: 'video/mp4';
 };
 
 export type VideoGenerationTask = {
 	id: string;
-	status: 'queued' | 'running' | 'succeeded' | 'failed';
+	status: GenerationTaskStatus;
 	task: VideoTask;
 	prompt: string;
 	model_id: string;
@@ -153,22 +156,13 @@ export const parseVideoRequestError = (payload: unknown, status?: number): Video
 	return new VideoRequestError('video_request_failed', undefined, false, status);
 };
 
-const request = async <T>(token: string, path: string, init?: RequestInit): Promise<T> => {
-	const response = await fetch(`${WEBUI_API_BASE_URL}/videos${path}`, {
+const request = <T>(token: string, path: string, init?: RequestInit): Promise<T> =>
+	// videos 错误负载需要转换为带 i18n 码的 VideoRequestError，不能直接 throw JSON。
+	extRequest<T>(`${WEBUI_API_BASE_URL}/videos${path}`, {
 		...init,
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`,
-			...(init?.headers ?? {})
-		}
+		token,
+		decodeError: (payload, status) => parseVideoRequestError(payload ?? {}, status)
 	});
-	if (!response.ok) {
-		const payload = await response.json().catch(() => ({}));
-		throw parseVideoRequestError(payload, response.status);
-	}
-	return response.status === 204 ? (undefined as T) : response.json();
-};
 
 export const getVideoModels = (token: string) =>
 	request<{ defaults: Record<VideoTask, string>; models: VideoModel[] }>(token, '/models');

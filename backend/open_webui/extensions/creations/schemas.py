@@ -11,6 +11,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from open_webui.extensions.creations.task_states import GenerationTaskStatus
+
 AuthorizationScope = Literal['direct', 'chat', 'tool']
 ImageCreationTask = Literal['text-to-image', 'image-to-image']
 VideoCreationTask = Literal['text-to-video', 'image-to-video', 'video-to-video']
@@ -24,7 +26,8 @@ DiscoveryCategory = Annotated[
     Field(min_length=1, max_length=32, pattern=r'^[a-z0-9][a-z0-9_-]*$'),
 ]
 ReactionKind = Literal['like', 'favorite']
-ImageGenerationTaskStatus = Literal['queued', 'running', 'succeeded', 'failed']
+# 复盘 P2：任务状态枚举收敛至 task_states 单一事实源（此前 6+ 处散落）。
+ImageGenerationTaskStatus = GenerationTaskStatus
 CreationPublicationFilter = Literal['published', 'unpublished']
 CreationListSort = Literal['newest', 'oldest']
 

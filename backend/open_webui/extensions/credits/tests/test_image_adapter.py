@@ -392,6 +392,30 @@ async def test_pixel_count_resolves_from_catalog_ratio_mapping(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_pixel_count_prefers_explicit_size_over_resolution_tier(monkeypatch) -> None:
+    """档位与显式 size 并存时，计价与载荷一致地以显式 size 为准（档位不放大显式尺寸）。"""
+    compat, adapter = modules()
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='')),
+    )
+    prepared = await adapter.prepare_generation_call(
+        request(),
+        image_input(
+            model='bytedance-seedream-v5-pro',
+            size='1024x1024',
+            resolution='4K',
+            aspect_ratio='1:1',
+            extra={'pixel_count': 1},
+        ),
+        None,
+        user(),
+    )
+    assert prepared.billing.dimensions['pixel_count'] == 1024 * 1024
+
+
+@pytest.mark.asyncio
 async def test_provider_input_does_not_let_configured_size_override_requested_aspect_ratio(monkeypatch) -> None:
     compat, adapter = modules()
     monkeypatch.setattr(
@@ -1089,3 +1113,38 @@ async def test_same_bytes_from_data_url_url_and_file_have_same_hash_without_seco
     assert prepared.billing.reference_hashes == (expected, expected, expected)
     assert prepared.provider_input.image == (data_url(PNG), data_url(PNG), data_url(PNG))
     assert factory.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a1111_dynamic_model_cache_is_scoped_to_instance(monkeypatch) -> None:
+    """复盘 #18：缓存键含实例身份（base_url + 凭据）——切换实例后 TTL 窗口内
+    也不会把旧实例的 checkpoint 当作当前模型。"""
+    compat = modules()[0]
+    compat._reset_dynamic_model_cache()
+    try:
+        calls: list[str] = []
+
+        async def fetch(request):
+            calls.append('fetch')
+            return f'checkpoint-{len(calls)}'
+
+        monkeypatch.setattr('open_webui.routers.images.get_image_model', fetch)
+
+        first = await compat.resolve_dynamic_engine_model(
+            request(), config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='', AUTOMATIC1111_BASE_URL='http://a:7860'), image_input()
+        )
+        # 同一实例的第二次调用命中 TTL 缓存，不再发网络请求。
+        cached = await compat.resolve_dynamic_engine_model(
+            request(), config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='', AUTOMATIC1111_BASE_URL='http://a:7860'), image_input()
+        )
+        # 切换实例（base_url 变化）：缓存不命中，重新解析。
+        switched = await compat.resolve_dynamic_engine_model(
+            request(), config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='', AUTOMATIC1111_BASE_URL='http://b:7860'), image_input()
+        )
+
+        assert first == 'checkpoint-1'
+        assert cached == 'checkpoint-1'
+        assert switched == 'checkpoint-2'
+        assert calls == ['fetch', 'fetch']
+    finally:
+        compat._reset_dynamic_model_cache()

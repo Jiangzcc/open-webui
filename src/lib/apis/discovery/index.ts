@@ -1,4 +1,5 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { extRequest } from '$lib/apis/extRequest';
 import type {
 	DiscoveryPostDetail,
 	DiscoveryPostListResponse,
@@ -13,20 +14,8 @@ import type {
 	ReactionState
 } from '$lib/utils/discovery';
 
-const headers = (token: string): HeadersInit => ({
-	Accept: 'application/json',
-	...(token && { authorization: `Bearer ${token}` })
-});
-
-const request = async <T>(path: string, token: string, init?: RequestInit): Promise<T> => {
-	const response = await fetch(`${WEBUI_API_BASE_URL}${path}`, {
-		...init,
-		headers: { ...headers(token), ...(init?.headers ?? {}) }
-	});
-	if (!response.ok) throw await response.json().catch(() => null);
-	if (response.status === 204) return undefined as T;
-	return (await response.json()) as T;
-};
+const request = <T>(path: string, token: string, init?: RequestInit): Promise<T> =>
+	extRequest<T>(`${WEBUI_API_BASE_URL}${path}`, { ...init, token });
 
 const list = (
 	path: string,

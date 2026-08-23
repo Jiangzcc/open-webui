@@ -16,7 +16,6 @@ from open_webui.extensions.creations.generation_tasks import (
 )
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.creations.schemas import decode_keyset_cursor
-from open_webui.extensions.credits.models import CreditUsage
 from sqlalchemy import select, update
 
 
@@ -248,8 +247,12 @@ async def test_image_cleanup_failure_does_not_mask_shutdown_cancellation(monkeyp
     async def cancelled_generation(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise asyncio.CancelledError
 
+    async def no_committed_creations(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return None
+
     monkeypatch.setattr(generation_tasks, '_set_task_state', set_state)
     monkeypatch.setattr(generation_tasks, '_publish_image_task_event', AsyncMock())
+    monkeypatch.setattr(generation_tasks, '_completed_result_from_creations', no_committed_creations)
     monkeypatch.setattr(images, 'image_generations', cancelled_generation)
 
     with pytest.raises(asyncio.CancelledError):
@@ -265,7 +268,42 @@ async def test_image_cleanup_failure_does_not_mask_shutdown_cancellation(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_delete_generation_task_soft_deletes_new_and_legacy_creation_batches(creation_sessions) -> None:
+async def test_cancelled_task_restores_succeeded_when_billing_already_committed(monkeypatch) -> None:
+    """复盘 P1：取消落在计费 finalize 已提交、结果未返回的窗口时，任务必须
+    按 creation 捕获行恢复 succeeded，而不是误标 failed（已扣费+作品已生成，
+    标 failed 会诱导用户重试并二次扣费）。"""
+    from open_webui.routers import images
+
+    states: list[tuple[str, dict | None]] = []
+
+    async def set_state(_task_id, *, status, result=None, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+        states.append((status, result))
+
+    async def cancelled_generation(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise asyncio.CancelledError
+
+    async def committed_creations(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return [{'url': '/api/v1/files/file-1/content'}]
+
+    monkeypatch.setattr(generation_tasks, '_set_task_state', set_state)
+    monkeypatch.setattr(generation_tasks, '_publish_image_task_event', AsyncMock())
+    monkeypatch.setattr(generation_tasks, '_completed_result_from_creations', committed_creations)
+    monkeypatch.setattr(images, 'image_generations', cancelled_generation)
+
+    with pytest.raises(asyncio.CancelledError):
+        await generation_tasks.run_generation_task(
+            'task-1',
+            SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace())),
+            SimpleNamespace(id='user-1'),
+            object(),
+            'text-to-image',
+        )
+
+    assert states == [('running', None), ('succeeded', [{'url': '/api/v1/files/file-1/content'}])]
+
+
+@pytest.mark.asyncio
+async def test_delete_generation_task_soft_deletes_own_batch_only(creation_sessions) -> None:
     async with creation_sessions() as session:
         task, _ = await create_generation_task(
             session,
@@ -280,24 +318,9 @@ async def test_delete_generation_task_soft_deletes_new_and_legacy_creation_batch
             .where(generation_tasks.ImageGenerationTask.id == task.id)
             .values(status='succeeded')
         )
-        session.add(
-            CreditUsage(
-                id='legacy-usage',
-                user_id='user-delete',
-                idempotency_key='delete-key',
-                request_hash='a' * 64,
-                service_type='image',
-                resource_id='model',
-                action='text-to-image',
-                channel='web',
-                status='succeeded',
-                exempt=False,
-                charged_credits=0,
-                created_at=1,
-                updated_at=1,
-            )
-        )
-        for creation_id, batch_id in (('new-batch', task.id), ('legacy-batch', 'legacy-usage')):
+        # 复盘：未上线无历史包袱，legacy usage 批次兼容清理已删——只按
+        # task.id 批次清理；其它批次的行不受影响。
+        for creation_id, batch_id in ((task.id, task.id), ('other-batch', 'other-batch')):
             session.add(
                 CreationMediaItem(
                     id=creation_id,
@@ -322,9 +345,72 @@ async def test_delete_generation_task_soft_deletes_new_and_legacy_creation_batch
         creations = list(
             (
                 await session.scalars(
-                    select(CreationMediaItem).where(CreationMediaItem.id.in_(('new-batch', 'legacy-batch')))
+                    select(CreationMediaItem).where(CreationMediaItem.id.in_((task.id, 'other-batch')))
                 )
             ).all()
         )
-    assert {item.id for item in creations} == {'new-batch', 'legacy-batch'}
-    assert all(item.soft_deleted for item in creations)
+    soft_deleted_by_id = {item.id: item.soft_deleted for item in creations}
+    assert soft_deleted_by_id == {task.id: True, 'other-batch': False}
+
+
+def _make_creation(creation_id: str, *, batch_id: str, user_id: str, created_at: int) -> CreationMediaItem:
+    return CreationMediaItem(
+        id=creation_id,
+        user_id=user_id,
+        kind='image',
+        file_id=f'file-{creation_id}',
+        prompt='p',
+        model_id='model',
+        task='text-to-image',
+        source='web',
+        batch_id=batch_id,
+        soft_deleted=False,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+
+@pytest.mark.asyncio
+async def test_completed_result_from_creations_reads_captured_rows(creation_sessions, monkeypatch) -> None:
+    """关停终态核对：creation 行（batch_id=task_id）按 created_at 顺序恢复结果 URL。"""
+    async with creation_sessions() as session, session.begin():
+        for creation_id, created_at in (('c1', 1), ('c2', 2)):
+            session.add(_make_creation(creation_id, batch_id='task-1', user_id='user-1', created_at=created_at))
+        # 其它任务批次与软删行不得计入。
+        session.add(_make_creation('other-task', batch_id='task-2', user_id='user-1', created_at=3))
+        soft_deleted_row = _make_creation('c3', batch_id='task-1', user_id='user-1', created_at=3)
+        soft_deleted_row.soft_deleted = True
+        session.add(soft_deleted_row)
+
+    monkeypatch.setattr(generation_tasks, 'creation_session', creation_sessions)
+    request = SimpleNamespace(
+        app=SimpleNamespace(url_path_for=lambda name, id: f'/api/v1/files/{id}/content')
+    )
+
+    result = await generation_tasks._completed_result_from_creations(request, 'task-1', 'user-1')
+
+    assert result == [
+        {'url': '/api/v1/files/file-c1/content'},
+        {'url': '/api/v1/files/file-c2/content'},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_completed_result_from_creations_returns_none_without_rows(creation_sessions, monkeypatch) -> None:
+    monkeypatch.setattr(generation_tasks, 'creation_session', creation_sessions)
+    request = SimpleNamespace(app=SimpleNamespace(url_path_for=lambda name, id: ''))
+
+    assert await generation_tasks._completed_result_from_creations(request, 'task-1', 'user-1') is None
+
+
+@pytest.mark.asyncio
+async def test_completed_result_from_creations_swallows_db_failure(monkeypatch) -> None:
+    """DB 不可用时退回 None（失败路径），不能把取消异常替换成次生 DB 异常。"""
+
+    def broken_session():
+        raise RuntimeError('db unavailable')
+
+    monkeypatch.setattr(generation_tasks, 'creation_session', broken_session)
+    request = SimpleNamespace(app=SimpleNamespace(url_path_for=lambda name, id: ''))
+
+    assert await generation_tasks._completed_result_from_creations(request, 'task-1', 'user-1') is None

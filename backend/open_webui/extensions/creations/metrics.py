@@ -1,47 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Protocol
-
-from opentelemetry import metrics
+from open_webui.extensions.metrics_support import (
+    MetricSink,
+    OpenTelemetryMetricSink,
+    build_attribute_normalizer,
+)
 
 _ALLOWED_ATTRIBUTE_KEYS = frozenset({'task', 'source'})
 
 _VALID_TASKS = frozenset({'text-to-image', 'image-to-image'})
 _VALID_SOURCES = frozenset({'web', 'api', 'chat', 'tool'})
 
-
-class MetricSink(Protocol):
-    def add(self, name: str, value: float, attributes: Mapping[str, str]) -> None: ...
-
-
-def normalize_metric_attributes(attributes: Mapping[str, object]) -> dict[str, str]:
-    """Keep creation metrics labels bounded to the approved non-sensitive vocabulary."""
-    return {
-        key: value
-        for key, raw_value in attributes.items()
-        if key in _ALLOWED_ATTRIBUTE_KEYS
-        and isinstance(raw_value, str)
-        and raw_value
-        and len(raw_value) <= 128
-        and not any(ord(character) < 32 or ord(character) == 127 for character in raw_value)
-        for value in (raw_value,)
-    }
-
-
-class OpenTelemetryMetricSink:
-    """Lazily create OTel counters so tests can replace the complete sink."""
-
-    def __init__(self, meter: object | None = None) -> None:
-        self._meter = meter or metrics.get_meter(__name__)
-        self._counters: dict[str, object] = {}
-
-    def add(self, name: str, value: float, attributes: Mapping[str, str]) -> None:
-        counter = self._counters.get(name)
-        if counter is None:
-            counter = self._meter.create_counter(name, unit='1')
-            self._counters[name] = counter
-        counter.add(value, attributes=dict(attributes))
+# 复盘 P2：标签过滤/OTel sink 与 credits 逐字重复——收敛至 metrics_support。
+normalize_metric_attributes = build_attribute_normalizer(_ALLOWED_ATTRIBUTE_KEYS)
 
 
 class CreationMetrics:
@@ -74,7 +45,7 @@ class CreationMetrics:
         self._add('webui.creations.capture.missing_file', task=task, source=source)
 
 
-creation_metrics = CreationMetrics(OpenTelemetryMetricSink())
+creation_metrics = CreationMetrics(OpenTelemetryMetricSink(meter_name=__name__))
 
 
 __all__ = [

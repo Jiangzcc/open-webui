@@ -3,6 +3,7 @@
 
 	import { getAdminCreditLedger, type AdminLedgerQuery, type LedgerItem } from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
+import Select from '$lib/components/common/Select.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
@@ -81,26 +82,32 @@
 			bind:value={filters.user_id}
 			placeholder={$i18n.t('credits.admin.userId')}
 		/>
-		<select
-			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={filters.entry_type}
-		>
-			<option value={undefined}>{$i18n.t('credits.admin.allTypes')}</option>
-			<option value="consumption">{$i18n.t('credits.entryTypes.consumption')}</option>
-			<option value="admin_adjustment">{$i18n.t('credits.entryTypes.admin_adjustment')}</option>
-			<option value="system_adjustment">{$i18n.t('credits.entryTypes.system_adjustment')}</option>
-		</select>
-		<select
-			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={filters.reason_code}
-		>
-			<option value={undefined}>{$i18n.t('credits.admin.allReasons')}</option>
-			<option value="promotion_gift">{$i18n.t('credits.reasons.promotion_gift')}</option>
-			<option value="manual_refund">{$i18n.t('credits.reasons.manual_refund')}</option>
-			<option value="violation_deduction">{$i18n.t('credits.reasons.violation_deduction')}</option>
-			<option value="redeem">{$i18n.t('credits.reasons.redeem')}</option>
-			<option value="other">{$i18n.t('credits.reasons.other')}</option>
-		</select>
+		<Select
+			value={filters.entry_type ?? ''}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allTypes') },
+				{ value: 'consumption', label: $i18n.t('credits.entryTypes.consumption') },
+				{ value: 'admin_adjustment', label: $i18n.t('credits.entryTypes.admin_adjustment') },
+				{ value: 'system_adjustment', label: $i18n.t('credits.entryTypes.system_adjustment') }
+			]}
+			ariaLabel={$i18n.t('credits.admin.allTypes')}
+			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+			onChange={(value) => (filters.entry_type = value || undefined)}
+		/>
+		<Select
+			value={filters.reason_code ?? ''}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allReasons') },
+				{ value: 'promotion_gift', label: $i18n.t('credits.reasons.promotion_gift') },
+				{ value: 'manual_refund', label: $i18n.t('credits.reasons.manual_refund') },
+				{ value: 'violation_deduction', label: $i18n.t('credits.reasons.violation_deduction') },
+				{ value: 'redeem', label: $i18n.t('credits.reasons.redeem') },
+				{ value: 'other', label: $i18n.t('credits.reasons.other') }
+			]}
+			ariaLabel={$i18n.t('credits.admin.allReasons')}
+			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+			onChange={(value) => (filters.reason_code = value || undefined)}
+		/>
 		<input
 			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
 			bind:value={filters.resource_id}

@@ -133,7 +133,10 @@ def test_invalid_quote_input_maps_to_422_before_slot_acquisition(monkeypatch) ->
 
         monkeypatch.setattr(router, 'ensure_model_enabled', ensure_enabled)
         monkeypatch.setattr(router, 'get_video_task_by_idempotency_key', no_existing)
-        monkeypatch.setattr(router, 'enforce_video_generation_rate', lambda *_args: None)
+        async def fake_rate(*_args) -> None:
+            return None
+
+        monkeypatch.setattr(router, 'enforce_video_generation_rate', fake_rate)
         monkeypatch.setattr(router, 'quote_video_usage', invalid_quote)
         monkeypatch.setattr(router, 'acquire_video_generation_slot', unexpected_acquire)
 
@@ -168,7 +171,10 @@ def test_insufficient_credits_returns_envelope_with_code(monkeypatch) -> None:
 
         monkeypatch.setattr(router, 'ensure_model_enabled', ensure_enabled)
         monkeypatch.setattr(router, 'get_video_task_by_idempotency_key', no_existing)
-        monkeypatch.setattr(router, 'enforce_video_generation_rate', lambda *_args: None)
+        async def fake_rate(*_args) -> None:
+            return None
+
+        monkeypatch.setattr(router, 'enforce_video_generation_rate', fake_rate)
         monkeypatch.setattr(router, 'quote_video_usage', insufficient_quote)
 
         response = await router.submit_video_task(

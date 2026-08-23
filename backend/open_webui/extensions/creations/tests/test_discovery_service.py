@@ -14,6 +14,7 @@ from open_webui.extensions.creations.schemas import (
     PublishCreationForm,
 )
 from open_webui.extensions.creations.tests.conftest import make_file, make_user
+from sqlalchemy import select
 
 
 async def _seed_creation(
@@ -277,3 +278,58 @@ async def test_soft_deleted_creation_cannot_receive_new_reactions(creation_sessi
         reaction = await discovery_service.set_reaction(session, 'viewer-1', publication.post_id, 'like', True)
 
     assert reaction is None
+
+
+@pytest.mark.asyncio
+async def test_set_reaction_survives_concurrent_duplicate_insert(creation_sessions, monkeypatch) -> None:
+    """复盘 P1：并发重复点赞（双击/双请求）撞反应主键时幂等返回已生效
+    状态——按另一事务已提交的行重算计数，不把 IntegrityError 变成 500。"""
+    from sqlalchemy.exc import IntegrityError
+
+    from open_webui.extensions.creations.models import CreationPostReaction
+
+    await _seed_creation(creation_sessions)
+    _bind_repositories(
+        monkeypatch,
+        files=[make_file('file-1', 'author-1')],
+        users=[make_user('author-1', name='Author')],
+    )
+    async with creation_sessions() as session:
+        publication = await discovery_service.publish_creation(session, 'author-1', 'creation-1', PublishCreationForm())
+        assert publication
+
+        original_flush = session.flush
+        flush_calls = 0
+
+        async def conflicting_flush():
+            nonlocal flush_calls
+            flush_calls += 1
+            if flush_calls == 1:
+                # 模拟并发事务抢先提交了同一反应行。
+                async with creation_sessions() as other:
+                    other.add(
+                        CreationPostReaction(
+                            post_id=publication.post_id,
+                            user_id='viewer-1',
+                            kind='like',
+                            created_at=1,
+                        )
+                    )
+                    await other.commit()
+                raise IntegrityError('UNIQUE constraint failed', None, Exception('duplicate'))
+            return await original_flush()
+
+        monkeypatch.setattr(session, 'flush', conflicting_flush)
+        state = await discovery_service.set_reaction(session, 'viewer-1', publication.post_id, 'like', True)
+
+    assert state is not None
+    assert state.active is True
+    assert state.like_count == 1
+    async with creation_sessions() as session:
+        remaining = (
+            await session.execute(
+                select(CreationPostReaction).where(CreationPostReaction.post_id == publication.post_id)
+            )
+        ).scalars().all()
+    # 幂等：不产生重复行。
+    assert len(remaining) == 1

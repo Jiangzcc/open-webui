@@ -294,7 +294,8 @@ def test_security_source_guard_does_not_allow_direct_private_image_invocations()
     images_path = ROOT / 'backend/open_webui/routers/images.py'
     tree = ast.parse(images_path.read_text(encoding='utf-8'))
     allowed_owners = {
-        '_invoke_image_generations': {'image_generations'},
+        # 复盘 P0-3 门禁下沉后，计费与 invoke 闭包移入 core 函数。
+        '_invoke_image_generations': {'_image_generations_core'},
         '_invoke_image_edits': {'invoke_edit_creations'},
     }
     parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}

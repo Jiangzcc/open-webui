@@ -4,6 +4,7 @@ import type {
 	ImageGenerationTaskKind
 } from '$lib/utils/image-generation-batches';
 import type { ImageEditPayload, ImageGenerationPayload } from '$lib/utils/image-generation';
+import type { GenerationTaskStatus } from '$lib/utils/generation-task-status';
 
 const headers = (token: string, idempotencyKey?: string): HeadersInit => ({
 	Accept: 'application/json',
@@ -77,8 +78,8 @@ export const createImageGenerationTask = (
 	requestJson<ImageGenerationTask>('/creations/generation-tasks', token, {
 		method: 'POST',
 		headers: headers(token, idempotencyKey),
-		// 提示词中的 ⟦id⟧ token 由服务端从标签库解析，提交体不再携带
-		// 标签目录快照（insert_text 不下发前端）。
+		// 提示词是所见即所得的纯文本（标签点击即插入 insert_text，无 token
+		// 解析层），提交体也不携带标签目录快照。
 		body: JSON.stringify({ kind, payload })
 	});
 
@@ -110,9 +111,9 @@ export const deleteImageGenerationTask = (token: string, taskId: string) =>
 	});
 
 export type GenerationEvent = {
-	kind: 'image' | 'video' | string;
+	kind: 'image' | 'video';
 	task_id: string;
-	status: 'queued' | 'running' | 'succeeded' | 'failed' | string;
+	status: GenerationTaskStatus;
 	error_code?: string | null;
 	type?: string;
 };

@@ -184,6 +184,74 @@ async def _increment_delivery_attempts(task_id: str) -> None:
         await session.commit()
 
 
+async def _settle_video_task_success(
+    request: Request,
+    task_id: str,
+    user_id: str,
+    result: dict[str, object],
+) -> None:
+    """成功终态结算：task succeeded 落库 + SSE 事件发布（异常上抛交外层处理）。
+
+    复盘 P2：run/recover 两侧逐字重复的骨架收敛。"""
+    await _set_task_state(task_id, 'succeeded', result=result)
+    await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
+
+
+async def _settle_video_task_failure(
+    request: Request,
+    task_id: str,
+    user_id: str,
+    *,
+    error_code: str,
+    usage_id: str | None,
+    restore_prepaid: bool,
+    context: str,
+    usage_error_code: str | None = None,
+) -> None:
+    """失败终态结算三连：usage 计费失败 → task failed 落库 → SSE 事件发布。
+
+    复盘 P2：run/recover 两侧 6 处逐字重复的骨架收敛。每步独立容错——
+    计费清理失败不能阻止任务行终态写入；此前 recover 侧 _set_task_state
+    未包 try/except，DB 抖动会吞掉后续事件发布（漂移修复）。
+    """
+    if usage_id is not None:
+        try:
+            await mark_video_usage_failed(
+                usage_id,
+                usage_error_code if usage_error_code is not None else error_code,
+                restore_prepaid=restore_prepaid,
+            )
+        except Exception:
+            log.exception('Could not fail usage for %s %s', context, task_id)
+    try:
+        await _set_task_state(task_id, 'failed', error_code=error_code)
+    except Exception:
+        log.exception('Could not persist failed video task %s', task_id)
+    try:
+        await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=error_code)
+    except Exception:
+        log.exception('Could not publish failed video task %s', task_id)
+
+
+async def _finalize_task_resources(
+    heartbeat: asyncio.Task | None,
+    output: VideoExecutionOutput | None,
+    *,
+    task_id: str,
+    context: str,
+) -> None:
+    """任务收尾：取消 usage 心跳并清理临时视频文件（run/recover 共用）。"""
+    if heartbeat is not None:
+        # 兜底取消：成功转移完成、异常处理结束后心跳不再有意义
+        #（usage 已离开 invoking，下一次 touch 返回 0 会自行退出）。
+        heartbeat.cancel()
+        await asyncio.gather(heartbeat, return_exceptions=True)
+    if output is not None:
+        try:
+            await asyncio.to_thread(output.video_path.unlink, missing_ok=True)
+        except Exception:
+            log.exception('Could not remove %s video result for task %s', context, task_id)
+
 
 async def run_video_task(  # noqa: C901 - terminal billing and cancellation states must remain coordinated
     task_id: str,
@@ -250,8 +318,7 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
             if changed != 1:
                 raise RuntimeError('video usage success transition failed')
         usage_succeeded = True
-        await _set_task_state(task_id, 'succeeded', result=result)
-        await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
+        await _settle_video_task_success(request, task_id, user_id, result)
     except asyncio.CancelledError as error:
         # 进程关停会取消运行中的 worker 并进入此分支。尚未提交到 FAL 的任务可退预扣积分；
         # 已提交或已生成结果的任务保留扣费等待对账，避免厂商已收费而平台自动退款。
@@ -267,14 +334,12 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
             except Exception:
                 log.exception('Could not verify terminal usage state for interrupted video task %s', task_id)
         if usage_succeeded and result is not None:
+            # 合并容错：落库失败时不再发布 succeeded 事件，避免客户端看到的
+            # 事件与数据库终态不一致（恢复路径统一采用此语义）。
             try:
-                await _set_task_state(task_id, 'succeeded', result=result)
+                await _settle_video_task_success(request, task_id, user_id, result)
             except Exception:
                 log.exception('Could not restore succeeded state for interrupted video task %s', task_id)
-            try:
-                await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
-            except Exception:
-                log.exception('Could not publish succeeded state for interrupted video task %s', task_id)
             raise
         provider_was_submitted = bool(
             getattr(error, 'provider_completed', False)
@@ -290,46 +355,28 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
                 log.exception('Could not persist recoverable interrupted video task %s', task_id)
             raise
         code = 'server_shutdown'
-        if usage_id is not None:
-            try:
-                await mark_video_usage_failed(
-                    usage_id,
-                    code,
-                    restore_prepaid=True,
-                )
-            except Exception:
-                # 计费清理失败不能阻止任务行终态写入，也不能把原始取消异常
-                # 替换成次生 DB 异常。后台对账仍可处理未完成 usage。
-                log.exception('Could not fail usage for interrupted video task %s', task_id)
-        try:
-            await _set_task_state(task_id, 'failed', error_code=code)
-        except Exception:
-            log.exception('Could not persist interrupted video task %s', task_id)
-        try:
-            await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
-        except Exception:
-            log.exception('Could not publish interrupted video task %s', task_id)
+        await _settle_video_task_failure(
+            request,
+            task_id,
+            user_id,
+            error_code=code,
+            usage_id=usage_id,
+            restore_prepaid=True,
+            context='interrupted video task',
+        )
         raise
     except CreditError as error:
         code = error.code[:64]
-        if usage_id is not None:
-            try:
-                await mark_video_usage_failed(
-                    usage_id,
-                    error.code,
-                    restore_prepaid=output is None,
-                )
-            except Exception:
-                # 计费清理失败不能阻止任务行终态写入（与 CancelledError 处理器一致）。
-                log.exception('Could not fail usage for video task %s', task_id)
-        try:
-            await _set_task_state(task_id, 'failed', error_code=code)
-        except Exception:
-            log.exception('Could not persist failed video task %s', task_id)
-        try:
-            await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
-        except Exception:
-            log.exception('Could not publish failed video task %s', task_id)
+        await _settle_video_task_failure(
+            request,
+            task_id,
+            user_id,
+            error_code=code,
+            usage_id=usage_id,
+            usage_error_code=error.code,
+            restore_prepaid=output is None,
+            context='video task',
+        )
     except VideoExecutionError as error:
         log.exception('Video generation task %s failed with %s', task_id, error.code)
         if usage_id is not None and (error.provider_completed or (error.provider_submitted and error.retryable)):
@@ -339,78 +386,37 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
             await _set_task_state(task_id, 'running', error_code='video_delivery_pending')
             await recover_video_task(task_id, request, user)
             return
-        if usage_id is not None:
-            try:
-                await mark_video_usage_failed(
-                    usage_id,
-                    error.code,
-                    restore_prepaid=not (error.provider_completed or output is not None),
-                )
-            except Exception:
-                log.exception('Could not fail usage for video task %s', task_id)
-        try:
-            await _set_task_state(task_id, 'failed', error_code=error.code)
-        except Exception:
-            log.exception('Could not persist failed video task %s', task_id)
-        try:
-            await _publish_video_task_event(
-                request.app,
-                task_id,
-                user_id,
-                'failed',
-                error_code=error.code,
-            )
-        except Exception:
-            log.exception('Could not publish failed video task %s', task_id)
+        await _settle_video_task_failure(
+            request,
+            task_id,
+            user_id,
+            error_code=error.code,
+            usage_id=usage_id,
+            restore_prepaid=not (error.provider_completed or output is not None),
+            context='video task',
+        )
     except Exception:
         log.exception('Video generation task %s failed', task_id)
         if usage_succeeded and result is not None:
             try:
-                await _set_task_state(task_id, 'succeeded', result=result)
-                await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
+                await _settle_video_task_success(request, task_id, user_id, result)
             except Exception:
                 log.exception('Could not restore committed video success for task %s', task_id)
             return
         await _cleanup_result_files(result)
-        if usage_id is not None:
-            try:
-                await mark_video_usage_failed(
-                    usage_id,
-                    'video_delivery_failed' if output is not None else 'video_generation_failed',
-                    restore_prepaid=output is None,
-                )
-            except Exception:
-                # 计费清理失败不能阻止任务行终态写入（与 CancelledError 处理器一致）。
-                log.exception('Could not fail usage for video task %s', task_id)
-        try:
-            await _set_task_state(
-                task_id,
-                'failed',
-                error_code='video_delivery_failed' if output is not None else 'video_generation_failed',
-            )
-        except Exception:
-            log.exception('Could not persist failed video task %s', task_id)
-        try:
-            await _publish_video_task_event(
-                request.app,
-                task_id,
-                user_id,
-                'failed',
-                error_code='video_delivery_failed' if output is not None else 'video_generation_failed',
-            )
-        except Exception:
-            log.exception('Could not publish failed video task %s', task_id)
+        # 已有产物（output）时失败在交付阶段，否则在生成阶段。
+        code = 'video_delivery_failed' if output is not None else 'video_generation_failed'
+        await _settle_video_task_failure(
+            request,
+            task_id,
+            user_id,
+            error_code=code,
+            usage_id=usage_id,
+            restore_prepaid=output is None,
+            context='video task',
+        )
     finally:
-        if heartbeat is not None:
-            # 兜底取消：成功转移完成、异常处理结束后心跳不再有意义
-            #（usage 已离开 invoking，下一次 touch 返回 0 会自行退出）。
-            heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
-        if output is not None:
-            try:
-                await asyncio.to_thread(output.video_path.unlink, missing_ok=True)
-            except Exception:
-                log.exception('Could not remove temporary video result for task %s', task_id)
+        await _finalize_task_resources(heartbeat, output, task_id=task_id, context='temporary')
 
 
 async def _existing_creation_result(
@@ -427,14 +433,21 @@ async def _existing_creation_result(
                 CreationMediaItem.soft_deleted.is_(False),
             )
         )
-    if creation is None or not creation.poster_file_id or not creation.duration_seconds:
+    # 复盘 P1：封面可空（真实视频封面提取失败按无封面交付）——恢复判定
+    # 只要求视频本体与时长存在，否则无封面作品会被误判为"无既有结果"
+    # 而重新进入投递循环。
+    if creation is None or not creation.duration_seconds:
         return None
     return VideoTaskResult(
         creation_id=creation.id,
         file_id=creation.file_id,
         poster_file_id=creation.poster_file_id,
         url=str(request.app.url_path_for('get_file_content_by_id', id=creation.file_id)),
-        poster_url=str(request.app.url_path_for('get_file_content_by_id', id=creation.poster_file_id)),
+        poster_url=(
+            str(request.app.url_path_for('get_file_content_by_id', id=creation.poster_file_id))
+            if creation.poster_file_id
+            else None
+        ),
         duration_seconds=creation.duration_seconds,
     ).model_dump()
 
@@ -477,8 +490,7 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
                 elif usage_status != 'succeeded':
                     raise VideoExecutionError('video_recovery_usage_invalid')
             usage_succeeded = True
-            await _set_task_state(task_id, 'succeeded', result=existing_result)
-            await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
+            await _settle_video_task_success(request, task_id, user_id, existing_result)
             return
 
         if row.execution_mode == 'mock':
@@ -490,6 +502,11 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
                 raise VideoExecutionError('video_delivery_attempts_exceeded')
             executor = await resolve_video_executor()
             if not isinstance(executor, FalVideoExecutor):
+                # 复盘 P1：FAL 配置被切走（如管理端开 mock）时，fal 模式的存量任务
+                # 必须先计一次投递尝试再抛可重试错误——短暂切换可在重试窗口内
+                # 自愈；持续缺失则耗尽 _VIDEO_DELIVERY_MAX_ATTEMPTS 后转终态，
+                # 不再无限滞留、预扣积分永久占用。
+                await _increment_delivery_attempts(task_id)
                 raise VideoExecutionError('video_fal_not_configured', retryable=True)
             submission = _submission_from_task(task)
             definition, _provider_payload, _safe_params = build_video_provider_payload(submission)
@@ -524,8 +541,7 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
             if changed != 1:
                 raise RuntimeError('video usage recovery success transition failed')
         usage_succeeded = True
-        await _set_task_state(task_id, 'succeeded', result=result)
-        await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
+        await _settle_video_task_success(request, task_id, user_id, result)
     except asyncio.CancelledError:
         raise
     except VideoExecutionError as error:
@@ -539,53 +555,43 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
             # 退款）；已持久化提交状态（FAL 已受理）则保留预扣，交由
             # 对账修复流程处理。
             restore_prepaid = error.code == 'video_recovery_state_missing' and not _task_has_provider_submission(row)
-            try:
-                await mark_video_usage_failed(
-                    usage_id,
-                    error.code,
-                    restore_prepaid=restore_prepaid,
-                )
-            except Exception:
-                # 计费清理失败不能阻止任务终态写入（与 run_video_task 一致）。
-                log.exception('Could not fail usage for video recovery task %s', task_id)
-        await _set_task_state(task_id, 'failed', error_code=error.code)
-        await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=error.code)
+        else:
+            restore_prepaid = False
+        await _settle_video_task_failure(
+            request,
+            task_id,
+            user_id,
+            error_code=error.code,
+            usage_id=usage_id,
+            restore_prepaid=restore_prepaid,
+            context='video recovery task',
+        )
     except VideoInputError as error:
         # 模型下架/参数不再受支持（catalog 变更）：交付永远无法完成，必须
         # 转终态；留在 running 会让 60 秒恢复循环无限重试。
         code = f'video_input_rejected:{error}'[:64]
         log.warning('Video recovery task %s rejected by catalog: %s', task_id, error)
-        if usage_id is not None:
-            try:
-                await mark_video_usage_failed(
-                    usage_id,
-                    code,
-                    restore_prepaid=not _task_has_provider_submission(row),
-                )
-            except Exception:
-                log.exception('Could not fail usage for video recovery task %s', task_id)
-        await _set_task_state(task_id, 'failed', error_code=code)
-        await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
+        await _settle_video_task_failure(
+            request,
+            task_id,
+            user_id,
+            error_code=code,
+            usage_id=usage_id,
+            restore_prepaid=not _task_has_provider_submission(row),
+            context='video recovery task',
+        )
     except Exception:
         log.exception('Video recovery task %s failed', task_id)
         if usage_succeeded and result is not None:
             try:
-                await _set_task_state(task_id, 'succeeded', result=result)
-                await _publish_video_task_event(request.app, task_id, user_id, 'succeeded')
+                await _settle_video_task_success(request, task_id, user_id, result)
             except Exception:
                 log.exception('Could not restore recovered video success for task %s', task_id)
             return
         await _cleanup_result_files(result)
         await _set_task_state(task_id, 'running', error_code='video_delivery_pending')
     finally:
-        if heartbeat is not None:
-            heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
-        if output is not None:
-            try:
-                await asyncio.to_thread(output.video_path.unlink, missing_ok=True)
-            except Exception:
-                log.exception('Could not remove recovered temporary video result for task %s', task_id)
+        await _finalize_task_resources(heartbeat, output, task_id=task_id, context='recovered temporary')
 
 
 def schedule_video_task(

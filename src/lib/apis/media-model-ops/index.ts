@@ -1,4 +1,5 @@
 import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { extRequest } from '$lib/apis/extRequest';
 
 export type ImageModelOperation = {
 	media_kind: 'image' | 'video';
@@ -23,21 +24,8 @@ export type ImageModelOperationUpdate = Partial<
 	>
 >;
 
-const request = async <T>(path: string, token: string, init?: RequestInit): Promise<T> => {
-	const response = await fetch(`${WEBUI_API_BASE_URL}/media-model-ops${path}`, {
-		...init,
-		headers: {
-			Accept: 'application/json',
-			...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-			Authorization: `Bearer ${token}`,
-			...(init?.headers ?? {})
-		}
-	});
-	if (!response.ok) throw await response.json().catch(() => null);
-	// 204 No Content 无响应体，直接返回 undefined。
-	if (response.status === 204) return undefined as T;
-	return (await response.json()) as T;
-};
+const request = <T>(path: string, token: string, init?: RequestInit): Promise<T> =>
+	extRequest<T>(`${WEBUI_API_BASE_URL}/media-model-ops${path}`, { ...init, token });
 
 export const listImageModelOperations = async (token: string) =>
 	(await request<{ items: ImageModelOperation[] }>('/admin/models', token)).items;

@@ -152,6 +152,9 @@ class FalImageModelDefinition(_StrictModel):
     image_input_field: str | None = Field(default=None, min_length=1)
     image_input_max_count: int | None = Field(default=None, ge=1)
     option_fields: list[OptionField] | None = None
+    # enable_safety_checker 的 default: false 是运营拍板决策（2026-08 用户确认，
+    # 非疏漏）：本平台自有内容审核流，关闭 FAL 侧二次检查以降低延迟与误杀。
+    # 目录 JSON 中不应再出现 default: true（曾有 7 处，复盘 #18 已统一翻转）。
     boolean_fields: list[BooleanField] | None = None
     integer_fields: list[IntegerField] | None = None
     number_fields: list[NumberField] | None = None

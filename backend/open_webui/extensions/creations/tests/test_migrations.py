@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -11,11 +10,11 @@ from alembic import command
 from alembic.config import Config
 from open_webui import env as upstream_env
 from open_webui.extensions.creations import db as creation_db
-from open_webui.extensions.creations.db import CreationBase, creation_session
+from open_webui.extensions.creations.db import CreationBase
 from open_webui.extensions.creations.migrations.runner import run_creation_migrations
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.internal import db as upstream_db
-from sqlalchemy import BigInteger, MetaData, Table, Text, create_engine, inspect, select, text
+from sqlalchemy import BigInteger, CheckConstraint, MetaData, Table, Text, create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 TABLE_NAMES = {
@@ -207,8 +206,32 @@ def test_orm_metadata_matches_the_revision_table(sqlite_database):
         model_table = CreationBase.metadata.tables[table_name]
         assert set(model_table.columns.keys()) == {column['name'] for column in inspector.get_columns(table_name)}
         assert {index.name for index in model_table.indexes} == EXPECTED_INDEXES[table_name]
+        # 复盘 P1 回归守卫：ORM 与迁移的 CHECK 约束名称集合必须一致——
+        # 此前 ck_ext_video_task_execution_mode/delivery_attempts 只存在于
+        # 迁移（ORM 建表路径漏掉，create_all 与生产 schema 分叉）。
+        orm_checks = {
+            constraint.name
+            for constraint in model_table.constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        migrated_checks = {constraint['name'] for constraint in inspector.get_check_constraints(table_name)}
+        assert orm_checks == migrated_checks, (table_name, orm_checks, migrated_checks)
         for name in BIGINT_COLUMNS[table_name]:
             assert isinstance(model_table.c[name].type, BigInteger)
+        migrated_columns = {column['name']: column['type'] for column in inspector.get_columns(table_name)}
+        for name, column in model_table.c.items():
+            if isinstance(column.type, upstream_db.JSONField):
+                # 复盘 P0-1 回归守卫：ORM 的 JSONField 是 TEXT 打底的 TypeDecorator，
+                # 迁移若误用 sa.JSON 建列，PostgreSQL 上 psycopg3 会把 json 列解析成
+                # dict，JSONField.process_result_value 对 dict 调 json.loads 即抛
+                # TypeError（视频任务任何读取 500）。单测用 create_all 按 ORM 建表，
+                # 与迁移建表的生产 schema 分叉，此前测不到——这里以迁移产物为准，
+                # 断言所有 ORM JSON 列必须落成 TEXT。
+                assert str(migrated_columns[name]).upper() == 'TEXT', (
+                    table_name,
+                    name,
+                    str(migrated_columns[name]),
+                )
     model_table = CreationBase.metadata.tables['ext_creation_media_item']
     for name in TEXT_COLUMNS['ext_creation_media_item']:
         assert isinstance(model_table.c[name].type, Text)
@@ -283,9 +306,8 @@ def test_server_defaults_apply_soft_deleted_false(sqlite_database):
 
 def test_production_adapter_identity():
     assert creation_db.engine is upstream_db.engine
-    assert creation_db.async_engine is upstream_db.async_engine
-    assert creation_db.AsyncSessionLocal is upstream_db.AsyncSessionLocal
-    assert creation_db.JSONField is upstream_db.JSONField
+    assert creation_db.creation_session is upstream_db.get_async_db
+    assert creation_db.get_creation_session is upstream_db.get_async_session
     assert CreationBase.metadata.schema == upstream_env.DATABASE_SCHEMA
 
 
@@ -440,23 +462,3 @@ def test_postgresql_non_public_schema_concurrent_migrations_and_constraints():
         with engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         engine.dispose()
-
-
-def test_async_creation_session_uses_upstream_factory(monkeypatch):
-    class FakeSession:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-    def factory():
-        return FakeSession()
-
-    monkeypatch.setattr('open_webui.extensions.creations.db.AsyncSessionLocal', factory)
-
-    async def exercise():
-        async with creation_session() as session:
-            assert isinstance(session, FakeSession)
-
-    asyncio.run(exercise())

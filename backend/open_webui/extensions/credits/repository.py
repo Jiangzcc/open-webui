@@ -309,23 +309,6 @@ async def list_ledger(
     return tuple(_ledger_item(ledger, usage_status) for ledger, usage_status in page_rows), next_cursor
 
 
-async def count_admin_ledger(session: AsyncSession, query: AdminLedgerQuery) -> int:
-    """Count the total rows matching the admin ledger filters for pagination."""
-    conditions = _query_conditions(query)
-    for column, value in (
-        (CreditLedger.user_id, query.user_id),
-        (CreditLedger.entry_type, query.entry_type),
-        (CreditLedger.reason_code, query.reason_code),
-        (CreditLedger.service_type, query.service_type),
-        (CreditLedger.resource_id, query.resource_id),
-        (CreditLedger.action, query.action),
-    ):
-        if value is not None:
-            conditions.append(column == value)
-    total = await session.scalar(select(func.count()).select_from(CreditLedger).where(*conditions))
-    return int(total or 0)
-
-
 async def list_admin_ledger_page(
     session: AsyncSession,
     query: AdminLedgerQuery,
@@ -363,7 +346,6 @@ async def list_admin_ledger_page(
 
 __all__ = [
     'claim_usage_placeholder',
-    'count_admin_ledger',
     'get_balance_if_exists',
     'get_enabled_price',
     'get_or_create_account',

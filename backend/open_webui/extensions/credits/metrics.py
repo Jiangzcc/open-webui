@@ -1,56 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Protocol
-
-from opentelemetry import metrics
+from open_webui.extensions.metrics_support import (
+    MetricSink,
+    OpenTelemetryMetricSink,
+    build_attribute_normalizer,
+)
 
 _ALLOWED_ATTRIBUTE_KEYS = frozenset({'model', 'action', 'channel', 'error_code'})
 _USAGE_STATUSES = frozenset({'debited', 'invoking', 'succeeded', 'failed', 'unknown'})
 _QUOTE_REJECTIONS = frozenset({'price_not_configured', 'price_rule_incomplete'})
 
-
-class MetricSink(Protocol):
-    def add(self, name: str, value: float, attributes: Mapping[str, str]) -> None: ...
-
-    def record(self, name: str, value: float, attributes: Mapping[str, str]) -> None: ...
-
-
-def normalize_metric_attributes(attributes: Mapping[str, object]) -> dict[str, str]:
-    """Keep metrics labels bounded to the approved non-sensitive vocabulary."""
-    return {
-        key: value
-        for key, raw_value in attributes.items()
-        if key in _ALLOWED_ATTRIBUTE_KEYS
-        and isinstance(raw_value, str)
-        and raw_value
-        and len(raw_value) <= 128
-        and not any(ord(character) < 32 or ord(character) == 127 for character in raw_value)
-        for value in (raw_value,)
-    }
-
-
-class OpenTelemetryMetricSink:
-    """Lazily create OTel instruments so tests can replace the complete sink."""
-
-    def __init__(self, meter: object | None = None) -> None:
-        self._meter = meter or metrics.get_meter(__name__)
-        self._counters: dict[str, object] = {}
-        self._histograms: dict[str, object] = {}
-
-    def add(self, name: str, value: float, attributes: Mapping[str, str]) -> None:
-        counter = self._counters.get(name)
-        if counter is None:
-            counter = self._meter.create_counter(name, unit='1')
-            self._counters[name] = counter
-        counter.add(value, attributes=dict(attributes))
-
-    def record(self, name: str, value: float, attributes: Mapping[str, str]) -> None:
-        histogram = self._histograms.get(name)
-        if histogram is None:
-            histogram = self._meter.create_histogram(name, unit='credits')
-            self._histograms[name] = histogram
-        histogram.record(value, attributes=dict(attributes))
+# 复盘 P2：标签过滤/OTel sink 与 creations 逐字重复——收敛至 metrics_support。
+normalize_metric_attributes = build_attribute_normalizer(_ALLOWED_ATTRIBUTE_KEYS)
 
 
 class CreditMetrics:
@@ -150,7 +111,7 @@ class CreditMetrics:
         )
 
 
-credit_metrics = CreditMetrics(OpenTelemetryMetricSink())
+credit_metrics = CreditMetrics(OpenTelemetryMetricSink(meter_name=__name__, histogram_unit='credits'))
 
 
 __all__ = ['CreditMetrics', 'MetricSink', 'OpenTelemetryMetricSink', 'credit_metrics', 'normalize_metric_attributes']

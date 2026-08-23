@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import lru_cache
 from time import time
 from typing import Any
 from uuid import uuid4
@@ -53,13 +52,14 @@ def _operator_snapshot(operator: object) -> tuple[str | None, str | None]:
     return getattr(operator, 'id', None), getattr(operator, 'name', None)
 
 
-@lru_cache(maxsize=2048)
 def canonical_model_id(media_kind: MediaKind, model_id: str) -> str:
+    # 复盘 #18：此处曾有 @lru_cache——但缓存键不含目录版本，目录 JSON 热更新
+    # 后旧映射会永久驻留（与 load_video_catalog_cached 的 stat 失效机制矛盾）。
+    # 去掉缓存是安全的：load_video_catalog_cached 本身已按 stat 签名缓存，
+    # miss 只发生目录 stat + dict 查找，不触发全量解析。
     candidate = model_id.strip().strip('/')
     if media_kind == 'image':
         return normalize_fal_image_model_id(candidate) or candidate
-    # 目录级缓存（按文件 stat 失效）：任意客户端 model_id 的 miss 不再触发
-    # 每次全量磁盘解析；热更新目录文件后下一次调用自动重载。
     catalog = load_video_catalog_cached()
     if candidate in catalog.internal_to_public:
         return candidate

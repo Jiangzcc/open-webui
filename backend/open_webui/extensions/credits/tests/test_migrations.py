@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -11,7 +10,7 @@ from alembic import command
 from alembic.config import Config
 from open_webui import env as upstream_env
 from open_webui.extensions.credits import db as credit_db
-from open_webui.extensions.credits.db import CreditBase, credit_session
+from open_webui.extensions.credits.db import CreditBase
 from open_webui.extensions.credits.migrations.runner import run_credit_migrations
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
 from open_webui.internal import db as upstream_db
@@ -302,9 +301,7 @@ def test_server_defaults_are_applied_by_database(sqlite_database):
 
 def test_production_adapter_identity():
     assert credit_db.engine is upstream_db.engine
-    assert credit_db.async_engine is upstream_db.async_engine
-    assert credit_db.AsyncSessionLocal is upstream_db.AsyncSessionLocal
-    assert credit_db.JSONField is upstream_db.JSONField
+    assert credit_db.credit_session is upstream_db.get_async_db
     assert CreditBase.metadata.schema == upstream_env.DATABASE_SCHEMA
 
 
@@ -557,23 +554,3 @@ def test_postgresql_non_public_schema_concurrent_migrations_and_constraints():
         with engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         engine.dispose()
-
-
-def test_async_credit_session_uses_upstream_factory(monkeypatch):
-    class FakeSession:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-    def factory():
-        return FakeSession()
-
-    monkeypatch.setattr('open_webui.extensions.credits.db.AsyncSessionLocal', factory)
-
-    async def exercise():
-        async with credit_session() as session:
-            assert isinstance(session, FakeSession)
-
-    asyncio.run(exercise())

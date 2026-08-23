@@ -85,7 +85,7 @@ async def submit_video_task(  # noqa: C901 - admission, idempotency, and slot cl
     # 提交速率限流：在落库前拦截刷量请求，避免无效任务占据 DB 行 + 调度槽。
     # 与 images/limits.py 一致：Redis 滚窗 + 内存兜底；超限返回 429。
     try:
-        enforce_video_generation_rate(user.id)
+        await enforce_video_generation_rate(user.id)
     except CreditError as error:
         return public_credit_error_response(error)
     # 配额前置校验：在调度前预检余额，避免任务进 run_video_task 才发现余额不足，

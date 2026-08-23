@@ -15,6 +15,7 @@ from sqlalchemy import (
 )
 
 from .db import CreationBase
+from .task_states import GENERATION_TASK_STATUS_CHECK_SQL
 
 
 def _creation_table(name: str) -> str:
@@ -171,10 +172,8 @@ class ImageGenerationTask(CreationBase):
     __tablename__ = 'ext_image_generation_task'
     __table_args__ = (
         UniqueConstraint('user_id', 'idempotency_key', name='uq_ext_image_task_user_key'),
-        CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'failed')",
-            name='ck_ext_image_task_status',
-        ),
+        # 复盘 P2：CHECK 从 task_states 的 Literal 派生，与迁移 0001 文本逐字符一致。
+        CheckConstraint(GENERATION_TASK_STATUS_CHECK_SQL, name='ck_ext_image_task_status'),
         CheckConstraint(
             "kind IN ('text-to-image', 'image-to-image')",
             name='ck_ext_image_task_kind',
@@ -205,13 +204,19 @@ class VideoGenerationTask(CreationBase):
     __tablename__ = 'ext_video_generation_task'
     __table_args__ = (
         UniqueConstraint('user_id', 'idempotency_key', name='uq_ext_video_task_user_key'),
-        CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'failed')",
-            name='ck_ext_video_task_status',
-        ),
+        CheckConstraint(GENERATION_TASK_STATUS_CHECK_SQL, name='ck_ext_video_task_status'),
         CheckConstraint(
             "task IN ('text-to-video', 'image-to-video', 'video-to-video')",
             name='ck_ext_video_task_kind',
+        ),
+        # 复盘 P1：与迁移 0001 对齐（此前 ORM 缺失这两条，元数据漂移）。
+        CheckConstraint(
+            "execution_mode IS NULL OR execution_mode IN ('mock', 'fal')",
+            name='ck_ext_video_task_execution_mode',
+        ),
+        CheckConstraint(
+            'delivery_attempts >= 0',
+            name='ck_ext_video_task_delivery_attempts',
         ),
         Index('ix_ext_video_task_user_created', 'user_id', 'created_at', 'id'),
         Index('ix_ext_video_task_status_updated', 'status', 'updated_at', 'id'),
@@ -234,7 +239,7 @@ class VideoGenerationTask(CreationBase):
     provider_status_url = Column(Text, nullable=True)
     provider_response_url = Column(Text, nullable=True)
     provider_result_url = Column(Text, nullable=True)
-    delivery_attempts = Column(Integer, nullable=False, default=0)
+    delivery_attempts = Column(Integer, nullable=False, default=0, server_default='0')
     created_at = Column(BigInteger, nullable=False)
     started_at = Column(BigInteger, nullable=True)
     completed_at = Column(BigInteger, nullable=True)

@@ -127,6 +127,17 @@ async def _provider_call(resource: str, call):
         ) from error
 
 
+async def _skipped_resources() -> tuple:
+    return ()
+
+
+def _call_or_skip(resource: str, call, client, resources: tuple):
+    """资源未勾选或对应客户端缺失时以空结果跳过，否则发起 provider 调用。"""
+    if client is None or resource not in resources:
+        return _skipped_resources()
+    return _provider_call(resource, call)
+
+
 def _sync_result(row: ProviderSyncRun) -> ProviderSyncResult:
     return ProviderSyncResult(
         id=row.id,
@@ -506,43 +517,26 @@ async def sync_fal_platform(session: AsyncSession, form: ProviderSyncForm) -> Pr
         start = _iso(window_start_at)
         end = _iso(now)
 
-        billing_events = (
-            await _provider_call(
-                'billing_events',
-                lambda: admin_client.billing_events(start=start, end=end),
-            )
-            if admin_client is not None and 'billing_events' in resources
-            else ()
-        )
-        usage = (
-            await _provider_call(
-                'usage',
-                lambda: admin_client.usage(start=start, end=end, timeframe=form.timeframe),
-            )
-            if admin_client is not None and 'usage' in resources
-            else ()
+        # 复盘 P2：五个 provider API 是纯网络往返，原先串行 await。
+        # 依赖关系分两层：billing/usage 互相独立；endpoint_ids 由二者派生，
+        # prices/requests/analytics 再依赖 endpoint_ids 且互相独立——
+        # 各层内部 gather 并发，层间保持依赖。
+        billing_events, usage = await asyncio.gather(
+            _call_or_skip('billing_events', lambda: admin_client.billing_events(start=start, end=end), admin_client, resources),
+            _call_or_skip(
+                'usage', lambda: admin_client.usage(start=start, end=end, timeframe=form.timeframe), admin_client, resources
+            ),
         )
         endpoint_ids = _relevant_endpoint_ids(tuple(local_endpoint_ids), billing_events, usage)
-        prices = (
-            await _provider_call('pricing', lambda: api_client.prices(endpoint_ids))
-            if api_client is not None and 'pricing' in resources
-            else ()
-        )
-        requests = (
-            await _provider_call(
-                'requests',
-                lambda: api_client.requests(endpoint_ids, start=start, end=end),
-            )
-            if api_client is not None and 'requests' in resources
-            else ()
-        )
-        analytics = (
-            await _provider_call(
+        prices, requests, analytics = await asyncio.gather(
+            _call_or_skip('pricing', lambda: api_client.prices(endpoint_ids), api_client, resources),
+            _call_or_skip('requests', lambda: api_client.requests(endpoint_ids, start=start, end=end), api_client, resources),
+            _call_or_skip(
                 'analytics',
                 lambda: api_client.analytics(endpoint_ids, start=start, end=end, timeframe=form.timeframe),
-            )
-            if api_client is not None and 'analytics' in resources
-            else ()
+                api_client,
+                resources,
+            ),
         )
 
         synced_at = _now_ms()

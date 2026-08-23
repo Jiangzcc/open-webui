@@ -11,7 +11,8 @@
 		type PriceRule
 	} from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
-	import Modal from '$lib/components/common/Modal.svelte';
+	import Select from '$lib/components/common/Select.svelte';
+import Modal from '$lib/components/common/Modal.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import {
 		hasBlankExactMapEntry,
@@ -186,15 +187,18 @@
 
 		<form class="space-y-3" on:submit|preventDefault={save}>
 			<label class="block text-xs font-medium text-gray-500"
-				>{$i18n.t('credits.admin.pricing.serviceType')}<select
-					class="mt-1 w-full rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-					value={form.serviceType}
-					on:change={(event) => selectServiceType(event.currentTarget.value)}
-					disabled={Boolean(price)}
-					><option value="image">{$i18n.t('credits.admin.imageService')}</option><option
-						value="video">{$i18n.t('credits.admin.videoService')}</option
-					></select
-				></label
+				>{$i18n.t('credits.admin.pricing.serviceType')}
+					<Select
+						value={form.serviceType}
+						items={[
+							{ value: 'image', label: $i18n.t('credits.admin.imageService') },
+							{ value: 'video', label: $i18n.t('credits.admin.videoService') }
+						]}
+						ariaLabel={$i18n.t('credits.admin.pricing.serviceType')}
+						triggerClass="mt-1 w-full items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+						disabled={Boolean(price)}
+						onChange={(value) => selectServiceType(value)}
+					/></label
 			>
 			<label class="block text-xs font-medium text-gray-500"
 				>{$i18n.t('credits.admin.pricing.resourceId')}<input
@@ -204,14 +208,18 @@
 				/></label
 			>
 			<label class="block text-xs font-medium text-gray-500"
-				>{$i18n.t('credits.common.action')}<select
-					class="mt-1 w-full rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-					bind:value={form.action}
-					disabled={Boolean(price)}
-					>{#each actionsForService(form.serviceType) as action}<option value={action}
-							>{priceLabel('actions', action)}</option
-						>{/each}</select
-				></label
+				>{$i18n.t('credits.common.action')}
+					<Select
+						value={form.action}
+						items={actionsForService(form.serviceType).map((action) => ({
+							value: action,
+							label: priceLabel('actions', action)
+						}))}
+						ariaLabel={$i18n.t('credits.common.action')}
+						triggerClass="mt-1 w-full items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+						disabled={Boolean(price)}
+						onChange={(value) => (form.action = value)}
+					/></label
 			>
 			<label class="block text-xs font-medium text-gray-500"
 				>{$i18n.t('credits.admin.pricing.basePrice')}<input

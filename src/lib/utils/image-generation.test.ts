@@ -3,7 +3,6 @@ import { describe, expect, it, test } from 'vitest';
 import {
 	buildImageEditPayload,
 	buildImageGenerationPayload,
-	canUseImagesPage,
 	filterImageFiles,
 	getImageModelCapability,
 	getImageSizeForAspectRatio,
@@ -11,13 +10,9 @@ import {
 	normalizeAspectRatio,
 	normalizeImageGenerationModels,
 	validateCustomSize,
-	normalizeImageResults,
-	normalizeReferenceImages,
 	resolveActiveImageModel,
 	resolveImageEditModel,
 	supportsImageEditing,
-	prependGeneratedImages,
-	removeReferenceImage,
 	validateImagePrompt
 } from './image-generation';
 
@@ -261,27 +256,6 @@ describe('image generation utils', () => {
 		]);
 	});
 
-	test('checks page access from feature flag and user permission', () => {
-		const config = { features: { enable_image_generation: true } };
-
-		expect(canUseImagesPage(config, { role: 'admin', permissions: { features: {} } })).toBe(true);
-		expect(
-			canUseImagesPage(config, {
-				role: 'user',
-				permissions: { features: { image_generation: true } }
-			})
-		).toBe(true);
-		expect(
-			canUseImagesPage(config, {
-				role: 'user',
-				permissions: { features: { image_generation: false } }
-			})
-		).toBe(false);
-		expect(
-			canUseImagesPage({ features: { enable_image_generation: false } }, { role: 'admin' })
-		).toBe(false);
-	});
-
 	test('validates and trims prompts', () => {
 		expect(validateImagePrompt('   ')).toEqual({ ok: false, reason: 'empty_prompt' });
 		expect(validateImagePrompt('  cinematic cat  ')).toEqual({
@@ -443,6 +417,64 @@ describe('image generation utils', () => {
 		});
 	});
 
+	test('omits the derived baseline size for catalog models with a resolution selector', () => {
+		// 复盘 P0-2：seedream 类档位模型（resolutions + aspect_ratio_sizes）不再下发
+		// 派生基线 size——档位 × 基线由后端合成，派生基线会抢占档位语义（选 4K 出 1K）。
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'bytedance-seedream-v5-pro',
+				aspect_ratios: ['1:1', '16:9'],
+				aspect_ratio_sizes: { '1:1': '1024x1024', '16:9': '1280x720' },
+				resolutions: ['1K', '2K', '4K'],
+				default_resolution: '1K',
+				default_aspect_ratio: '1:1'
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'landscape',
+				model,
+				aspectRatio: '16:9',
+				resolution: '4K'
+			})
+		).toEqual({
+			prompt: 'landscape',
+			model: 'bytedance-seedream-v5-pro',
+			aspect_ratio: '16:9',
+			resolution: '4K'
+		});
+	});
+
+	test('keeps an explicit custom size alongside a resolution selector', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'bytedance-seedream-v5-pro',
+				aspect_ratios: ['1:1', '16:9'],
+				aspect_ratio_sizes: { '1:1': '1024x1024', '16:9': '1280x720' },
+				resolutions: ['1K', '2K', '4K'],
+				default_resolution: '1K',
+				default_aspect_ratio: '1:1'
+			}
+		]);
+
+		expect(
+			buildImageGenerationPayload({
+				prompt: 'landscape',
+				model,
+				aspectRatio: '16:9',
+				resolution: '4K',
+				size: '1600x900'
+			})
+		).toEqual({
+			prompt: 'landscape',
+			model: 'bytedance-seedream-v5-pro',
+			aspect_ratio: '16:9',
+			resolution: '4K',
+			size: '1600x900'
+		});
+	});
+
 	test('uses explicit size before aspect-ratio size', () => {
 		expect(
 			buildImageGenerationPayload({
@@ -511,14 +543,7 @@ describe('image generation utils', () => {
 		);
 	});
 
-	test('normalizes reference images for edit requests', () => {
-		expect(normalizeReferenceImages([])).toBeUndefined();
-		expect(normalizeReferenceImages(['a'])).toBe('a');
-		expect(normalizeReferenceImages(['a', 'b'])).toEqual(['a', 'b']);
-	});
-
-	test('builds image-to-image payload with one or many reference images', () => {
-		expect(
+	test('builds image-to-image payload with one or many reference images', () => {		expect(
 			buildImageEditPayload({
 				prompt: 'turn it into ink art',
 				referenceImages: ['data:image/png;base64,aaa'],
@@ -570,14 +595,6 @@ describe('image generation utils', () => {
 		});
 	});
 
-	test('removes reference images immutably', () => {
-		const images = ['a', 'b', 'c'];
-		const updated = removeReferenceImage(images, 1);
-
-		expect(updated).toEqual(['a', 'c']);
-		expect(images).toEqual(['a', 'b', 'c']);
-	});
-
 	test('filters image files by type, size, and count', () => {
 		const png = { name: 'a.png', type: 'image/png', size: 100 };
 		const jpeg = { name: 'b.jpg', type: 'image/jpeg', size: 100 };
@@ -595,24 +612,6 @@ describe('image generation utils', () => {
 		]);
 	});
 
-	test('normalizes image generation API results', () => {
-		expect(normalizeImageResults([{ url: '/a.png' }, { nope: true }, '/b.png'])).toEqual([
-			{ url: '/a.png' },
-			{ url: '/b.png' }
-		]);
-		expect(normalizeImageResults({ data: [{ url: '/c.png' }] })).toEqual([{ url: '/c.png' }]);
-	});
-
-	test('prepends generated images without mutating existing items', () => {
-		const existing = [{ url: '/old.png' }];
-		const incoming = [{ url: '/new.png' }];
-
-		expect(prependGeneratedImages(existing, incoming)).toEqual([
-			{ url: '/new.png' },
-			{ url: '/old.png' }
-		]);
-		expect(existing).toEqual([{ url: '/old.png' }]);
-	});
 
 	test('lifts backend quality options onto the normalized model and capability', () => {
 		const [withQuality, withoutQuality] = normalizeImageGenerationModels([

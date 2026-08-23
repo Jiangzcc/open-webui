@@ -45,13 +45,31 @@ class VideoQuoteResult:
     error: str | None
 
 
+def normalize_video_duration_dimension(duration: object) -> str | int:
+    """归一化 duration 计费维度；'auto' 与 '0' 为免计费档原样保留
+    （'0' 同时接受 int 0——「跟随源视频时长」的数值写法，catalog 合法值）。
+
+    复盘 #18：credits/router 与 videos/billing 两处归一化语义不一致——前者
+    拒绝非整数，后者 round 吞掉小数、对 NaN/inf 裸抛 ValueError。统一为：
+    必须是 ≥1 的整数值（或 'auto'/'0'），否则按 invalid_duration 拒绝。"""
+    if duration == 'auto' or str(duration) == '0':
+        return str(duration)
+    if isinstance(duration, bool):
+        raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_duration'})
+    try:
+        parsed = float(duration)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as error:
+        raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_duration'}) from error
+    if not parsed.is_integer() or parsed < 1:
+        # NaN/inf 的 is_integer() 恒为 False，同样在此拦截。
+        raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_duration'})
+    return int(parsed)
+
+
 def video_quote_dimensions(task: VideoTaskSubmitForm | VideoTaskResponse) -> dict[str, str | int]:
     """从提交表单或任务响应归一化计费维度（复用 quote_video 的维度逻辑）。"""
     params = task.params
-    duration = params.get('duration', 1)
-    normalized_duration: str | int = (
-        str(duration) if duration == 'auto' or str(duration) == '0' else max(1, round(float(duration)))
-    )
+    normalized_duration = normalize_video_duration_dimension(params.get('duration', 1))
     dimensions: dict[str, str | int] = {
         'duration': normalized_duration,
         'resolution': str(params.get('resolution', 'default')),

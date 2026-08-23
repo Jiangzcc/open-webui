@@ -101,12 +101,6 @@ def public_fal_image_model_id(internal_id: str | None) -> str | None:
     return _FAL_INTERNAL_TO_PUBLIC_ID.get(internal_id.strip().strip('/'))
 
 
-def internal_fal_image_model_id(public_id: str | None) -> str | None:
-    if not isinstance(public_id, str):
-        return None
-    return _FAL_PUBLIC_TO_INTERNAL_ID.get(public_id.strip().strip('/'))
-
-
 def normalize_fal_image_model_id(candidate: str | None) -> str | None:
     if not isinstance(candidate, str):
         return None

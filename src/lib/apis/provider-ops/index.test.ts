@@ -18,7 +18,7 @@ describe('provider operations API client', () => {
 		expect(fetchMock).toHaveBeenCalledWith(
 			'/api/v1/provider-ops/admin/overview?provider=fal&window_hours=168',
 			expect.objectContaining({
-				headers: expect.objectContaining({ authorization: 'Bearer token' })
+				headers: expect.objectContaining({ Authorization: 'Bearer token' })
 			})
 		);
 	});

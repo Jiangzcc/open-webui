@@ -12,6 +12,9 @@ Revises:
 - ext_creation_category：内置分类种子（0006）
 - ext_image_generation_task：图片任务（0003；0004 加、0005 删的通知列净为零）
 - ext_video_generation_task：视频任务（0007）+ FAL 交付恢复列（0008）
+  （2026-08-23 复盘 P0-1：其 params/assets/result_json 三列由 sa.JSON 修正为
+  JSONField——ORM 按此 TEXT 打底类型读写，原生 JSON 列在 PostgreSQL 上读取即
+  TypeError；开发阶段直接改基线，存量库见下方处置说明）
 """
 
 from collections.abc import Sequence
@@ -264,9 +267,9 @@ def upgrade() -> None:
         sa.Column('task', sa.String(32), nullable=False),
         sa.Column('prompt', sa.Text(), nullable=False),
         sa.Column('model_id', sa.String(256), nullable=False),
-        sa.Column('params_json', sa.JSON(), nullable=True),
-        sa.Column('assets_json', sa.JSON(), nullable=True),
-        sa.Column('result_json', sa.JSON(), nullable=True),
+        sa.Column('params_json', JSONField(), nullable=True),
+        sa.Column('assets_json', JSONField(), nullable=True),
+        sa.Column('result_json', JSONField(), nullable=True),
         sa.Column('error_code', sa.String(64), nullable=True),
         sa.Column('usage_id', sa.String(128), nullable=True),
         sa.Column('created_at', sa.BigInteger(), nullable=False),

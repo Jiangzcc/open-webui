@@ -30,7 +30,8 @@ from open_webui.extensions.creations.schemas import (
     ReactionKind,
     ReactionState,
 )
-from sqlalchemy import and_, delete, desc, func, or_, select
+from sqlalchemy import and_, delete, desc, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 Files = None
@@ -638,6 +639,13 @@ async def set_reaction(
     ).scalar_one_or_none()
     if active and existing is None:
         session.add(CreationPostReaction(post_id=post_id, user_id=user_id, kind=kind, created_at=_now()))
+        try:
+            await session.flush()
+        except IntegrityError:
+            # 复盘 P1：并发重复点赞（双击/双请求）时两个事务都可能读到
+            # existing is None 而插入同一主键——幂等按"已生效"处理并重开
+            # 事务，不能把主键冲突的 500 暴露给用户。
+            await session.rollback()
     elif not active and existing is not None:
         await session.execute(
             delete(CreationPostReaction).where(
@@ -646,26 +654,33 @@ async def set_reaction(
                 CreationPostReaction.kind == kind,
             )
         )
-    await session.flush()
-    counts = dict(
-        (
-            await session.execute(
-                select(CreationPostReaction.kind, func.count())
-                .where(CreationPostReaction.post_id == post_id)
-                .group_by(CreationPostReaction.kind)
-            )
-        ).all()
+    # 复盘 P1：计数重算为单条原子 UPDATE（子查询在数据库端执行），消除
+    # Python 侧"读统计→赋值"间隙下并发反应互相覆盖计数的丢更新窗口。
+    await session.execute(
+        update(CreationPost)
+        .where(CreationPost.id == post_id)
+        .values(
+            like_count=select(func.count())
+            .where(CreationPostReaction.post_id == post_id, CreationPostReaction.kind == 'like')
+            .scalar_subquery(),
+            favorite_count=select(func.count())
+            .where(CreationPostReaction.post_id == post_id, CreationPostReaction.kind == 'favorite')
+            .scalar_subquery(),
+            updated_at=_now(),
+        )
     )
-    post.like_count = int(counts.get('like', 0))
-    post.favorite_count = int(counts.get('favorite', 0))
-    post.updated_at = _now()
     await session.commit()
+    fresh = (
+        await session.execute(
+            select(CreationPost.like_count, CreationPost.favorite_count).where(CreationPost.id == post_id)
+        )
+    ).one()
     return ReactionState(
         post_id=post_id,
         kind=kind,
         active=active,
-        like_count=post.like_count,
-        favorite_count=post.favorite_count,
+        like_count=int(fresh[0]),
+        favorite_count=int(fresh[1]),
     )
 
 

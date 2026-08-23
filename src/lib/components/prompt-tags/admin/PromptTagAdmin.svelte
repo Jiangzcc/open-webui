@@ -17,7 +17,8 @@
 		type PromptTagItem,
 		type PromptTagMediaKind
 	} from '$lib/apis/prompt_tags';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Select from '$lib/components/common/Select.svelte';
+import Spinner from '$lib/components/common/Spinner.svelte';
 	import { registerPromptTagTranslations } from '$lib/components/prompt-tags/prompt-tags-i18n';
 	import { trapFocus } from '$lib/actions/focusTrap';
 	import { toast } from 'svelte-sonner';
@@ -415,17 +416,16 @@
 					{$i18n.t('promptTags.admin.tags')}
 				</h2>
 				<div class="flex flex-wrap gap-2">
-					<select
-						bind:value={filterCategoryId}
-						class="min-h-9 rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900"
-					>
-						<option value=""
-							>{$i18n.t('promptTags.admin.categories')}: {$i18n.t('promptTags.admin.all')}</option
-						>
-						{#each categories as c (c.id)}
-							<option value={c.id}>{catName(c)}</option>
-						{/each}
-					</select>
+					<Select
+	value={filterCategoryId}
+	items={[
+		{ value: '', label: `${$i18n.t('promptTags.admin.categories')}: ${$i18n.t('promptTags.admin.all')}` },
+		...categories.map((c) => ({ value: c.id, label: catName(c) }))
+	]}
+	ariaLabel={$i18n.t('promptTags.admin.categories')}
+	triggerClass="flex min-h-9 items-center rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+	onChange={(value) => (filterCategoryId = value)}
+/>
 					<input
 						type="search"
 						bind:value={search}
@@ -643,18 +643,17 @@
 						/>
 					</div>
 					<div>
-						<label class="mb-1 block text-xs font-medium text-gray-500" for="tag-cat"
+						<label class="mb-1 block text-xs font-medium text-gray-500"
 							>{$i18n.t('promptTags.admin.category')}</label
 						>
-						<select
-							id="tag-cat"
-							bind:value={tagForm.category_id}
-							class="min-h-9 w-full rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700 dark:bg-gray-950"
-						>
-							{#each categories as c (c.id)}
-								<option value={c.id}>{catName(c)}</option>
-							{/each}
-						</select>
+						<Select
+	value={tagForm.category_id}
+	items={categories.map((c) => ({ value: c.id, label: catName(c) }))}
+	placeholder={catName(categories[0])}
+	ariaLabel={$i18n.t('promptTags.admin.category')}
+	triggerClass="min-h-9 w-full items-center rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700 dark:bg-gray-950"
+	onChange={(value) => (tagForm.category_id = value)}
+/>
 					</div>
 				</div>
 				<div class="grid gap-3 sm:grid-cols-2">

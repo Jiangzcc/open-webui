@@ -10,6 +10,7 @@
 		type ReconciliationItem,
 		type ReconciliationStatus
 	} from '$lib/apis/credits';
+import Select from '$lib/components/common/Select.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -119,22 +120,28 @@
 			bind:value={userId}
 			placeholder={$i18n.t('credits.admin.userId')}
 		/>
-		<select
-			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			bind:value={status}
-		>
-			<option value="">{$i18n.t('credits.admin.allStatuses')}</option>
-			<option value="failed">{$i18n.t('Failed')}</option>
-			<option value="unknown">{$i18n.t('Unknown')}</option>
-		</select>
-		<select
-			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			bind:value={compensated}
-		>
-			<option value="">{$i18n.t('credits.admin.allCompensation')}</option>
-			<option value="false">{$i18n.t('credits.admin.uncompensated')}</option>
-			<option value="true">{$i18n.t('credits.admin.compensated')}</option>
-		</select>
+		<Select
+			value={status}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allStatuses') },
+				{ value: 'failed', label: $i18n.t('Failed') },
+				{ value: 'unknown', label: $i18n.t('Unknown') }
+			]}
+			ariaLabel={$i18n.t('credits.admin.allStatuses')}
+			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+			onChange={(value) => (status = value)}
+		/>
+		<Select
+			value={compensated}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allCompensation') },
+				{ value: 'false', label: $i18n.t('credits.admin.uncompensated') },
+				{ value: 'true', label: $i18n.t('credits.admin.compensated') }
+			]}
+			ariaLabel={$i18n.t('credits.admin.allCompensation')}
+			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+			onChange={(value) => (compensated = value)}
+		/>
 		<button
 			class="min-h-10 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white dark:bg-white dark:text-gray-900"
 			type="button"

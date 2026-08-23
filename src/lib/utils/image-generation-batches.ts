@@ -4,8 +4,10 @@ import type {
 	ImageEditPayload,
 	ImageGenerationPayload
 } from './image-generation';
+import type { GenerationTaskStatus } from './generation-task-status';
 
-export type ImageGenerationTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+// 复盘 P2：任务状态类型收敛至 generation-task-status 单一事实源。
+export type ImageGenerationTaskStatus = GenerationTaskStatus;
 export type ImageGenerationTaskKind = 'text-to-image' | 'image-to-image';
 
 export type ImageGenerationTask = {

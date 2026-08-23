@@ -286,10 +286,11 @@ def _dimensions(
         'quality': image_input.quality or 'default',
         'image_count': image_input.image_count,
     }
-    # fal payload construction gives an explicit resolution precedence over
-    # size. Preserve that same source of truth for billing, and never trust a
-    # client-supplied pixel_count from `extra`.
-    pixels = _pixel_count(image_input.resolution or size)
+    # Same precedence as payload construction (复盘 P0-2 单一事实源): a
+    # "WxH"-shaped resolution wins, then an explicit size; a resolution tier
+    # ("2K"/"4K") is not a pixel string and falls through to the ratio mapping.
+    # Never trust a client-supplied pixel_count from `extra`.
+    pixels = _pixel_count(image_input.resolution) or _pixel_count(size)
     if pixels is None:
         # 比例驱动模型：无 WxH 字符串，按目录映射（基线 × 分辨率档乘数）计像素。
         pixels = _ratio_pixel_count(model, image_input.aspect_ratio, image_input.resolution)

@@ -20,7 +20,8 @@
 		type ProviderOverview,
 		type VideoRuntimeStatus
 	} from '$lib/apis/provider-ops';
-	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
+	import Select from '$lib/components/common/Select.svelte';
+import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 
@@ -176,26 +177,27 @@
 			</p>
 		</div>
 		<div class="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
-			<label class="sr-only" for="provider-operations-provider">{$i18n.t('Provider')}</label>
-			<select
-				id="provider-operations-provider"
-				class="min-h-11 min-w-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-				bind:value={provider}
-				on:change={loadStats}
-			>
-				<option value="fal">fal.ai</option>
-			</select>
-			<label class="sr-only" for="provider-operations-window">{$i18n.t('Time window')}</label>
-			<select
-				id="provider-operations-window"
-				class="min-h-11 min-w-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-				bind:value={windowHours}
-				on:change={loadStats}
-			>
-				<option value={24}>{$i18n.t('Last 24 hours')}</option>
-				<option value={168}>{$i18n.t('Last 7 days')}</option>
-				<option value={720}>{$i18n.t('Last 30 days')}</option>
-			</select>
+			<Select
+				value={provider}
+				items={[{ value: 'fal', label: 'fal.ai' }]}
+				ariaLabel={$i18n.t('Provider')}
+				triggerClass="flex min-h-11 min-w-0 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+				onChange={() => loadStats()}
+			/>
+			<Select
+				value={String(windowHours)}
+				items={[
+					{ value: '24', label: $i18n.t('Last 24 hours') },
+					{ value: '168', label: $i18n.t('Last 7 days') },
+					{ value: '720', label: $i18n.t('Last 30 days') }
+				]}
+				ariaLabel={$i18n.t('Time window')}
+				triggerClass="flex min-h-11 min-w-0 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+				onChange={(hours) => {
+					windowHours = Number(hours);
+					loadStats();
+				}}
+			/>
 			<button
 				class="col-span-2 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-gray-900 sm:col-span-1"
 				type="button"

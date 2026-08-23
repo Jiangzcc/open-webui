@@ -42,7 +42,7 @@
     "boolean_fields": [
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "sync_mode",
@@ -96,7 +96,7 @@
     "boolean_fields": [
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       },
       {
         "field": "sync_mode",
@@ -152,7 +152,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       }
     ],
     "output_formats": [
@@ -246,7 +246,7 @@
       },
       {
         "field": "enable_safety_checker",
-        "default": true
+        "default": false
       }
     ],
     "output_formats": [

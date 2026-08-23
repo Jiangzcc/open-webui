@@ -161,7 +161,11 @@ async def test_finalize_failure_leaves_usage_invoking_and_never_marks_provider_f
         AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
     )
     module.mark_usage_failed.reset_mock()
-    invoke = AsyncMock(return_value=[{'url': '/api/v1/files/result-1/content'}])
+    invoke = AsyncMock(
+        return_value=SimpleNamespace(
+            images=(SimpleNamespace(url='/api/v1/files/result-1/content'),)
+        )
+    )
     finalize = AsyncMock(side_effect=RuntimeError('db died'))
 
     with pytest.raises(CreditError) as raised:
@@ -217,10 +221,12 @@ async def test_local_file_urls_are_normalized_before_persisting_success(billing_
         AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
     )
     invoke = AsyncMock(
-        return_value=[
-            {'url': 'http://localhost:8080/api/v1/files/result-1/content'},
-            {'url': '/api/v1/files/result-2/content'},
-        ]
+        return_value=SimpleNamespace(
+            images=(
+                SimpleNamespace(url='http://localhost:8080/api/v1/files/result-1/content'),
+                SimpleNamespace(url='/api/v1/files/result-2/content'),
+            )
+        )
     )
 
     result = await call_bill(invoke=invoke)
@@ -462,7 +468,9 @@ async def test_success_status_failure_does_not_reinvoke_provider(billing_module,
         AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
     )
     module.mark_usage_succeeded_in_session.return_value = 0
-    invoke = AsyncMock(return_value=[{'url': '/api/v1/files/result-1/content'}])
+    invoke = AsyncMock(
+        return_value=SimpleNamespace(images=(SimpleNamespace(url='/api/v1/files/result-1/content'),))
+    )
 
     with pytest.raises(CreditError) as raised:
         await call_bill(invoke=invoke)

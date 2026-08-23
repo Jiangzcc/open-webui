@@ -93,9 +93,11 @@ def _assert_lifecycle_bridge(source: str) -> None:
     assert shutdown_at < close_session_at
 
 
-def _assert_image_wrapper(source: str, public_name: str, private_name: str, action: str) -> None:
+def _assert_image_wrapper(source: str, core_name: str, private_name: str, action: str) -> None:
+    # 复盘 P0-3 门禁下沉后：bill_image_call 及 invoke 闭包位于 *_core 函数内，
+    # 公共名 image_generations/image_edits 只保留限流/并发门禁包装器。
     tree = ast.parse(source)
-    function = _function(tree, public_name)
+    function = _function(tree, core_name)
     calls = _calls(function, 'bill_image_call')
     assert len(calls) == 1
     call = calls[0]
@@ -196,7 +198,7 @@ def test_guard_helpers_reject_a_fixture_with_removed_or_bypassed_bridges() -> No
         1,
     )
     try:
-        _assert_image_wrapper(bypassed_wrapper, 'image_generations', '_invoke_image_generations', 'text-to-image')
+        _assert_image_wrapper(bypassed_wrapper, '_image_generations_core', '_invoke_image_generations', 'text-to-image')
     except AssertionError:
         pass
     else:
@@ -210,8 +212,8 @@ def test_static_bridges_keep_router_lifecycle_channels_and_frontend_mounts() -> 
     assert main_source.count('app.include_router(credits_router)') == 1
 
     image_source = _source('backend/open_webui/routers/images.py')
-    _assert_image_wrapper(image_source, 'image_generations', '_invoke_image_generations', 'text-to-image')
-    _assert_image_wrapper(image_source, 'image_edits', '_invoke_image_edits', 'image-to-image')
+    _assert_image_wrapper(image_source, '_image_generations_core', '_invoke_image_generations', 'text-to-image')
+    _assert_image_wrapper(image_source, '_image_edits_core', '_invoke_image_edits', 'image-to-image')
 
     builtin_source = _source('backend/open_webui/tools/builtin.py')
     builtin_tree = ast.parse(builtin_source)
@@ -246,6 +248,8 @@ def test_all_image_production_callers_use_public_wrappers_and_only_wrappers_call
         'backend/open_webui/routers/images.py': {'image_generations', 'image_edits'},
         'backend/open_webui/tools/builtin.py': {'image_generations', 'image_edits'},
         'backend/open_webui/utils/middleware.py': {'image_generations', 'image_edits'},
+        # 复盘 P0-3 门禁下沉后：异步任务执行器经由公共包装器并声明槽位已持有。
+        'backend/open_webui/extensions/creations/generation_tasks.py': {'image_generations', 'image_edits'},
     }
     observed_public_callers: dict[str, set[str]] = {}
 
@@ -262,7 +266,7 @@ def test_all_image_production_callers_use_public_wrappers_and_only_wrappers_call
             if called in {'_invoke_image_generations', '_invoke_image_edits'}:
                 assert relative == 'backend/open_webui/routers/images.py'
                 allowed_owners = {
-                    '_invoke_image_generations': {'image_generations'},
+                    '_invoke_image_generations': {'_image_generations_core'},
                     '_invoke_image_edits': {'invoke_edit_creations'},
                 }
                 assert _containing_function(node, parents) in allowed_owners[called]

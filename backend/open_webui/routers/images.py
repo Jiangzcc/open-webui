@@ -660,17 +660,11 @@ async def upload_image(request, image_data, content_type, metadata, user, db=Non
 async def generate_images(request: Request, form_data: CreateImageForm, user=Depends(get_verified_user)):
     # The direct HTTP endpoint trusts the credits layer's `direct` authorization
     # scope: verified users may call it regardless of the image feature switches
-    # or per-user image_generation permission. Internal callers (chat middleware,
-    # builtin tools) gate themselves and call image_generations() with their own
-    # server-supplied scope.
+    # or per-user image_generation permission. Rate limiting and per-user
+    # concurrency slots are enforced inside image_generations() for every call
+    # path (direct endpoint, chat middleware, builtin tools).
     try:
-        # EXT: 二开新增 —— 直连端点也走并发槽位控制，与异步任务路径一致
-        enforce_image_generation_rate(user.id)
-        await acquire_image_generation_slot(user.id)
-        try:
-            result = await image_generations(request, form_data, 'direct', user=user)
-        finally:
-            await release_image_generation_slot(user.id)
+        result = await image_generations(request, form_data, 'direct', user=user)
     except CreditError as error:
         return public_credit_error_response(error)
     await publish_event(
@@ -748,7 +742,108 @@ def invoke_edit_creations_factory(request: Request, metadata, user):
     return invoke_edit_creations
 
 
+async def _ensure_fal_image_admission(candidate: str, form_data) -> None:
+    """EXT: 二开新增 —— FAL 引擎前置校验：自定义尺寸约束 + 模型运营状态检查。
+
+    generations/edits 两处原先逐字重复（复盘 P2 收敛）；异常统一转 CreditError
+    以便计费层给出用户可见错误。"""
+    from open_webui.extensions.model_ops.db import model_ops_session
+    from open_webui.extensions.model_ops.service import ensure_model_enabled
+
+    try:
+        validate_fal_image_size(candidate, form_data)
+    except FalImageSizeError as error:
+        raise CreditError(
+            code='invalid_image_size',
+            context={'reason': 'custom_size_constraints'},
+        ) from error
+    try:
+        async with model_ops_session() as model_session:
+            await ensure_model_enabled(model_session, candidate)
+    except HTTPException as error:
+        detail = getattr(error, 'detail', None)
+        message = detail.get('message') if isinstance(detail, dict) else None
+        raise CreditError(
+            code='provider_failed',
+            context={'reason': 'model_disabled', 'message': message or 'Image model is unavailable'},
+        ) from error
+
+
+async def _run_fal_image_pipeline(
+    request: Request,
+    form_data,
+    metadata: dict,
+    user,
+    image_config,
+    *,
+    fal_model: str,
+    payload: dict,
+    api_key: str,
+    api_base_url: str,
+) -> CapturedImageBatch:
+    """EXT: 二开新增 —— FAL 图片管线：mock 分流 → provider 观察者 → 真实队列
+    → 产物下载落盘并捕获。generations/edits 的 fal 分支原先逐字重复
+    （复盘 P2 收敛）；模型解析与 payload 构建含编辑差异，由调用方完成。"""
+    # EXT: 二开新增 —— mock 仅在管理端开关显式开启时生效，默认走真实 FAL 队列。
+    if image_config.FAL_MOCK_ENABLED:
+        log.info(f'Using mocked fal.ai image result for {fal_model}')
+        res = get_mock_fal_image_result(fal_model, form_data)
+    else:
+        # EXT: 二开新增 —— 启动 provider 调用追踪观察者
+        observer = await try_start_provider_invocation(
+            task_id=metadata.get('generation_task_id'),
+            user_id=str(user.id),
+            media_kind='image',
+            provider='fal',
+            provider_model_id=fal_model,
+            payload=payload,
+        )
+        res = await run_fal_queue(fal_model, payload, api_key, api_base_url, observer=observer)
+    images = []
+    for image_url in extract_fal_image_urls(res):
+        image_data, content_type = await get_image_data(image_url)
+        file_item, url = await upload_image(request, image_data, content_type, {**payload, **metadata}, user)
+        images.append(
+            CapturedImageResult(
+                url=str(url),
+                file_id=file_item.id,
+                file_user_id=file_item.user_id,
+                file_created_at=file_item.created_at,
+                mime_type=content_type,
+            )
+        )
+    return CapturedImageBatch(images=tuple(images))
+
+
 async def image_generations(
+    request: Request,
+    form_data: CreateImageForm,
+    authorization_scope: str,
+    metadata: dict | None = None,
+    user=None,
+    *,
+    concurrency_slot_held_by_caller: bool = False,
+):
+    """Rate-limited entry point shared by every image generation call path.
+
+    EXT: 二开新增 —— 门禁下沉到所有调用路径的汇合点（复盘 P0-3：此前仅 direct
+    端点与异步任务提交入口包装限流/并发槽位，chat 中间件、内置工具与 edit 直连
+    端点直接调用而完全绕过，生成与扣费可被刷爆）。异步任务路径在提交时已计入
+    限流并占用任务全程的并发槽位，通过 concurrency_slot_held_by_caller 显式
+    声明跳过，避免双重占用。
+    """
+    if concurrency_slot_held_by_caller:
+        return await _image_generations_core(request, form_data, authorization_scope, metadata, user)
+    gate_user_id = getattr(user, 'id', '')
+    await enforce_image_generation_rate(gate_user_id)
+    await acquire_image_generation_slot(gate_user_id)
+    try:
+        return await _image_generations_core(request, form_data, authorization_scope, metadata, user)
+    finally:
+        await release_image_generation_slot(gate_user_id)
+
+
+async def _image_generations_core(
     request: Request,
     form_data: CreateImageForm,
     authorization_scope: str,
@@ -756,29 +851,9 @@ async def image_generations(
     user=None,
 ):
     image_config = await get_image_config()
-    # EXT: 二开新增 —— FAL 引擎前置校验：自定义尺寸约束 + 模型运营状态检查
+    # EXT: 二开新增 —— FAL 引擎前置校验（尺寸约束 + 模型运营状态）
     if image_config.IMAGE_GENERATION_ENGINE == 'fal':
-        from open_webui.extensions.model_ops.db import model_ops_session
-        from open_webui.extensions.model_ops.service import ensure_model_enabled
-
-        candidate = form_data.model or await get_image_model(request)
-        try:
-            validate_fal_image_size(candidate, form_data)
-        except FalImageSizeError as error:
-            raise CreditError(
-                code='invalid_image_size',
-                context={'reason': 'custom_size_constraints'},
-            ) from error
-        try:
-            async with model_ops_session() as model_session:
-                await ensure_model_enabled(model_session, candidate)
-        except HTTPException as error:
-            detail = getattr(error, 'detail', None)
-            message = detail.get('message') if isinstance(detail, dict) else None
-            raise CreditError(
-                code='provider_failed',
-                context={'reason': 'model_disabled', 'message': message or 'Image model is unavailable'},
-            ) from error
+        await _ensure_fal_image_admission(form_data.model or await get_image_model(request), form_data)
     return await bill_image_call(
         request=request,
         raw_form_data=form_data,
@@ -963,44 +1038,17 @@ async def _invoke_image_generations(
         elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
             fal_model = get_fal_generation_model(form_data.model or model)
             data = build_fal_image_payload(form_data, fal_model)
-
-            # EXT: 二开新增 —— mock 仅在管理端开关显式开启时生效，默认走真实 FAL 队列。
-            if image_config.FAL_MOCK_ENABLED:
-                log.info(f'Using mocked fal.ai image result for {fal_model}')
-                res = get_mock_fal_image_result(fal_model, form_data)
-            else:
-                # EXT: 二开新增 —— 启动 provider 调用追踪观察者
-                observer = await try_start_provider_invocation(
-                    task_id=metadata.get('generation_task_id'),
-                    user_id=str(user.id),
-                    media_kind='image',
-                    provider='fal',
-                    provider_model_id=fal_model,
-                    payload=data,
-                )
-                res = await run_fal_queue(
-                    fal_model,
-                    data,
-                    image_config.FAL_API_KEY,
-                    image_config.FAL_API_BASE_URL,
-                    observer=observer,
-                )
-            image_urls = extract_fal_image_urls(res)
-
-            images = []
-            for image_url in image_urls:
-                image_data, content_type = await get_image_data(image_url)
-                file_item, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
-                images.append(
-                    CapturedImageResult(
-                        url=str(url),
-                        file_id=file_item.id,
-                        file_user_id=file_item.user_id,
-                        file_created_at=file_item.created_at,
-                        mime_type=content_type,
-                    )
-                )
-            return CapturedImageBatch(images=tuple(images))
+            return await _run_fal_image_pipeline(
+                request,
+                form_data,
+                metadata,
+                user,
+                image_config,
+                fal_model=fal_model,
+                payload=data,
+                api_key=image_config.FAL_API_KEY,
+                api_base_url=image_config.FAL_API_BASE_URL,
+            )
 
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
             data = {
@@ -1161,8 +1209,8 @@ class EditImageForm(BaseModel):
 @router.post('/edit')
 async def edit_images(request: Request, form_data: EditImageForm, user=Depends(get_verified_user)):
     # Like /generations, the direct edit endpoint trusts the credits layer's
-    # `direct` authorization scope. Internal callers gate themselves and call
-    # image_edits() directly with their own server-supplied scope.
+    # `direct` authorization scope. Rate limiting and per-user concurrency
+    # slots are enforced inside image_edits() for every call path.
     try:
         result = await image_edits(request, form_data, 'direct', user=user)
     except CreditError as error:
@@ -1189,31 +1237,40 @@ async def image_edits(
     authorization_scope: str,
     metadata: dict | None = None,
     user=None,
+    *,
+    concurrency_slot_held_by_caller: bool = False,
+):
+    """Rate-limited entry point shared by every image edit call path.
+
+    EXT: 二开新增 —— 门禁下沉到所有调用路径的汇合点（复盘 P0-3：chat 中间件、
+    内置工具与 edit 直连端点此前完全绕过限流/并发槽位）。异步任务路径在提交时
+    已计入限流并占用任务全程的并发槽位，通过 concurrency_slot_held_by_caller
+    显式声明跳过，避免双重占用。
+    """
+    if concurrency_slot_held_by_caller:
+        return await _image_edits_core(request, form_data, authorization_scope, metadata, user)
+    gate_user_id = getattr(user, 'id', '')
+    await enforce_image_generation_rate(gate_user_id)
+    await acquire_image_generation_slot(gate_user_id)
+    try:
+        return await _image_edits_core(request, form_data, authorization_scope, metadata, user)
+    finally:
+        await release_image_generation_slot(gate_user_id)
+
+
+async def _image_edits_core(
+    request: Request,
+    form_data: EditImageForm,
+    authorization_scope: str,
+    metadata: dict | None = None,
+    user=None,
 ):
     image_config = await get_image_config()
-    # EXT: 二开新增 —— FAL 引擎前置校验：自定义尺寸约束 + 模型运营状态检查
+    # EXT: 二开新增 —— FAL 引擎前置校验（尺寸约束 + 模型运营状态）
     if image_config.IMAGE_EDIT_ENGINE == 'fal':
-        from open_webui.extensions.model_ops.db import model_ops_session
-        from open_webui.extensions.model_ops.service import ensure_model_enabled
-
-        candidate = form_data.model if form_data.model else image_config.IMAGE_EDIT_MODEL
-        try:
-            validate_fal_image_size(candidate, form_data)
-        except FalImageSizeError as error:
-            raise CreditError(
-                code='invalid_image_size',
-                context={'reason': 'custom_size_constraints'},
-            ) from error
-        try:
-            async with model_ops_session() as model_session:
-                await ensure_model_enabled(model_session, candidate)
-        except HTTPException as error:
-            detail = getattr(error, 'detail', None)
-            message = detail.get('message') if isinstance(detail, dict) else None
-            raise CreditError(
-                code='provider_failed',
-                context={'reason': 'model_disabled', 'message': message or 'Image model is unavailable'},
-            ) from error
+        await _ensure_fal_image_admission(
+            form_data.model if form_data.model else image_config.IMAGE_EDIT_MODEL, form_data
+        )
     return await bill_image_call(
         request=request,
         raw_form_data=form_data,
@@ -1460,44 +1517,17 @@ async def _invoke_image_edits(
             edit_model = get_fal_edit_model(model)
             image_urls = form_data.image if isinstance(form_data.image, list) else [form_data.image]
             data = build_fal_image_payload(form_data, edit_model, image_urls)
-
-            # EXT: 二开新增 —— mock 仅在管理端开关显式开启时生效，默认走真实 FAL 队列。
-            if image_config.FAL_MOCK_ENABLED:
-                log.info(f'Using mocked fal.ai image result for {edit_model}')
-                res = get_mock_fal_image_result(edit_model, form_data)
-            else:
-                # EXT: 二开新增 —— 启动 provider 调用追踪观察者
-                observer = await try_start_provider_invocation(
-                    task_id=metadata.get('generation_task_id'),
-                    user_id=str(user.id),
-                    media_kind='image',
-                    provider='fal',
-                    provider_model_id=edit_model,
-                    payload=data,
-                )
-                res = await run_fal_queue(
-                    edit_model,
-                    data,
-                    image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY,
-                    image_config.IMAGES_EDIT_FAL_API_BASE_URL or image_config.FAL_API_BASE_URL,
-                    observer=observer,
-                )
-            generated_urls = extract_fal_image_urls(res)
-
-            images = []
-            for image_url in generated_urls:
-                image_data, content_type = await get_image_data(image_url)
-                file_item, url = await upload_image(request, image_data, content_type, {**data, **metadata}, user)
-                images.append(
-                    CapturedImageResult(
-                        url=str(url),
-                        file_id=file_item.id,
-                        file_user_id=file_item.user_id,
-                        file_created_at=file_item.created_at,
-                        mime_type=content_type,
-                    )
-                )
-            return CapturedImageBatch(images=tuple(images))
+            return await _run_fal_image_pipeline(
+                request,
+                form_data,
+                metadata,
+                user,
+                image_config,
+                fal_model=edit_model,
+                payload=data,
+                api_key=image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY,
+                api_base_url=image_config.IMAGES_EDIT_FAL_API_BASE_URL or image_config.FAL_API_BASE_URL,
+            )
 
         elif image_config.IMAGE_EDIT_ENGINE == 'comfyui':
             try:

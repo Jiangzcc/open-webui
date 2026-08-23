@@ -118,6 +118,8 @@ export const videoCreditErrorI18nKey: Record<string, string> = {
 };
 
 // 任务失败态的 error_code → i18n key 映射（区分供应商失败与本地交付失败）。
+// 复盘 P2：补齐后端全部终态失败码——此前 asset/recovery/policy 等 11 个码
+// 会落进通用「生成失败」，用户无法区分是素材问题还是服务问题。
 export const videoTaskErrorI18nKey: Record<string, string> = {
 	video_delivery_failed: 'The provider generated the video, but local delivery failed',
 	video_provider_failed: 'The video provider failed to generate this video',
@@ -127,5 +129,25 @@ export const videoTaskErrorI18nKey: Record<string, string> = {
 	video_result_download_failed: 'The generated video could not be downloaded',
 	video_result_too_large: 'The generated video is too large',
 	video_result_invalid_type: 'The video provider returned an invalid file',
-	server_shutdown: 'Video generation was interrupted by a server restart'
+	server_shutdown: 'Video generation was interrupted by a server restart',
+	video_asset_invalid: 'The video asset is invalid',
+	video_asset_invalid_type: 'The video asset type is not supported',
+	video_asset_not_found: 'The video asset could not be found',
+	video_asset_too_large: 'The video asset is too large',
+	video_asset_upload_failed: 'The video asset could not be uploaded',
+	video_delivery_attempts_exceeded: 'Video delivery failed after multiple attempts',
+	video_fal_policy_invalid: 'The video provider policy is misconfigured',
+	video_recovery_state_missing: 'Video recovery state was lost',
+	video_recovery_usage_invalid: 'Video billing state was inconsistent',
+	video_result_invalid_url: 'The video provider returned an invalid URL',
+	video_user_not_found: 'Your account could not be found',
+	video_input_rejected: 'The video request was rejected'
+};
+
+// 失败码查找：先精确匹配，再按复合码前缀（如 video_input_rejected:xxx）
+// 回退，最后落到通用「生成失败」。
+export const videoTaskErrorLookup = (code: string | null): string => {
+	if (!code) return 'Generation failed';
+	if (videoTaskErrorI18nKey[code]) return videoTaskErrorI18nKey[code];
+	return videoTaskErrorI18nKey[code.split(':')[0]] ?? 'Generation failed';
 };

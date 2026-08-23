@@ -15,7 +15,8 @@
 	import {
 		imageAspectRatioLabel,
 		imageQualityLabelKey,
-		imageResolutionLabelKey
+		imageResolutionLabelKey,
+		imageTaskErrorI18nKey
 	} from './imageLabels';
 
 	const i18n = getContext<Writable<I18n>>('i18n');
@@ -76,10 +77,10 @@
 	};
 
 	const generationErrorMessage = (task: ImageGenerationBatch) => {
-		if (task.errorCode === 'generation_cancelled') return $i18n.t('Cancelled');
-		if (task.errorCode === 'invalid_image_size') return $i18n.t('Image size is invalid');
-		if (task.errorCode === 'rate_limited') return $i18n.t('Too many image generation requests');
-		return task.errorCode;
+		// 复盘 #18：错误码全部经 i18n 映射——此前白名单外的码（provider_failed、
+		// insufficient_credits 等）会把裸码直接显示给用户；未知码回退通用文案。
+		const key = imageTaskErrorI18nKey[task.errorCode ?? ''];
+		return key ? $i18n.t(key) : $i18n.t('Image generation failed');
 	};
 
 	// 消息头模型短名：剥厂商前缀，回退到默认模型。

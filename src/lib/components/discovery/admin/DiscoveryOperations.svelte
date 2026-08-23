@@ -9,7 +9,8 @@
 		updateDiscoveryOperation
 	} from '$lib/apis/discovery';
 	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Select from '$lib/components/common/Select.svelte';
+import Spinner from '$lib/components/common/Spinner.svelte';
 	import type {
 		DiscoveryCategory,
 		DiscoveryCategoryItem,
@@ -149,26 +150,34 @@
 				bind:value={search}
 				placeholder={$i18n.t('Search creations')}
 			/>
-			<select
-				class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-				bind:value={mediaKind}
-				on:change={resetPagination}
-				aria-label={$i18n.t('Media type')}
-			>
-				<option value="">{$i18n.t('All media types')}</option>
-				<option value="image">{$i18n.t('Image')}</option>
-				<option value="video">{$i18n.t('Video')}</option>
-			</select>
-			<select
-				class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-				bind:value={pageSize}
-				on:change={resetPagination}
-				aria-label={$i18n.t('Items per page')}
-			>
-				<option value={20}>20 / {$i18n.t('page')}</option>
-				<option value={50}>50 / {$i18n.t('page')}</option>
-				<option value={100}>100 / {$i18n.t('page')}</option>
-			</select>
+			<Select
+				value={mediaKind}
+				items={[
+					{ value: '', label: $i18n.t('All media types') },
+					{ value: 'image', label: $i18n.t('Image') },
+					{ value: 'video', label: $i18n.t('Video') }
+				]}
+				ariaLabel={$i18n.t('Media type')}
+				triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+				onChange={(kind) => {
+					mediaKind = kind;
+					resetPagination();
+				}}
+			/>
+			<Select
+				value={String(pageSize)}
+				items={[
+					{ value: '20', label: `20 / ${$i18n.t('page')}` },
+					{ value: '50', label: `50 / ${$i18n.t('page')}` },
+					{ value: '100', label: `100 / ${$i18n.t('page')}` }
+				]}
+				ariaLabel={$i18n.t('Items per page')}
+				triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+				onChange={(value) => {
+					pageSize = Number(value);
+					resetPagination();
+				}}
+			/>
 		</div>
 	</header>
 
@@ -320,15 +329,19 @@
 
 			<div class="mt-5 grid gap-4">
 				<label class="grid gap-1.5 text-sm"
-					><span class="font-medium">{$i18n.t('Category')}</span><select
-						class="min-h-11 rounded-xl border border-gray-200 bg-transparent px-3 dark:border-gray-700"
-						bind:value={editing.category}
-						>{#each categories as category}<option value={category.id}
-								>{$i18n.t(category.display_name)}{category.enabled
-									? ''
-									: ` · ${$i18n.t('Disabled')}`}</option
-							>{/each}</select
-					></label
+					><span class="font-medium">{$i18n.t('Category')}</span
+					><Select
+							value={editing.category}
+							items={categories.map((category) => ({
+								value: category.id,
+								label: category.enabled
+									? $i18n.t(category.display_name)
+									: `${$i18n.t(category.display_name)} · ${$i18n.t('Disabled')}`
+							}))}
+							placeholder={$i18n.t('Category')}
+							triggerClass="flex min-h-11 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+							onChange={(categoryId) => (editing.category = categoryId)}
+						/></label
 				>
 				<label
 					class="flex min-h-12 items-center gap-3 rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700"

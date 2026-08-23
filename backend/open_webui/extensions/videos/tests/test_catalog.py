@@ -336,3 +336,18 @@ def test_resolve_video_model_reuses_cached_catalog() -> None:
     from open_webui.extensions.videos.catalog import resolve_video_model
 
     assert resolve_video_model('kling-video-v3-pro') is resolve_video_model('kling-video-v3-pro')
+
+
+def test_number_fields_reject_nan_and_infinity() -> None:
+    """复盘 #18：NaN/inf 与 min/max 比较恒 False 会穿透校验，导致
+    params_json 落库非法 JSON 且幂等匹配失效（Python json.loads 扩展接受
+    NaN 字面量，客户端可直接提交）。"""
+    for invalid in (float('nan'), float('inf'), float('-inf')):
+        submission = VideoTaskSubmitForm(
+            task='text-to-video',
+            model='kling-video-v3-pro',
+            prompt='A paper boat',
+            params={'guidance_scale': invalid},
+        )
+        with pytest.raises(VideoInputError, match='invalid_guidance_scale'):
+            build_video_provider_payload(submission)

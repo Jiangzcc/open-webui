@@ -332,12 +332,21 @@ def _edit_model(engine: str, configured: str, requested: str) -> str:
 # 的高频往返）。checkpoint 只被管理员手动切换，60s 内取旧值对报价精度足够；
 # 生成路径在上游 get_image_model 中仍会实时解析。单 worker 部署下进程内缓存有效。
 _DYNAMIC_MODEL_TTL_SECONDS = 60.0
-_dynamic_model_cache: tuple[str | None, float] | None = None
+# 复盘 #18：缓存键必须含 A1111 实例身份（base_url + 凭据）——否则管理员
+# 切换实例后，TTL 窗口内会把旧实例的 checkpoint 当作新实例的当前模型报价。
+_dynamic_model_cache: tuple[tuple[str, str], str | None, float] | None = None
 
 
 def _reset_dynamic_model_cache() -> None:
     global _dynamic_model_cache
     _dynamic_model_cache = None
+
+
+def _a1111_instance_identity(config: object) -> tuple[str, str]:
+    return (
+        str(getattr(config, 'AUTOMATIC1111_BASE_URL', '') or ''),
+        str(getattr(config, 'AUTOMATIC1111_API_AUTH', '') or ''),
+    )
 
 
 async def resolve_dynamic_engine_model(request: object, config: object, image_input: CompatImageInput) -> str | None:
@@ -356,13 +365,18 @@ async def resolve_dynamic_engine_model(request: object, config: object, image_in
     from time import monotonic
 
     global _dynamic_model_cache
+    identity = _a1111_instance_identity(config)
     now = monotonic()
-    if _dynamic_model_cache is not None and now - _dynamic_model_cache[1] < _DYNAMIC_MODEL_TTL_SECONDS:
-        return _dynamic_model_cache[0] or None
+    if (
+        _dynamic_model_cache is not None
+        and _dynamic_model_cache[0] == identity
+        and now - _dynamic_model_cache[2] < _DYNAMIC_MODEL_TTL_SECONDS
+    ):
+        return _dynamic_model_cache[1] or None
     from open_webui.routers.images import get_image_model
 
     model = _clean_model(await get_image_model(request))
-    _dynamic_model_cache = (model, now)
+    _dynamic_model_cache = (identity, model, now)
     return model or None
 
 

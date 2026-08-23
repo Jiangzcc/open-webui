@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.videos.billing import (
+    normalize_video_duration_dimension,
     video_billing_context,
     video_quote_dimensions,
 )
@@ -73,6 +74,19 @@ def test_video_billing_keeps_auto_duration_as_a_pricing_dimension() -> None:
 
     numeric_match_source_task = _task().model_copy(update={'params': {'duration': 0}})
     assert video_billing_context(numeric_match_source_task).dimensions['duration'] == '0'
+
+
+def test_normalize_video_duration_dimension_rejects_non_finite_and_fractional_values() -> None:
+    """复盘 #18：统一归一化必须拒绝 NaN/inf 与小数——原先 billing 侧对
+    NaN/inf 裸抛 ValueError、对 2.5 静默 round 成 2（与 quote 端点语义不一致）。"""
+    assert normalize_video_duration_dimension(5) == 5
+    assert normalize_video_duration_dimension('5') == 5
+    assert normalize_video_duration_dimension('auto') == 'auto'
+    assert normalize_video_duration_dimension(0) == '0'
+
+    for invalid in ('nan', 'inf', 2.5, '2.5', 0.5, True, None, 'abc', -1):
+        with pytest.raises(CreditError):
+            normalize_video_duration_dimension(invalid)
 
 
 def test_video_billing_includes_output_dimensions_when_selected() -> None:

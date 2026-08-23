@@ -1,29 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-
 from open_webui.env import DATABASE_SCHEMA
-from open_webui.internal.db import AsyncSessionLocal, JSONField, async_engine, engine
+from open_webui.internal.db import engine, get_async_db
 from sqlalchemy import MetaData
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import declarative_base
 
 CreditBase = declarative_base(metadata=MetaData(schema=DATABASE_SCHEMA))
 
+# 复盘 P2：四份二开 db.py 的 session helper 与上游 get_async_db 逐字重复——委托上游工厂。
+credit_session = get_async_db
 
-@asynccontextmanager
-async def credit_session() -> AsyncIterator[AsyncSession]:
-    """Provide a credit transaction session from the upstream async factory."""
-    async with AsyncSessionLocal() as session:
-        yield session
-
-
-__all__ = [
-    'AsyncSessionLocal',
-    'CreditBase',
-    'JSONField',
-    'async_engine',
-    'credit_session',
-    'engine',
-]
+__all__ = ['CreditBase', 'credit_session', 'engine']

@@ -21,6 +21,12 @@
 	/** CSS classes for the label inside the trigger */
 	export let labelClass = '';
 
+	/** Accessible name for the trigger button（替代原生 select 的 label 关联） */
+	export let ariaLabel = '';
+
+	/** Disable the trigger button（如编辑态锁定字段） */
+	export let disabled = false;
+
 	/** CSS classes for the dropdown content container */
 	export let contentClass = 'min-w-[170px]';
 
@@ -84,6 +90,7 @@
 	}
 
 	async function toggleOpen() {
+		if (disabled) return;
 		open = !open;
 		if (open) {
 			await tick();
@@ -125,6 +132,8 @@
 	class={triggerClass}
 	type="button"
 	aria-expanded={open}
+	aria-label={ariaLabel || undefined}
+	{disabled}
 	on:click={toggleOpen}
 >
 	<slot name="trigger" {selectedLabel} {open}>

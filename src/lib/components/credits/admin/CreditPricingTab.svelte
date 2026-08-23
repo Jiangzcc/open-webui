@@ -11,7 +11,8 @@
 		type CreditPriceQuery
 	} from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import Select from '$lib/components/common/Select.svelte';
+import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import CreditPriceModal from './CreditPriceModal.svelte';
@@ -150,38 +151,47 @@
 	</div>
 
 	<div class="grid gap-2 md:grid-cols-3 lg:grid-cols-5">
-		<select
-			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={filters.service_type}
-		>
-			<option value={undefined}>{$i18n.t('credits.admin.allTypes')}</option>
-			<option value="image">{$i18n.t('credits.serviceTypes.image')}</option>
-			<option value="video">{$i18n.t('credits.serviceTypes.video')}</option>
-		</select>
+		<Select
+			value={filters.service_type ?? ''}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allTypes') },
+				{ value: 'image', label: $i18n.t('credits.serviceTypes.image') },
+				{ value: 'video', label: $i18n.t('credits.serviceTypes.video') }
+			]}
+			ariaLabel={$i18n.t('credits.admin.allTypes')}
+			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+			onChange={(value) => (filters.service_type = value || undefined)}
+		/>
 		<input
 			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
 			bind:value={filters.resource_id}
 			placeholder={$i18n.t('credits.admin.modelOrResource')}
 		/>
-		<select
-			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={filters.action}
-		>
-			<option value={undefined}>{$i18n.t('credits.admin.allTypes')}</option>
-			<option value="text-to-image">{$i18n.t('credits.actions.text-to-image')}</option>
-			<option value="image-to-image">{$i18n.t('credits.actions.image-to-image')}</option>
-			<option value="text-to-video">{$i18n.t('credits.actions.text-to-video')}</option>
-			<option value="image-to-video">{$i18n.t('credits.actions.image-to-video')}</option>
-			<option value="video-to-video">{$i18n.t('credits.actions.video-to-video')}</option>
-		</select>
-		<select
-			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={filters.enabled}
-		>
-			<option value={undefined}>{$i18n.t('credits.admin.allTypes')}</option>
-			<option value={true}>{$i18n.t('credits.common.enabled')}</option>
-			<option value={false}>{$i18n.t('credits.common.disabled')}</option>
-		</select>
+		<Select
+			value={filters.action ?? ''}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allTypes') },
+				{ value: 'text-to-image', label: $i18n.t('credits.actions.text-to-image') },
+				{ value: 'image-to-image', label: $i18n.t('credits.actions.image-to-image') },
+				{ value: 'text-to-video', label: $i18n.t('credits.actions.text-to-video') },
+				{ value: 'image-to-video', label: $i18n.t('credits.actions.image-to-video') },
+				{ value: 'video-to-video', label: $i18n.t('credits.actions.video-to-video') }
+			]}
+			ariaLabel={$i18n.t('credits.common.action')}
+			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+			onChange={(value) => (filters.action = value || undefined)}
+		/>
+		<Select
+			value={filters.enabled === undefined || filters.enabled === null ? '' : String(filters.enabled)}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allTypes') },
+				{ value: 'true', label: $i18n.t('credits.common.enabled') },
+				{ value: 'false', label: $i18n.t('credits.common.disabled') }
+			]}
+			ariaLabel={$i18n.t('credits.admin.allTypes')}
+			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+			onChange={(value) => (filters.enabled = value === '' ? undefined : value === 'true')}
+		/>
 		<button
 			class="rounded-3xl bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
 			on:click={applyFilters}

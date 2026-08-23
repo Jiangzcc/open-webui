@@ -4,7 +4,8 @@
 
 	import { adjustCreditAccount, type CreditAccount } from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import Select from '$lib/components/common/Select.svelte';
+import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import {
@@ -120,13 +121,16 @@
 		<div class="space-y-4">
 			<label class="block text-sm font-medium dark:text-gray-200">
 				{$i18n.t('credits.admin.adjustment.direction')}
-				<select
-					class="mt-1.5 w-full rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-					bind:value={form.direction}
-				>
-					<option value="increase">{$i18n.t('credits.admin.adjustment.increase')}</option>
-					<option value="decrease">{$i18n.t('credits.admin.adjustment.decrease')}</option>
-				</select>
+					<Select
+					value={form.direction}
+					items={[
+						{ value: 'increase', label: $i18n.t('credits.admin.adjustment.increase') },
+						{ value: 'decrease', label: $i18n.t('credits.admin.adjustment.decrease') }
+					]}
+					ariaLabel={$i18n.t('credits.admin.adjustment.direction')}
+					triggerClass="mt-1.5 w-full items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+					onChange={(value) => (form.direction = value)}
+				/>
 			</label>
 
 			<label class="block text-sm font-medium dark:text-gray-200">
@@ -145,14 +149,16 @@
 
 			<label class="block text-sm font-medium dark:text-gray-200">
 				{$i18n.t('credits.admin.adjustment.reason')}
-				<select
-					class="mt-1.5 w-full rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-					bind:value={form.reasonCode}
-				>
-					{#each reasonOptions as reason}
-						<option value={reason}>{$i18n.t(`credits.reasons.${reason}`)}</option>
-					{/each}
-				</select>
+					<Select
+					value={form.reasonCode}
+					items={reasonOptions.map((reason) => ({
+						value: reason,
+						label: $i18n.t(`credits.reasons.${reason}`)
+					}))}
+					ariaLabel={$i18n.t('credits.admin.adjustment.reason')}
+					triggerClass="mt-1.5 w-full items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+					onChange={(value) => (form.reasonCode = value)}
+				/>
 			</label>
 
 			{#if form.reasonCode === 'other'}

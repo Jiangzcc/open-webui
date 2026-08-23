@@ -2,7 +2,6 @@ import asyncio
 import logging
 import random
 import re
-from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -185,15 +184,17 @@ def validate_fal_image_size(model: str | None, form_data: Any) -> None:
         return
 
     sizes = model_info.get('image_size_whitelist') or model_info.get('aspect_ratio_sizes')
-    requested_size = getattr(form_data, 'size', None) or getattr(form_data, 'resolution', None)
-    if not requested_size:
-        requested_size = (sizes or {}).get(getattr(form_data, 'aspect_ratio', None))
+    requested_size = _resolve_requested_size(form_data, sizes, model_info.get('resolution_multipliers'))
     if not requested_size or requested_size == 'auto':
         return
 
     parsed = _parse_pixel_size(requested_size)
     if parsed is None:
-        raise FalImageSizeError(f'unsupported image size {requested_size}: expected WIDTHxHEIGHT')
+        if getattr(form_data, 'size', None):
+            raise FalImageSizeError(f'unsupported image size {requested_size}: expected WIDTHxHEIGHT')
+        # 无显式 size 且档位（'2K'/'4K'）无法折算出尺寸（缺比例基线）时，
+        # 该值不属于 size 语义，交由载荷构造与选项校验处理，不再误拒合法档位请求。
+        return
     if sizes and requested_size in sizes.values():
         return
 
@@ -210,6 +211,31 @@ def _scale_pixel_size(wxh: str, multiplier: int) -> str:
     return f'{width * multiplier}x{height * multiplier}'
 
 
+def _resolve_requested_size(
+    form_data: Any,
+    sizes: dict[str, str] | None,
+    multipliers: dict[str, int] | None = None,
+) -> str | None:
+    """Resolve the effective requested size (复盘 P0-2：校验、载荷构造、计价共用的单一规则).
+
+    - A "WxH"-shaped resolution is the most explicit dimension statement and
+      wins over ``size`` (mirrors the resolution_field path).
+    - An explicit ``size`` comes next.
+    - A resolution tier like "2K"/"4K" only scales the aspect-ratio baseline and
+      never overrides an explicit dimension.
+    """
+    resolution = getattr(form_data, 'resolution', None)
+    if resolution and _parse_pixel_size(resolution) is not None:
+        return resolution
+
+    requested_size = getattr(form_data, 'size', None)
+    if not requested_size:
+        baseline = (sizes or {}).get(getattr(form_data, 'aspect_ratio', None))
+        if baseline:
+            requested_size = _scale_pixel_size(baseline, (multipliers or {}).get(resolution, 1))
+    return requested_size
+
+
 def _set_custom_image_size(
     data: dict[str, Any],
     field: str | None,
@@ -221,18 +247,7 @@ def _set_custom_image_size(
     if not field:
         return
 
-    requested_size = getattr(form_data, 'size', None)
-    # A resolution tier like "2K"/"4K" is a multiplier over the aspect-ratio
-    # baseline, not a pixel value; a "WxH"-shaped resolution stays a direct size.
-    resolution = getattr(form_data, 'resolution', None)
-    if not requested_size and resolution and _parse_pixel_size(resolution) is not None:
-        requested_size = resolution
-
-    if not requested_size:
-        baseline = (sizes or {}).get(getattr(form_data, 'aspect_ratio', None))
-        if baseline:
-            multiplier = (multipliers or {}).get(resolution, 1)
-            requested_size = _scale_pixel_size(baseline, multiplier)
+    requested_size = _resolve_requested_size(form_data, sizes, multipliers)
 
     if not requested_size:
         return
@@ -360,7 +375,13 @@ def _set_text_fields(data: dict[str, Any], form_data: Any, fields: list[dict[str
 
 
 def get_fal_image_models() -> list[dict[str, Any]]:
-    return deepcopy(FAL_IMAGE_MODELS)
+    """管理端模型列表（只读共享常量）。
+
+    复盘 P2：原先每次调用全量 deepcopy（约 5ms/次），而唯一生产调用方
+    （routers/images.py 管理端列表）只读遍历（``{**model, ...}`` 浅展开）。
+    调用方不得原地修改返回结构——需要可变副本时自行 copy。
+    """
+    return FAL_IMAGE_MODELS
 
 
 def _mock_named_resolution_size(resolution: object, aspect_ratio: object) -> tuple[int, int] | None:
@@ -746,6 +767,9 @@ async def resume_fal_queue(  # noqa: C901 - queue status and response recovery s
     except asyncio.CancelledError as error:
         setattr(error, 'provider_submitted', True)
         setattr(error, 'provider_completed', provider_completed)
+        # 复盘 P1：与 run_fal_queue 对齐——取消也要通知 observer 终态，
+        # 否则恢复路径被关停取消时 provider_invocation 行停留无终态。
+        await _notify_provider(observer, 'failed', error)
         raise
     except Exception as error:
         setattr(error, 'provider_submitted', True)

@@ -98,6 +98,54 @@ def test_payload_seedream_scales_resolution_tier_over_baseline():
     assert data_4k['image_size'] == {'width': 5120, 'height': 2880}
 
 
+def test_payload_wxh_resolution_takes_precedence_over_explicit_size():
+    """'WxH' 形态的 resolution 是最显式的尺寸声明，优先于显式 size（与计价、resolution_field 同源）。"""
+    base = 'bytedance/seedream/v5/pro/text-to-image'
+    data = build_fal_image_payload(
+        _form(size='512x512', resolution='1024x1024', aspect_ratio='1:1'), base
+    )
+    assert data['image_size'] == {'width': 1024, 'height': 1024}
+
+
+def test_payload_resolution_tier_does_not_scale_explicit_size():
+    """档位只放大比例基线，不覆盖显式 size：自定义尺寸始终按原值生效。"""
+    base = 'bytedance/seedream/v5/pro/text-to-image'
+    data = build_fal_image_payload(
+        _form(size='1024x1024', resolution='4K', aspect_ratio='1:1'), base
+    )
+    assert data['image_size'] == {'width': 1024, 'height': 1024}
+
+
+def test_validate_fal_image_size_accepts_resolution_tier_without_explicit_size():
+    """direct API 只传档位（无 size）不再被误判为非法尺寸（复盘 P0-2 的 422 拒绝缺陷）。"""
+    base = 'bytedance/seedream/v5/pro/text-to-image'
+    validate_fal_image_size(base, _form(resolution='2K', aspect_ratio='4:3'))
+    validate_fal_image_size(base, _form(resolution='4K'))
+
+
+def test_validate_fal_image_size_checks_tier_scaled_final_size(monkeypatch) -> None:
+    """档位请求校验的是折算后的最终尺寸（基线 × 乘数），而非基线本身。"""
+    import open_webui.extensions.fal_images.client as fal
+
+    monkeypatch.setattr(
+        fal,
+        'FAL_IMAGE_MODELS',
+        [
+            {
+                'id': 'fal-ai/tier-model',
+                'custom_size_field': 'image_size',
+                'aspect_ratio_sizes': {'1:1': '1024x1024'},
+                'resolution_multipliers': {'4K': 4},
+                'custom_size': {'max_pixels': 4_000_000},
+            }
+        ],
+    )
+
+    fal.validate_fal_image_size('fal-ai/tier-model', _form(resolution='2K', aspect_ratio='1:1'))
+    with pytest.raises(FalImageSizeError):
+        fal.validate_fal_image_size('fal-ai/tier-model', _form(resolution='4K', aspect_ratio='1:1'))
+
+
 def test_payload_wan_v26_uses_max_images_field():
     data = build_fal_image_payload(_form(n=3), 'wan/v2.6/text-to-image')
     assert data['max_images'] == 3
@@ -358,3 +406,27 @@ async def test_resume_fal_queue_preserves_completed_state_on_response_failure(mo
 
 async def _async_value(value):
     return value
+
+
+@pytest.mark.asyncio
+async def test_resume_fal_queue_notifies_observer_failed_on_cancel(monkeypatch) -> None:
+    """复盘 P1：恢复路径取消也要通知 observer failed（与 run_fal_queue
+    对齐），否则关停取消时 provider_invocation 行停留无终态。"""
+    import open_webui.extensions.fal_images.client as fal
+
+    async def cancel_during_poll(_seconds):
+        raise asyncio.CancelledError
+
+    observer = _RecordingObserver()
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(_FakeSession()))
+    monkeypatch.setattr(fal.asyncio, 'sleep', cancel_during_poll)
+
+    with pytest.raises(asyncio.CancelledError):
+        await resume_fal_queue(
+            status_url='https://queue.test/status',
+            response_url='https://queue.test/result',
+            api_key='secret',
+            observer=observer,
+        )
+
+    assert [event[0] for event in observer.events] == ['status', 'failed']

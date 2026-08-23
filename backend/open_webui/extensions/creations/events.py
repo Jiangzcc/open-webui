@@ -110,7 +110,11 @@ async def publish_generation_event(
     payload: 可选的额外字段（如 result/error_code），按需附加。
     """
     bus: GenerationEventBus | None = getattr(app.state, 'generation_event_bus', None)
-    if bus is None or bus.subscriber_count == 0:
+    if bus is None:
+        # 与 SSE 生成器对称：未挂载 app.state 时同样回退全局单例。原先发布侧
+        # 直接丢弃而订阅侧挂全局单例，两条通道永不相交（复盘 #18 对称化）。
+        bus = get_generation_event_bus()
+    if bus.subscriber_count == 0:
         # 无订阅者时跳过，避免无意义的事件构造与广播。
         return
     event: dict[str, object] = {

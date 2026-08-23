@@ -248,6 +248,80 @@ async def test_asset_files_are_uploaded_and_injected_into_provider_payload(monke
 
 
 @pytest.mark.asyncio
+async def test_asset_uploads_run_concurrently(monkeypatch, tmp_path) -> None:
+    """复盘 P2：资产上传是纯网络往返，应并发执行。barrier 模式：两个上传
+    都启动后放行——若实现退化为串行，第一个上传永远等不到同伴，
+    wait_for 超时即测试失败。"""
+    first = tmp_path / 'first.png'
+    last = tmp_path / 'last.png'
+    first.write_bytes(b'first')
+    last.write_bytes(b'last')
+    files = {
+        'first': SimpleNamespace(path=str(first), filename='first.png', meta={'content_type': 'image/png'}),
+        'last': SimpleNamespace(path=str(last), filename='last.png', meta={'content_type': 'image/png'}),
+    }
+
+    async def get_file(file_id, user_id):
+        assert user_id == 'user-1'
+        return files[file_id]
+
+    both_started = asyncio.Event()
+    started = 0
+
+    async def upload(**kwargs):
+        nonlocal started
+        started += 1
+        if started == 2:
+            both_started.set()
+        await both_started.wait()
+        return f'https://fal.media/{kwargs["filename"]}'
+
+    monkeypatch.setattr(executor.Files, 'get_file_by_id_and_user_id', get_file)
+    monkeypatch.setattr(executor.Storage, 'get_file', lambda value: value)
+    monkeypatch.setattr(executor, 'upload_file_to_fal', upload)
+    definition = _definition(
+        task='image-to-video',
+        assets=[
+            VideoAssetInput(
+                role='start_image',
+                field='image_url',
+                required=True,
+                mime_types=['image/png'],
+                max_bytes=1024,
+            ),
+            VideoAssetInput(
+                role='end_image',
+                field='end_image_url',
+                mime_types=['image/png'],
+                max_bytes=1024,
+            ),
+        ],
+    )
+    task = _task(
+        task='image-to-video',
+        assets=(
+            VideoAssetReference(role='start_image', file_id='first'),
+            VideoAssetReference(role='end_image', file_id='last'),
+        ),
+    )
+    payload: dict[str, object] = {'prompt': task.prompt}
+    await asyncio.wait_for(
+        inject_fal_asset_urls(
+            payload,
+            task,
+            definition,
+            user_id='user-1',
+            api_key='key',
+            storage_base_url='https://rest.fal.ai',
+            upload_lifetime_seconds=3600,
+        ),
+        timeout=5,
+    )
+    assert payload['image_url'] == 'https://fal.media/first.png'
+    assert payload['end_image_url'] == 'https://fal.media/last.png'
+
+
+@pytest.mark.asyncio
 async def test_real_executor_records_invocation_and_downloads_result(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {}
     observer = object()
@@ -438,10 +512,10 @@ async def test_fal_storage_upload_uses_initiate_then_signed_put(monkeypatch, tmp
             calls.append(('put', (url, kwargs)))
             return Response()
 
-    async def get_fake_session():
-        return Session()
+        async def close(self):
+            return None
 
-    monkeypatch.setattr(executor, 'get_session', get_fake_session)
+    monkeypatch.setattr(executor, '_transfer_session', lambda: Session())
     source = tmp_path / 'input.png'
     source.write_bytes(b'png')
     result = await executor.upload_file_to_fal(
@@ -769,3 +843,141 @@ async def test_mock_fault_scenarios_are_deterministic_and_refundable(monkeypatch
 
     assert caught.value.code == expected_code
     assert caught.value.provider_completed is False
+
+
+@pytest.mark.asyncio
+async def test_transfer_session_has_no_total_timeout() -> None:
+    """复盘 P1：传输 session 不得带总超时（共享池 total=300s 会把大文件的
+    正常传输砍断成可重试失败）；靠连接/读空闲超时检测挂死。"""
+    session = executor._transfer_session()
+    try:
+        timeout = session.timeout
+        assert timeout.total is None
+        assert timeout.sock_connect == executor._TRANSFER_CONNECT_TIMEOUT_SECONDS
+        assert timeout.sock_read == executor._TRANSFER_READ_IDLE_TIMEOUT_SECONDS
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
+async def test_download_uses_transfer_session(monkeypatch, tmp_path) -> None:
+    """复盘 P1：视频下载必须走传输 session（独立连接 + 无总超时），
+    不再占用共享池的连接配额。"""
+    sessions: list[object] = []
+
+    class Content:
+        async def iter_chunked(self, chunk_size):
+            assert chunk_size == executor._TRANSFER_CHUNK_SIZE_BYTES
+            yield b'0123456789'
+
+    class Response:
+        status = 200
+        content_length = 10
+        headers = {'Content-Type': 'video/mp4; charset=binary'}
+        content = Content()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Session:
+        closed = False
+
+        def get(self, url, **_kwargs):
+            return Response()
+
+        async def close(self):
+            self.closed = True
+
+    def fake_transfer_session():
+        session = Session()
+        sessions.append(session)
+        return session
+
+    monkeypatch.setattr(executor, '_transfer_session', fake_transfer_session)
+    monkeypatch.setattr(executor.tempfile, 'mkstemp', lambda **_kw: (0, str(tmp_path / 'video.mp4')))
+
+    path, content_type = await executor.download_fal_video('https://fal.media/video.mp4', max_bytes=100)
+
+    assert len(sessions) == 1
+    assert sessions[0].closed is True
+    assert content_type == 'video/mp4'
+    assert path.read_bytes() == b'0123456789'
+
+
+@pytest.mark.asyncio
+async def test_real_executor_resume_notifies_observer_failed_on_missing_state(monkeypatch) -> None:
+    """复盘 P1：恢复状态缺失时 observer 也必须收到 failed 终态——此前
+    只有 succeeded 有通知，executor 自身失败全程缺失，provider_invocation
+    行停留无终态。"""
+    notifications: list[str] = []
+
+    class RecordingObserver:
+        async def submitted(self, payload):
+            notifications.append('submitted')
+
+        async def status(self, payload):
+            notifications.append('status')
+
+        async def succeeded(self):
+            notifications.append('succeeded')
+
+        async def failed(self, error):
+            notifications.append('failed')
+
+    async def resume_observer(**_kwargs):
+        return RecordingObserver()
+
+    monkeypatch.setattr(executor, 'try_resume_provider_invocation', resume_observer)
+    real = FalVideoExecutor('key', 'https://queue.fal.run', 'https://rest.fal.ai', 900, 1024, 3600)
+
+    with pytest.raises(VideoExecutionError) as captured:
+        await real.resume(
+            _task(),
+            _definition(),
+            status_url=None,
+            response_url=None,
+            result_url=None,
+            provider_request_id='request-1',
+        )
+
+    assert captured.value.code == 'video_recovery_state_missing'
+    assert notifications == ['failed']
+
+
+@pytest.mark.asyncio
+async def test_real_executor_resume_does_not_overwrite_succeeded_on_delivery_failure(monkeypatch) -> None:
+    """复盘 P1：快速路径已通知 succeeded 后，平台侧下载失败不得覆盖供应商
+    调用的 succeeded 终态（交付失败不属于供应商调用失败）。"""
+    notifications: list[str] = []
+
+    class RecordingObserver:
+        async def succeeded(self):
+            notifications.append('succeeded')
+
+        async def failed(self, error):
+            notifications.append('failed')
+
+    async def resume_observer(**_kwargs):
+        return RecordingObserver()
+
+    async def failed_download(_url, *, max_bytes):
+        raise VideoExecutionError('video_result_download_failed')
+
+    monkeypatch.setattr(executor, 'try_resume_provider_invocation', resume_observer)
+    monkeypatch.setattr(executor, 'download_fal_video_with_retry', failed_download)
+    real = FalVideoExecutor('key', 'https://queue.fal.run', 'https://rest.fal.ai', 900, 1024, 3600)
+
+    with pytest.raises(VideoExecutionError):
+        await real.resume(
+            _task(),
+            _definition(),
+            status_url=None,
+            response_url=None,
+            result_url='https://fal.media/persisted.mp4',
+            provider_request_id='request-1',
+        )
+
+    assert notifications == ['succeeded']

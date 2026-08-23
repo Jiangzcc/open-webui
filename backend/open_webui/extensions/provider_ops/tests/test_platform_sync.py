@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 
 import pytest
@@ -200,6 +201,107 @@ async def test_sync_routes_admin_only_apis_to_admin_key(monkeypatch, tmp_path) -
         'usage': 'admin-key',
         'billing_events': 'admin-key',
     }
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sync_billing_and_usage_run_concurrently(monkeypatch, tmp_path) -> None:
+    """复盘 P2：billing_events/usage 互相独立，应并发请求。barrier 模式：
+    两个调用都要启动后才能放行——若实现退化为串行，第一个调用永远等不到
+    同伴，wait_for 超时即测试失败。"""
+    engine = create_async_engine(f'sqlite+aiosqlite:///{tmp_path / "provider-ops.sqlite"}')
+    async with engine.begin() as connection:
+        await connection.run_sync(ProviderOpsBase.metadata.create_all)
+    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    both_started = asyncio.Event()
+    started = 0
+
+    class BarrierClient:
+        def __init__(self, _key):
+            pass
+
+        async def _barrier(self):
+            nonlocal started
+            started += 1
+            if started == 2:
+                both_started.set()
+            await both_started.wait()
+            return ()
+
+        async def billing_events(self, **_kwargs):
+            return await self._barrier()
+
+        async def usage(self, **_kwargs):
+            return await self._barrier()
+
+    async def get_many(*_keys):
+        return {
+            'image_generation.fal.api_key': '',
+            'provider_ops.fal.admin_api_key': 'admin-key',
+        }
+
+    import open_webui.extensions.provider_ops.platform_sync as platform_sync
+
+    monkeypatch.setattr(platform_sync, 'FalPlatformClient', BarrierClient)
+    monkeypatch.setattr(platform_sync.Config, 'get_many', get_many)
+    async with sessions() as session:
+        result = await asyncio.wait_for(
+            sync_fal_platform(session, ProviderSyncForm(resources=('billing_events', 'usage'))),
+            timeout=5,
+        )
+
+    assert result.status == 'succeeded'
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sync_pricing_requests_and_analytics_run_concurrently(monkeypatch, tmp_path) -> None:
+    """复盘 P2：pricing/requests/analytics 互相独立，应并发请求（barrier 同上）。"""
+    engine = create_async_engine(f'sqlite+aiosqlite:///{tmp_path / "provider-ops.sqlite"}')
+    async with engine.begin() as connection:
+        await connection.run_sync(ProviderOpsBase.metadata.create_all)
+    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    all_started = asyncio.Event()
+    started = 0
+
+    class BarrierClient:
+        def __init__(self, _key):
+            pass
+
+        async def _barrier(self):
+            nonlocal started
+            started += 1
+            if started == 3:
+                all_started.set()
+            await all_started.wait()
+            return ()
+
+        async def prices(self, _endpoint_ids):
+            return await self._barrier()
+
+        async def requests(self, _endpoint_ids, **_kwargs):
+            return await self._barrier()
+
+        async def analytics(self, _endpoint_ids, **_kwargs):
+            return await self._barrier()
+
+    async def get_many(*_keys):
+        return {
+            'image_generation.fal.api_key': 'api-key',
+            'provider_ops.fal.admin_api_key': '',
+        }
+
+    import open_webui.extensions.provider_ops.platform_sync as platform_sync
+
+    monkeypatch.setattr(platform_sync, 'FalPlatformClient', BarrierClient)
+    monkeypatch.setattr(platform_sync.Config, 'get_many', get_many)
+    async with sessions() as session:
+        result = await asyncio.wait_for(
+            sync_fal_platform(session, ProviderSyncForm(resources=('pricing', 'requests', 'analytics'))),
+            timeout=5,
+        )
+
+    assert result.status == 'succeeded'
     await engine.dispose()
 
 

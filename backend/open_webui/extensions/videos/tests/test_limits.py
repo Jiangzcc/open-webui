@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from open_webui.extensions.videos import limits
 
 
@@ -7,12 +9,12 @@ def test_rate_limit_uses_video_bucket_not_image(monkeypatch) -> None:
     # 视频限流使用独立的 videos: 命名桶，不能与图片 images: 桶共享配额。
     captured: list[str] = []
 
-    def fake_is_limited(key: str) -> bool:
+    async def fake_is_limited(key: str) -> bool:
         captured.append(key)
         return False
 
-    monkeypatch.setattr(limits._gate._limiter, 'is_limited', fake_is_limited)
-    limits.enforce_video_generation_rate('user-1')
+    monkeypatch.setattr(limits._gate, '_is_limited', fake_is_limited)
+    asyncio.run(limits.enforce_video_generation_rate('user-1'))
     assert captured == ['videos:generation:user-1']
 
 

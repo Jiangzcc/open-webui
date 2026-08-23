@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from open_webui.extensions.fal_images.models import (
     FAL_IMAGE_MODELS,
-    internal_fal_image_model_id,
     normalize_fal_image_model_id,
     public_fal_image_model_id,
     public_fal_image_models,
@@ -100,10 +99,11 @@ INTERNAL_TO_PUBLIC = {
 }
 
 
-def test_bidirectional_mapping_roundtrip():
+def test_internal_ids_map_to_public_ids():
+    # 复盘：internal_fal_image_model_id（public→internal 方向）无生产调用方，
+    # 已删；这里只锁 public 方向映射。
     for internal, public in INTERNAL_TO_PUBLIC.items():
         assert public_fal_image_model_id(internal) == public
-        assert internal_fal_image_model_id(public) == internal
 
 
 def test_normalize_accepts_both_forms():
@@ -242,13 +242,10 @@ ALIBABA_I2I_PUBLIC_IDS = {
 }
 
 
-def test_each_alibaba_i2i_sibling_has_bidirectional_public_id_mapping():
+def test_each_alibaba_i2i_sibling_has_public_id_mapping():
     for internal_id, expected_public in ALIBABA_I2I_PUBLIC_IDS.items():
         assert public_fal_image_model_id(internal_id) == expected_public, (
             f'public_fal_image_model_id({internal_id!r}) expected {expected_public!r}'
-        )
-        assert internal_fal_image_model_id(expected_public) == internal_id, (
-            f'internal_fal_image_model_id({expected_public!r}) expected {internal_id!r}'
         )
 
 

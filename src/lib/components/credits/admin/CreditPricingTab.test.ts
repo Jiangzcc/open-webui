@@ -65,7 +65,7 @@ describe('CreditPricingTab', () => {
 	});
 
 	test('offers image and video services with their supported actions', () => {
-		expect(modalSource).toContain('value="video"');
+		expect(modalSource).toContain("{ value: 'video', label: $i18n.t('credits.admin.videoService') }");
 		expect(modalSource).toContain("['text-to-video', 'image-to-video', 'video-to-video']");
 		expect(modalSource).toContain('actionsForService(form.serviceType)');
 	});

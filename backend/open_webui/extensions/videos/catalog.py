@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 
 from open_webui.extensions.credits.models import CreditPrice
@@ -368,6 +369,9 @@ def build_video_provider_payload(  # noqa: C901
             if isinstance(field, VideoNumberField) and (
                 isinstance(value, bool)
                 or not isinstance(value, (int, float))
+                # 复盘 #18：NaN/inf 与任何数的比较恒为 False，会静默穿透
+                # min/max 校验，导致 params_json 落库非法 JSON 且幂等匹配失效。
+                or not math.isfinite(value)
                 or (field.min is not None and value < field.min)
                 or (field.max is not None and value > field.max)
             ):
