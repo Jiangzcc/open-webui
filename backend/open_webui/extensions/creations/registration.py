@@ -16,10 +16,7 @@ log = logging.getLogger(__name__)
 _REQUIRED_TABLES = frozenset(table.name for table in CreationBase.metadata.sorted_tables)
 _REQUIRED_UNIQUE = {
     'ext_creation_media_item': frozenset({'uq_ext_creation_media_file'}),
-    'ext_creation_post_media': frozenset(
-        {'uq_ext_creation_post_media_creation', 'uq_ext_creation_post_media_position'}
-    ),
-    'ext_creation_post_reaction': frozenset({'uq_ext_creation_post_reaction_actor_kind'}),
+    'ext_creation_post_media': frozenset({'uq_ext_creation_post_media_creation'}),
     'ext_image_generation_task': frozenset({'uq_ext_image_task_user_key'}),
     'ext_video_generation_task': frozenset({'uq_ext_video_task_user_key'}),
 }

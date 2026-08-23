@@ -51,5 +51,7 @@ IF "%WEBUI_SECRET_KEY% %WEBUI_JWT_SECRET_KEY%" == " " (
 SET "WEBUI_SECRET_KEY=%WEBUI_SECRET_KEY%"
 IF "%UVICORN_WORKERS%"=="" SET UVICORN_WORKERS=1
 ::  --reload --reload-dir open_webui
-uvicorn open_webui.main:app --host "%HOST%" --port "%PORT%" --reload --reload-dir open_webui --forwarded-allow-ips %FORWARDED_ALLOW_IPS% --workers %UVICORN_WORKERS% --ws auto
+rem Windows + PostgreSQL：dev_server.py 先设置 WindowsSelectorEventLoopPolicy 再以 loop=none 启动，
+rem 避免 psycopg v3 异步引擎在 ProactorEventLoop 下启动失败（直接 uvicorn 命令行不可用）。
+python dev_server.py
 :: For ssl user uvicorn open_webui.main:app --host "%HOST%" --port "%PORT%" --forwarded-allow-ips '*' --ssl-keyfile "key.pem" --ssl-certfile "cert.pem" --ws auto

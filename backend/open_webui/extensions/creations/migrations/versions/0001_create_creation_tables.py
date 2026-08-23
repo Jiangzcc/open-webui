@@ -157,7 +157,6 @@ def upgrade() -> None:
         sa.Column('created_at', sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint('post_id', 'position'),
         sa.UniqueConstraint('creation_id', name='uq_ext_creation_post_media_creation'),
-        sa.UniqueConstraint('post_id', 'position', name='uq_ext_creation_post_media_position'),
         schema=schema,
     )
     op.create_index(
@@ -174,12 +173,6 @@ def upgrade() -> None:
         sa.Column('kind', sa.String(16), nullable=False),
         sa.Column('created_at', sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint('post_id', 'user_id', 'kind'),
-        sa.UniqueConstraint(
-            'post_id',
-            'user_id',
-            'kind',
-            name='uq_ext_creation_post_reaction_actor_kind',
-        ),
         sa.CheckConstraint("kind IN ('like', 'favorite')", name='ck_ext_creation_post_reaction_kind'),
         schema=schema,
     )

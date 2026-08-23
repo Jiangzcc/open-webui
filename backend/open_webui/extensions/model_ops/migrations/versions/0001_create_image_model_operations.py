@@ -1,6 +1,6 @@
 """Create image model operations overlay.
 
-Revision ID: 0001_create_image_model_operations
+Revision ID: 0001_create_image_model_ops
 Revises:
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 from open_webui.internal.db import JSONField
 
-revision: str = '0001_create_image_model_operations'
+revision: str = '0001_create_image_model_ops'
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

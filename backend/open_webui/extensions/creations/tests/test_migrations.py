@@ -168,14 +168,18 @@ def test_revision_has_required_constraints_and_indexes(sqlite_database):
     assert unique_names >= {'uq_ext_creation_media_file'}
 
     media_unique = {constraint['name'] for constraint in inspector.get_unique_constraints('ext_creation_post_media')}
-    assert media_unique >= {
-        'uq_ext_creation_post_media_creation',
-        'uq_ext_creation_post_media_position',
-    }
-    reaction_unique = {
-        constraint['name'] for constraint in inspector.get_unique_constraints('ext_creation_post_reaction')
-    }
-    assert reaction_unique >= {'uq_ext_creation_post_reaction_actor_kind'}
+    assert media_unique >= {'uq_ext_creation_post_media_creation'}
+    # post_media(post_id,position) 与 reaction(post_id,user_id,kind) 的唯一性
+    # 由复合主键保证；不再声明同列 UNIQUE（PostgreSQL 渲染时会与 PK 合并）。
+    assert inspector.get_pk_constraint('ext_creation_post_media')['constrained_columns'] == [
+        'post_id',
+        'position',
+    ]
+    assert inspector.get_pk_constraint('ext_creation_post_reaction')['constrained_columns'] == [
+        'post_id',
+        'user_id',
+        'kind',
+    ]
     task_unique = {constraint['name'] for constraint in inspector.get_unique_constraints('ext_image_generation_task')}
     assert task_unique >= {'uq_ext_image_task_user_key'}
     video_task_unique = {

@@ -36,7 +36,7 @@ EXPECTED_HEADS = {
     'creation': '0001_create_creation_tables',
     'credit': '0001_create_credit_tables',
     'provider ops': '0001_create_provider_ops_tables',
-    'model ops': '0001_create_image_model_operations',
+    'model ops': '0001_create_image_model_ops',
     'prompt tag': '0001_create_prompt_tag_library',
 }
 

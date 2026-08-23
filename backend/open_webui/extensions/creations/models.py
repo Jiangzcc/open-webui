@@ -145,7 +145,6 @@ class CreationPostMedia(CreationBase):
     __tablename__ = 'ext_creation_post_media'
     __table_args__ = (
         UniqueConstraint('creation_id', name='uq_ext_creation_post_media_creation'),
-        UniqueConstraint('post_id', 'position', name='uq_ext_creation_post_media_position'),
         Index('ix_ext_creation_post_media_creation', 'creation_id'),
     )
 
@@ -159,12 +158,6 @@ class CreationPostReaction(CreationBase):
     __tablename__ = 'ext_creation_post_reaction'
     __table_args__ = (
         CheckConstraint("kind IN ('like', 'favorite')", name='ck_ext_creation_post_reaction_kind'),
-        UniqueConstraint(
-            'post_id',
-            'user_id',
-            'kind',
-            name='uq_ext_creation_post_reaction_actor_kind',
-        ),
         Index('ix_ext_creation_post_reaction_user_kind', 'user_id', 'kind', 'created_at', 'post_id'),
     )
 
