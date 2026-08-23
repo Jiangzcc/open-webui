@@ -14,6 +14,12 @@ CreditErrorCode = Literal[
     'invalid_image_size',
     'generation_cancelled',
     'rate_limited',
+    'redeem_code_invalid',
+    'redeem_code_used',
+    'redeem_code_voided',
+    'redeem_code_expired',
+    'redeem_code_limit_reached',
+    'redeem_batch_not_found',
 ]
 
 
@@ -36,6 +42,12 @@ PUBLIC_ERRORS: dict[CreditErrorCode, PublicErrorDefinition] = {
     'invalid_image_size': PublicErrorDefinition(422, 'Image size is invalid'),
     'generation_cancelled': PublicErrorDefinition(409, 'Image generation was cancelled'),
     'rate_limited': PublicErrorDefinition(429, 'Too many generation requests'),
+    'redeem_code_invalid': PublicErrorDefinition(404, 'Redeem code is invalid'),
+    'redeem_code_used': PublicErrorDefinition(409, 'Redeem code has already been used'),
+    'redeem_code_voided': PublicErrorDefinition(409, 'Redeem code has been voided'),
+    'redeem_code_expired': PublicErrorDefinition(410, 'Redeem code has expired'),
+    'redeem_code_limit_reached': PublicErrorDefinition(409, 'Redeem limit has been reached'),
+    'redeem_batch_not_found': PublicErrorDefinition(404, 'Redeem-code batch was not found'),
 }
 
 

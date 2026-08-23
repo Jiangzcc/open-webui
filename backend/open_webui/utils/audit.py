@@ -281,6 +281,16 @@ class AuditLoggingMiddleware:
             request_body = context.request_body.decode('utf-8', errors='replace')
             response_body = context.response_body.decode('utf-8', errors='replace')
 
+            # Endpoints that return one-time secrets can mark the shared ASGI
+            # scope after authentication and authorization have succeeded. This
+            # keeps the audit event while preventing secret material from being
+            # copied into the audit sink. Clients cannot set this scope value.
+            redacted_bodies = request.scope.get('audit_redact_bodies', ())
+            if 'request' in redacted_bodies:
+                request_body = '[REDACTED]'
+            if 'response' in redacted_bodies:
+                response_body = '[REDACTED]'
+
             # Redact sensitive information
             if 'password' in request_body:
                 request_body = re.sub(

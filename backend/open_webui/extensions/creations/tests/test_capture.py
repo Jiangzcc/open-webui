@@ -371,7 +371,7 @@ async def test_finalize_rejects_immutable_identity_conflict(creation_session) ->
 
 @pytest.mark.asyncio
 async def test_build_context_maps_fal_public_id_and_allowlists_params(monkeypatch) -> None:
-    from open_webui.utils.images import fal_models
+    from open_webui.extensions.fal_images import models as fal_models
 
     internal_id = None
     for model in fal_models.FAL_IMAGE_MODELS:
@@ -481,6 +481,42 @@ async def test_build_context_keeps_original_resource_id_for_non_fal_engines() ->
     )
     assert ctx.public_model_id == 'openai-direct-model'
     assert ctx.source == 'api'
+
+
+@pytest.mark.asyncio
+async def test_build_context_prefers_raw_form_prompt() -> None:
+    """捕获层落库用户提交原文（raw_form 优先）：provider_input 只是经过
+    变换的输入兜底，任务行/作品详情记录的始终是输入框里的内容。"""
+    prepared = SimpleNamespace(
+        billing=SimpleNamespace(
+            resource_id='openai-direct-model',
+            action='text-to-image',
+            channel='api',
+            reference_hashes=(),
+        ),
+        provider_input=SimpleNamespace(
+            model='openai-direct-model',
+            prompt='a girl, cinematic lighting',
+            image=None,
+            size=None,
+            resolution=None,
+            aspect_ratio=None,
+            quality=None,
+            image_count=1,
+            extra={},
+        ),
+    )
+    ctx = build_creation_capture_context(
+        raw_form=SimpleNamespace(
+            model='openai-direct-model',
+            prompt='a girl, cinematic lighting',
+            negative_prompt=None,
+        ),
+        prepared=prepared,
+        user=SimpleNamespace(id='user-1'),
+        usage_id='usage-1',
+    )
+    assert ctx.prompt == 'a girl, cinematic lighting'
 
 
 @pytest.mark.asyncio

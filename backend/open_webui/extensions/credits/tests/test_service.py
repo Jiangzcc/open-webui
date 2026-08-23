@@ -431,6 +431,27 @@ async def test_increase_cannot_exceed_credit_balance_ceiling(service_database) -
         await session.execute(
             CreditAccount.__table__.update().where(CreditAccount.id == account.id).values(balance=MAX_CREDIT_VALUE)
         )
+        # Keep ledger in sync with the balance so the consistency guard
+        # (_lock_and_verify_account_matches_ledger) doesn't reject the call
+        # before the ceiling check can fire.
+        session.add(
+            CreditLedger(
+                id='ledger-ceiling-seed',
+                account_id=account.id,
+                user_id=target.id,
+                amount=MAX_CREDIT_VALUE,
+                balance_before=0,
+                balance_after=MAX_CREDIT_VALUE,
+                entry_type='system_adjustment',
+                reason_code='offline_recharge',
+                request_source='internal_admin',
+                request_id='ceiling-seed',
+                service_type='credits',
+                resource_id=None,
+                action='adjust',
+                created_at=int(time.time()),
+            )
+        )
 
     async with service_database() as session:
         with pytest.raises(CreditError) as raised:
@@ -443,7 +464,7 @@ async def test_increase_cannot_exceed_credit_balance_ceiling(service_database) -
     assert raised.value.context == {'reason': 'balance_limit_exceeded'}
     assert account is not None
     assert account.balance == MAX_CREDIT_VALUE
-    assert ledger_count == 0
+    assert ledger_count == 1  # only the seed entry; the overflow increase was rejected
 
 
 @pytest.mark.asyncio

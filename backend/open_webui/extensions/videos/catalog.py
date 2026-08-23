@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 
 from open_webui.extensions.credits.models import CreditPrice
-from open_webui.extensions.fal_catalog import load_video_catalog
+from open_webui.extensions.fal_catalog import load_video_catalog_cached
 from open_webui.extensions.fal_catalog.video_schemas import (
     FalVideoModelDefinition,
     VideoBooleanField,
@@ -137,7 +137,7 @@ def _supported_by_public_editor(definition: FalVideoModelDefinition) -> bool:
 
 
 def public_video_catalog() -> dict[str, object]:
-    catalog = load_video_catalog()
+    catalog = load_video_catalog_cached()
     defaults = {task: catalog.internal_to_public[model_id] for task, model_id in catalog.defaults.items()}
     return {
         'defaults': defaults,
@@ -188,7 +188,7 @@ async def public_video_catalog_for_user(session: AsyncSession) -> dict[str, obje
     ).all()
     price_by_model = {(price.resource_id, price.action): price.base_price for price in prices}
     rules_by_model = {(price.resource_id, price.action): price.rules for price in prices}
-    catalog = load_video_catalog()
+    catalog = load_video_catalog_cached()
     enriched: list[dict[str, object]] = []
     for model in models:
         copy = dict(model)
@@ -214,7 +214,7 @@ async def public_video_catalog_for_user(session: AsyncSession) -> dict[str, obje
 
 
 def resolve_video_model(public_id: str) -> FalVideoModelDefinition:
-    catalog = load_video_catalog()
+    catalog = load_video_catalog_cached()
     internal_id = catalog.public_to_internal.get(public_id)
     if internal_id is None:
         raise VideoInputError('unknown_video_model')
@@ -248,13 +248,15 @@ def build_video_provider_payload(  # noqa: C901
     definition = resolve_video_model(submission.model)
     if definition.task != submission.task:
         raise VideoInputError('video_model_task_mismatch')
-    if definition.prompt_required and not submission.prompt:
+    # prompt 即用户输入的纯文本（标签点击时已在输入框插入 insert_text）。
+    prompt = submission.prompt
+    if definition.prompt_required and not prompt:
         raise VideoInputError('prompt_required')
 
     params: dict[str, object] = dict(submission.params)
     payload: dict[str, object] = dict(definition.fixed_fields)
-    if submission.prompt:
-        payload['prompt'] = submission.prompt
+    if prompt:
+        payload['prompt'] = prompt
 
     _set_supported_option(
         payload,

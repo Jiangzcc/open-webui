@@ -82,4 +82,39 @@ describe('credit translations', () => {
 			)
 		).toBe('无法加载积分账户');
 	});
+
+	test('translates endpoint rate limits and surfaces backend rejection reasons', async () => {
+		/** 回归（对抗性审查）：FastAPI HTTPException 形态（{code, reason?}）此前
+		 * 全部回退成 credit_service_unavailable，限流被误报成基础设施故障、
+		 * 修复校验失败的真实原因丢失。 */
+		const i18n = i18next.createInstance();
+		await i18n.init({ lng: 'zh-CN', fallbackLng: false });
+		registerCreditTranslations(i18n);
+
+		expect(
+			translateCreditApiError(
+				i18n,
+				{ code: 'rate_limit_exceeded', message: '', context: {} },
+				'credits.redeem.failed'
+			)
+		).toBe('请求过于频繁，请稍后再试');
+		expect(
+			translateCreditApiError(
+				i18n,
+				{
+					code: 'invalid_repair_request',
+					message: '',
+					context: { reason: 'expected_balance does not match the ledger total' }
+				},
+				'credits.admin.repair.saveError'
+			)
+		).toBe('expected_balance does not match the ledger total');
+		expect(
+			translateCreditApiError(
+				i18n,
+				{ code: 'invalid_request_id', message: '', context: {} },
+				'credits.admin.repair.saveError'
+			)
+		).toBe(i18n.t('credits.admin.repair.saveError'));
+	});
 });

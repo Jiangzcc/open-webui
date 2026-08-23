@@ -109,7 +109,12 @@ def _canonical_value(value: object, *, depth: int, counter: list[int], byte_tota
             raise ValueError('canonical integer exceeds credit ceiling')
         return value
     if isinstance(value, float):
-        raise ValueError('non-finite number' if not isfinite(value) else 'float values are not canonical')
+        # 有限浮点参数（如 guidance_scale=3.5）合法：与视频侧 request_hash 的
+        # json.dumps 行为一致，直接进入 canonical JSON（repr 确定性序列化）。
+        # NaN/Inf 无稳定表示，仍拒绝。
+        if not isfinite(value):
+            raise ValueError('non-finite number')
+        return value
     if isinstance(value, str):
         byte_len = len(value.encode('utf-8'))
         if byte_len > MAX_CANONICAL_STRING_BYTES:
@@ -441,10 +446,15 @@ async def _prepare(
     compat.map_billing_identity(user)
     channel = _channel(request, metadata)
     config = await compat.get_runtime_image_config()
-    resolution = compat.resolve_provider_model(config, normalized, action)
+    dynamic_model = await compat.resolve_dynamic_engine_model(request, config, normalized)
+    resolution = compat.resolve_provider_model(config, normalized, action, dynamic_model=dynamic_model)
     resource_id = _bounded_string(resolution.resource_id, name='resource_id', limit=128, required=True)
     dimensions = _dimensions(config, normalized, action)
     prompt_hash = _sha256(normalized.prompt.encode('utf-8'))
+
+    # A1111 的 model 不是每请求选择：provider 收到用户原始请求（通常为 None），
+    # 避免 billing 层预填的解析值触发 set_image_model 静默切换实例级 checkpoint。
+    transport_model = normalized.model if resolution.engine == 'automatic1111' else resolution.transport_model
 
     if action == 'text-to-image':
         if normalized.image is not None:
@@ -455,7 +465,7 @@ async def _prepare(
         # upstream provider does not receive spurious literal "default".
         provider_input = replace(
             normalized,
-            model=resolution.transport_model,
+            model=transport_model,
             size=dimensions.get('size') if dimensions.get('size') != 'default' else normalized.size,
             image_count=dimensions.get('image_count', normalized.image_count),
         )
@@ -467,7 +477,7 @@ async def _prepare(
         )
         provider_input = replace(
             normalized,
-            model=resolution.transport_model,
+            model=transport_model,
             image=provider_image,
             size=dimensions.get('size') if dimensions.get('size') != 'default' else normalized.size,
             image_count=dimensions.get('image_count', normalized.image_count),

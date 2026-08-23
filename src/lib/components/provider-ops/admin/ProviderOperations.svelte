@@ -5,19 +5,24 @@
 	import type { i18n as I18n } from 'i18next';
 
 	import {
+		getFalRuntimeConfig,
 		getProviderOverview,
 		getVideoRuntimeStatus,
 		listProviderAnalytics,
 		listProviderBillingEvents,
 		listProviderModelSummary,
 		syncFalProvider,
+		updateFalRuntimeConfig,
+		type FalRuntimeConfig,
 		type ProviderAnalytics,
 		type ProviderBillingEvent,
 		type ProviderModelSummary,
 		type ProviderOverview,
 		type VideoRuntimeStatus
 	} from '$lib/apis/provider-ops';
+	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 
 	const i18n = getContext<Writable<I18n>>('i18n');
 	let provider = 'fal';
@@ -27,9 +32,17 @@
 	let models: ProviderModelSummary[] = [];
 	let billingEvents: ProviderBillingEvent[] = [];
 	let analytics: ProviderAnalytics[] = [];
-	let loading = true;
+	let falConfig: FalRuntimeConfig | null = null;
+	let savingFalConfig = false;
+	let loadingStats = true;
 	let syncing = false;
 	let loadSequence = 0;
+
+	// FAL 配置表单的输入框样式：高度与页面既有 select/按钮（min-h-11）保持一致。
+	const fieldClass =
+		'min-h-11 w-full min-w-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm outline-hidden focus:border-blue-400 dark:border-gray-700';
+	const sensitiveFieldClass =
+		'min-h-11 rounded-xl border border-gray-200 bg-transparent px-3 text-sm outline-hidden focus:border-blue-400 dark:border-gray-700';
 
 	$: latestAnalytics = analytics.reduce<Record<string, ProviderAnalytics>>((latest, item) => {
 		if (!latest[item.provider_model_id]) latest[item.provider_model_id] = item;
@@ -68,28 +81,41 @@
 				)
 			: '—';
 
-	const load = async () => {
+	// 统计数据（概览/模型/计费/分析）依赖提供商与时间范围筛选；
+	// 与 FAL 运行配置分开加载，避免一侧失败连坐另一侧不渲染。
+	const loadStats = async () => {
 		const sequence = ++loadSequence;
-		loading = true;
+		loadingStats = true;
 		try {
-			const [nextOverview, nextRuntime, nextModels, nextBillingEvents, nextAnalytics] =
-				await Promise.all([
-					getProviderOverview(localStorage.token, provider, windowHours),
-					getVideoRuntimeStatus(localStorage.token),
-					listProviderModelSummary(localStorage.token, provider, windowHours),
-					listProviderBillingEvents(localStorage.token, provider, windowHours, 100),
-					listProviderAnalytics(localStorage.token, provider, windowHours, 500)
-				]);
+			const [nextOverview, nextModels, nextBillingEvents, nextAnalytics] = await Promise.all([
+				getProviderOverview(localStorage.token, provider, windowHours),
+				listProviderModelSummary(localStorage.token, provider, windowHours),
+				listProviderBillingEvents(localStorage.token, provider, windowHours, 100),
+				listProviderAnalytics(localStorage.token, provider, windowHours, 500)
+			]);
 			if (sequence !== loadSequence) return;
 			overview = nextOverview;
-			videoRuntime = nextRuntime;
 			models = nextModels;
 			billingEvents = nextBillingEvents;
 			analytics = nextAnalytics;
 		} catch {
 			if (sequence === loadSequence) toast.error($i18n.t('Failed to load provider operations'));
 		} finally {
-			if (sequence === loadSequence) loading = false;
+			if (sequence === loadSequence) loadingStats = false;
+		}
+	};
+
+	// FAL 配置与视频运行状态不依赖筛选，挂载和保存后刷新。
+	const loadFalConfig = async () => {
+		try {
+			const [nextFalConfig, nextRuntime] = await Promise.all([
+				getFalRuntimeConfig(localStorage.token),
+				getVideoRuntimeStatus(localStorage.token)
+			]);
+			falConfig = nextFalConfig;
+			videoRuntime = nextRuntime;
+		} catch {
+			toast.error($i18n.t('Failed to load FAL configuration'));
 		}
 	};
 
@@ -111,7 +137,7 @@
 			} else {
 				toast.success($i18n.t('Provider data synchronized'));
 			}
-			await load();
+			await loadStats();
 		} catch {
 			toast.error($i18n.t('Provider synchronization failed'));
 		} finally {
@@ -119,7 +145,24 @@
 		}
 	};
 
-	onMount(load);
+	const saveFalConfig = async () => {
+		if (savingFalConfig || !falConfig) return;
+		savingFalConfig = true;
+		try {
+			falConfig = await updateFalRuntimeConfig(localStorage.token, falConfig);
+			toast.success($i18n.t('FAL configuration saved'));
+			await loadFalConfig();
+		} catch {
+			toast.error($i18n.t('Failed to save FAL configuration'));
+		} finally {
+			savingFalConfig = false;
+		}
+	};
+
+	onMount(() => {
+		loadStats();
+		loadFalConfig();
+	});
 </script>
 
 <div class="flex min-h-0 flex-col gap-5" data-testid="provider-operations">
@@ -138,7 +181,7 @@
 				id="provider-operations-provider"
 				class="min-h-11 min-w-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
 				bind:value={provider}
-				on:change={load}
+				on:change={loadStats}
 			>
 				<option value="fal">fal.ai</option>
 			</select>
@@ -147,7 +190,7 @@
 				id="provider-operations-window"
 				class="min-h-11 min-w-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
 				bind:value={windowHours}
-				on:change={load}
+				on:change={loadStats}
 			>
 				<option value={24}>{$i18n.t('Last 24 hours')}</option>
 				<option value={168}>{$i18n.t('Last 7 days')}</option>
@@ -165,61 +208,157 @@
 		</div>
 	</header>
 
-	{#if loading && !overview}
+	{#if loadingStats && !overview}
 		<div class="flex min-h-64 items-center justify-center"><Spinner className="size-5" /></div>
-	{:else if overview}
-		{#if videoRuntime}
-			<section
-				class="grid min-w-0 gap-2 rounded-2xl border border-gray-200 p-3 dark:border-gray-800 sm:grid-cols-2 sm:p-4 lg:grid-cols-4"
-				aria-label={$i18n.t('Video runtime status')}
-			>
+	{/if}
+	{#if falConfig}
+		<section
+			class="grid min-w-0 gap-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800 sm:p-4"
+			aria-label={$i18n.t('FAL configuration')}
+		>
+			<div class="flex flex-wrap items-center justify-between gap-2">
 				<div class="min-w-0">
-					<div class="text-xs text-gray-500">{$i18n.t('Video execution mode')}</div>
-					<div class="mt-1 text-sm font-medium dark:text-gray-100">
+					<h3 class="text-sm font-medium dark:text-gray-100">{$i18n.t('FAL configuration')}</h3>
+					<p class="mt-1 text-xs text-gray-500">
 						{$i18n.t(
-							videoRuntime.engine === 'fal'
-								? 'Real FAL'
-								: videoRuntime.engine === 'mock'
-									? 'Mock'
-									: 'Invalid'
+							'Mock mode returns placeholder content and still charges credits at real prices.'
 						)}
-					</div>
-				</div>
-				<div class="min-w-0">
-					<div class="text-xs text-gray-500">{$i18n.t('FAL API key')}</div>
-					<div class="mt-1 text-sm font-medium dark:text-gray-100">
-						{$i18n.t(videoRuntime.fal_api_key_configured ? 'Configured' : 'Not configured')}
-					</div>
-				</div>
-				<div class="min-w-0">
-					<div class="text-xs text-gray-500">{$i18n.t('Active video tasks')}</div>
-					<div class="mt-1 text-sm font-medium tabular-nums dark:text-gray-100">
-						{videoRuntime.active_task_count}
-					</div>
-				</div>
-				<div class="min-w-0">
-					<div class="text-xs text-gray-500">{$i18n.t('Delivery retries')}</div>
-					<div class="mt-1 text-sm font-medium tabular-nums dark:text-gray-100">
-						{videoRuntime.delivery_max_attempts}
-					</div>
-				</div>
-				<div class="min-w-0 sm:col-span-2 lg:col-span-4">
-					<div class="text-xs text-gray-500">{$i18n.t('Real video policy')}</div>
-					<p class="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">
-						{$i18n.t('Allowed models')}: {videoRuntime.allowed_models.length
-							? videoRuntime.allowed_models.join(', ')
-							: $i18n.t('All enabled models')}
-						· {$i18n.t('Per-request limit')}: {videoRuntime.max_credits_per_request ??
-							$i18n.t('Not set')}
 					</p>
-					{#if videoRuntime.configuration_error}
-						<p class="mt-2 break-all text-xs text-red-600 dark:text-red-300" role="alert">
-							{$i18n.t('Configuration error')}: {videoRuntime.configuration_error}
-						</p>
-					{/if}
 				</div>
-			</section>
-		{/if}
+				<button
+					class="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-gray-900"
+					type="button"
+					disabled={savingFalConfig}
+					on:click={saveFalConfig}
+				>
+					{#if savingFalConfig}<Spinner className="size-4" />{/if}
+					{$i18n.t('Save')}
+				</button>
+			</div>
+			<div class="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+				<label class="flex min-w-0 flex-col gap-1" for="fal-image-generation-base-url">
+					<span class="text-xs text-gray-500">{$i18n.t('Image generation API Base URL')}</span>
+					<input
+						id="fal-image-generation-base-url"
+						class={fieldClass}
+						placeholder="https://queue.fal.run"
+						bind:value={falConfig.image_generation_api_base_url}
+					/>
+				</label>
+				<div class="flex min-w-0 flex-col gap-1">
+					<span class="text-xs text-gray-500" id="fal-image-generation-key-label">
+						{$i18n.t('Image generation API Key')}
+					</span>
+					<SensitiveInput
+						variant="plain"
+						outerClassName="w-full"
+						inputClassName={sensitiveFieldClass}
+						placeholder={$i18n.t('API Key')}
+						bind:value={falConfig.image_generation_api_key}
+						required={false}
+					/>
+				</div>
+				<label class="flex min-w-0 flex-col gap-1" for="fal-image-edit-base-url">
+					<span class="text-xs text-gray-500">{$i18n.t('Image edit API Base URL')}</span>
+					<input
+						id="fal-image-edit-base-url"
+						class={fieldClass}
+						placeholder="https://queue.fal.run"
+						bind:value={falConfig.image_edit_api_base_url}
+					/>
+				</label>
+				<div class="flex min-w-0 flex-col gap-1">
+					<span class="text-xs text-gray-500" id="fal-image-edit-key-label">
+						{$i18n.t('Image edit API Key')}
+					</span>
+					<SensitiveInput
+						variant="plain"
+						outerClassName="w-full"
+						inputClassName={sensitiveFieldClass}
+						placeholder={$i18n.t('API Key')}
+						bind:value={falConfig.image_edit_api_key}
+						required={false}
+					/>
+				</div>
+				<div class="flex min-w-0 flex-col gap-1">
+					<span class="text-xs text-gray-500" id="fal-video-key-label">{$i18n.t('Video API Key')}</span>
+					<SensitiveInput
+						variant="plain"
+						outerClassName="w-full"
+						inputClassName={sensitiveFieldClass}
+						placeholder={$i18n.t('Leave empty to reuse the image generation key')}
+						bind:value={falConfig.video_api_key}
+						required={false}
+					/>
+				</div>
+			</div>
+			<div class="grid min-w-0 gap-2 sm:grid-cols-2">
+				<div
+					class="flex items-center justify-between gap-3 rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-800"
+				>
+					<span class="min-w-0 text-sm dark:text-gray-100" id="fal-image-mock-label">
+						{$i18n.t('Image mock mode')}
+					</span>
+					<Switch bind:state={falConfig.image_mock_enabled} ariaLabelledbyId="fal-image-mock-label" />
+				</div>
+				<div
+					class="flex items-center justify-between gap-3 rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-800"
+				>
+					<span class="min-w-0 text-sm dark:text-gray-100" id="fal-video-mock-label">
+						{$i18n.t('Video mock mode')}
+					</span>
+					<Switch bind:state={falConfig.video_mock_enabled} ariaLabelledbyId="fal-video-mock-label" />
+				</div>
+			</div>
+		</section>
+	{/if}
+	{#if videoRuntime}
+		<section
+			class="grid min-w-0 gap-2 rounded-2xl border border-gray-200 p-3 dark:border-gray-800 sm:grid-cols-2 sm:p-4 lg:grid-cols-4"
+			aria-label={$i18n.t('Video runtime status')}
+		>
+			<div class="min-w-0">
+				<div class="text-xs text-gray-500">{$i18n.t('Video execution mode')}</div>
+				<div class="mt-1 text-sm font-medium dark:text-gray-100">
+					{$i18n.t(videoRuntime.mock_enabled ? 'Mock' : 'Real FAL')}
+				</div>
+			</div>
+			<div class="min-w-0">
+				<div class="text-xs text-gray-500">{$i18n.t('FAL API key')}</div>
+				<div class="mt-1 text-sm font-medium dark:text-gray-100">
+					{$i18n.t(videoRuntime.fal_api_key_configured ? 'Configured' : 'Not configured')}
+				</div>
+			</div>
+			<div class="min-w-0">
+				<div class="text-xs text-gray-500">{$i18n.t('Active video tasks')}</div>
+				<div class="mt-1 text-sm font-medium tabular-nums dark:text-gray-100">
+					{videoRuntime.active_task_count}
+				</div>
+			</div>
+			<div class="min-w-0">
+				<div class="text-xs text-gray-500">{$i18n.t('Delivery retries')}</div>
+				<div class="mt-1 text-sm font-medium tabular-nums dark:text-gray-100">
+					{videoRuntime.delivery_max_attempts}
+				</div>
+			</div>
+			<div class="min-w-0 sm:col-span-2 lg:col-span-4">
+				<div class="text-xs text-gray-500">{$i18n.t('Real video policy')}</div>
+				<p class="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">
+					{$i18n.t('Allowed models')}: {videoRuntime.allowed_models.length
+						? videoRuntime.allowed_models.join(', ')
+						: $i18n.t('All enabled models')}
+					· {$i18n.t('Per-request limit')}: {videoRuntime.max_credits_per_request ??
+						$i18n.t('Not set')}
+				</p>
+				{#if videoRuntime.configuration_error}
+					<p class="mt-2 break-all text-xs text-red-600 dark:text-red-300" role="alert">
+						{$i18n.t('Configuration error')}: {videoRuntime.configuration_error}
+					</p>
+				{/if}
+			</div>
+		</section>
+	{/if}
+	{#if overview}
 		<section
 			class="grid grid-cols-2 gap-2 lg:grid-cols-5"
 			aria-label={$i18n.t('Provider overview')}

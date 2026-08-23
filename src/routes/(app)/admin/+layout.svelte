@@ -4,6 +4,7 @@
 
 	import { WEBUI_NAME, config, mobile, showSettings, showSidebar, user } from '$lib/stores';
 	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
+	import { registerPromptTagTranslations } from '$lib/components/prompt-tags/prompt-tags-i18n';
 	import { page } from '$app/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
@@ -11,6 +12,7 @@
 
 	const i18n = getContext('i18n');
 	registerCreditTranslations(i18n);
+	registerPromptTagTranslations(i18n);
 
 	let loaded = false;
 
@@ -103,7 +105,8 @@
 
 						<a
 							draggable="false"
-							class="min-w-fit px-1 text-sm {$page.url.pathname.includes('/admin/operations')
+							class="min-w-fit px-1 text-sm {$page.url.pathname.includes('/admin/operations') ||
+							$page.url.pathname.includes('/admin/prompt-tags')
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition select-none"
 							href="/admin/operations">{$i18n.t('Operations center')}</a

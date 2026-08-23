@@ -5,16 +5,12 @@ import logging
 from time import time
 
 import anyio
-from alembic.migration import MigrationContext
-from alembic.script import ScriptDirectory
 from fastapi import FastAPI
-from open_webui.env import DATABASE_SCHEMA
+from open_webui.extensions.migration_kit import SchemaGuard, validate_schema
 from opentelemetry import metrics
-from sqlalchemy import inspect
 
 from .constants import CREDIT_RECOVERY_INTERVAL_SECONDS, CREDIT_USAGE_STALE_SECONDS
-from .db import engine
-from .migrations.runner import _migration_config, run_credit_migrations
+from .migrations.runner import SPEC, run_credit_migrations
 from .models import CreditBase
 from .service import mark_stale_usage_unknown
 
@@ -41,9 +37,32 @@ _REQUIRED_CONSTRAINTS = {
         }
     ),
     'ext_credit_price': frozenset({'ck_ext_credit_price_base_nonempty'}),
+    'ext_credit_redeem_batch': frozenset(
+        {
+            'ck_ext_credit_redeem_batch_face_value',
+            'ck_ext_credit_redeem_batch_code_count',
+            'ck_ext_credit_redeem_batch_user_limit',
+            'ck_ext_credit_redeem_batch_expiry',
+            'ck_ext_credit_redeem_batch_void_fields',
+        }
+    ),
+    'ext_credit_redeem_code': frozenset(
+        {
+            'ck_ext_credit_redeem_code_terminal_state',
+            'ck_ext_credit_redeem_code_redemption_fields',
+            'ck_ext_credit_redeem_code_void_fields',
+            'ck_ext_credit_redeem_code_code_nonempty',
+        }
+    ),
+    'ext_credit_redeem_audit': frozenset(
+        {'ck_ext_credit_redeem_audit_action', 'ck_ext_credit_redeem_audit_request_source'}
+    ),
 }
 _REQUIRED_INDEXES = {
     'ext_credit_ledger': frozenset({'ux_ext_credit_ledger_related_refund'}),
+    'ext_credit_redeem_code': frozenset(
+        {'ux_ext_credit_redeem_code_hash', 'ux_ext_credit_redeem_code_ledger'}
+    ),
 }
 _recovery_counter = metrics.get_meter(__name__).create_counter(
     'webui.credits.usage.recovered_unknown',
@@ -56,51 +75,22 @@ def _now() -> int:
     return int(time())
 
 
-def _schema_tables(inspector) -> set[str]:
-    return set(inspector.get_table_names(schema=DATABASE_SCHEMA))
+# 台账/卡密链的外键关系必须与迁移建出的完全一致（应用层不再另查）。
+_SCHEMA_GUARD = SchemaGuard(
+    spec=SPEC,
+    required_tables=_REQUIRED_TABLES,
+    required_checks=_REQUIRED_CONSTRAINTS,
+    required_indexes=_REQUIRED_INDEXES,
+    expected_foreign_keys={
+        'ext_credit_ledger': frozenset({'ext_credit_account', 'ext_credit_usage'}),
+        'ext_credit_redeem_code': frozenset({'ext_credit_redeem_batch', 'ext_credit_ledger'}),
+        'ext_credit_redeem_audit': frozenset({'ext_credit_redeem_batch', 'ext_credit_redeem_code'}),
+    },
+)
 
 
 def _validate_credit_schema() -> None:
-    with engine.connect() as connection:
-        inspector = inspect(connection)
-        missing_tables = _REQUIRED_TABLES - _schema_tables(inspector)
-        if missing_tables:
-            raise RuntimeError(f'credit migration validation failed: missing tables {sorted(missing_tables)}')
-
-        config = _migration_config(DATABASE_SCHEMA)
-        expected_heads = set(ScriptDirectory.from_config(config).get_heads())
-        current_heads = set(
-            MigrationContext.configure(
-                connection,
-                opts={
-                    'version_table': 'ext_credit_schema_version',
-                    'version_table_schema': DATABASE_SCHEMA,
-                },
-            ).get_current_heads()
-        )
-        if current_heads != expected_heads:
-            raise RuntimeError(
-                'credit migration validation failed: '
-                f'expected version {sorted(expected_heads)}, got {sorted(current_heads)}'
-            )
-
-        for table_name, required in _REQUIRED_CONSTRAINTS.items():
-            existing = {
-                constraint['name'] for constraint in inspector.get_check_constraints(table_name, schema=DATABASE_SCHEMA)
-            }
-            missing = required - existing
-            if missing:
-                raise RuntimeError(
-                    f'credit migration validation failed: {table_name} missing constraints {sorted(missing)}'
-                )
-
-        for table_name, required in _REQUIRED_INDEXES.items():
-            existing = {index['name'] for index in inspector.get_indexes(table_name, schema=DATABASE_SCHEMA)}
-            missing = required - existing
-            if missing:
-                raise RuntimeError(
-                    f'credit migration validation failed: {table_name} missing indexes {sorted(missing)}'
-                )
+    validate_schema(_SCHEMA_GUARD)
 
 
 def _record_recovered_usages(count: int) -> None:

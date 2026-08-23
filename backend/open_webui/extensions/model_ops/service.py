@@ -3,8 +3,12 @@ from __future__ import annotations
 from time import time
 
 from fastapi import HTTPException
-from open_webui.extensions.fal_catalog.loader import load_image_catalog, load_video_catalog
-from open_webui.utils.images.fal_models import normalize_fal_image_model_id
+from open_webui.extensions.fal_catalog.loader import (
+    FalVideoCatalog,
+    load_image_catalog,
+    load_video_catalog_cached,
+)
+from open_webui.extensions.fal_images.models import normalize_fal_image_model_id
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,12 +30,17 @@ def _operation_key(media_kind: str, model_id: str) -> str:
     return model_id if media_kind == 'image' else f'video:{model_id}'
 
 
-def _resolve_model_id(media_kind: str, model_id: str | None) -> str | None:
+def _resolve_model_id(
+    media_kind: str,
+    model_id: str | None,
+    *,
+    video_catalog: FalVideoCatalog | None = None,
+) -> str | None:
     if not model_id:
         return None
     if media_kind == 'image':
         return normalize_fal_image_model_id(model_id)
-    catalog = load_video_catalog()
+    catalog = video_catalog or load_video_catalog_cached()
     if model_id in catalog.internal_to_public:
         return model_id
     return catalog.public_to_internal.get(model_id)
@@ -45,10 +54,17 @@ async def apply_model_operations(
     media_kind: str = 'image',
 ) -> list[dict[str, object]]:
     operations = await _operation_map(session)
+    # 目录解析提到循环外：否则每个模型各触发一次全量目录解析，
+    # /videos/models 这类端点会放大成 数十模型 × 数毫秒 的解析开销。
+    video_catalog = load_video_catalog_cached() if media_kind == 'video' else None
     decorated: list[tuple[int, dict[str, object]]] = []
     for index, model in enumerate(models):
         candidate = model.get('id')
-        internal_id = _resolve_model_id(media_kind, candidate if isinstance(candidate, str) else None)
+        internal_id = _resolve_model_id(
+            media_kind,
+            candidate if isinstance(candidate, str) else None,
+            video_catalog=video_catalog,
+        )
         operation = operations.get(_operation_key(media_kind, internal_id or ''))
         visible = operation.visible if operation is not None else True
         enabled = operation.enabled if operation is not None else True
@@ -119,7 +135,7 @@ async def list_model_operations(session: AsyncSession) -> ModelOperationList:
                 updated_at=operation.updated_at if operation is not None else None,
             )
         )
-    for definition in load_video_catalog().definitions:
+    for definition in load_video_catalog_cached().definitions:
         operation = operations.get(_operation_key('video', definition.id))
         items.append(
             ModelOperationItem(
@@ -153,7 +169,7 @@ async def update_model_operation(
     internal_id = _resolve_model_id(media_kind, model_id)
     if internal_id is None:
         return None
-    catalog = load_image_catalog() if media_kind == 'image' else load_video_catalog()
+    catalog = load_image_catalog() if media_kind == 'image' else load_video_catalog_cached()
     definition = next((item for item in catalog.definitions if item.id == internal_id), None)
     if definition is None:
         return None

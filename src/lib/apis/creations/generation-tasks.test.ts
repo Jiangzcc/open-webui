@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
 	GENERATION_EVENT_RECONNECT_INITIAL_MS,
+	createImageGenerationTask,
+	ImageTaskRequestError,
 	iterateGenerationEvents,
 	nextGenerationEventReconnectDelay,
 	subscribeToGenerationEvents
@@ -80,5 +82,35 @@ describe('generation task events', () => {
 				headers: expect.objectContaining({ authorization: 'Bearer token-1' })
 			})
 		);
+	});
+});
+
+describe('generation task request errors', () => {
+	// 提交方依赖 code（映射文案）与 status（区分确定拒绝与响应不确定，
+	// 决定是否保留幂等键重试）。服务端错误体有三种形态：顶层 code
+	//（credits to_envelope）、detail.code、detail 字符串。
+	test.each([
+		['top-level code envelope', { code: 'insufficient_credits' }, 'insufficient_credits'],
+		['nested detail code', { detail: { code: 'idempotency_key_conflict' } }, 'idempotency_key_conflict'],
+		['plain detail string', { detail: 'idempotency_key_conflict' }, 'idempotency_key_conflict'],
+		['unparseable body', null, 'image_task_failed']
+	])('throws ImageTaskRequestError with status for %s', async (_label, body, expectedCode) => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(
+				new Response(body === null ? 'not json' : JSON.stringify(body), { status: 402 })
+			)
+		);
+
+		const error = await createImageGenerationTask(
+			'token-1',
+			'text-to-image',
+			{ prompt: 'x' } as never,
+			'key-1'
+		).catch((thrown: unknown) => thrown);
+
+		expect(error).toBeInstanceOf(ImageTaskRequestError);
+		expect((error as ImageTaskRequestError).code).toBe(expectedCode);
+		expect((error as ImageTaskRequestError).status).toBe(402);
 	});
 });

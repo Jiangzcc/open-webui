@@ -98,6 +98,7 @@
 			<option value="promotion_gift">{$i18n.t('credits.reasons.promotion_gift')}</option>
 			<option value="manual_refund">{$i18n.t('credits.reasons.manual_refund')}</option>
 			<option value="violation_deduction">{$i18n.t('credits.reasons.violation_deduction')}</option>
+			<option value="redeem">{$i18n.t('credits.reasons.redeem')}</option>
 			<option value="other">{$i18n.t('credits.reasons.other')}</option>
 		</select>
 		<input

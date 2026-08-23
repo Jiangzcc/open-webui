@@ -1,21 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
-import os
-import time
 from collections.abc import Awaitable, Callable
-from pathlib import Path
-from uuid import uuid4
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from open_webui.extensions.creations.db import creation_session
 from open_webui.extensions.creations.models import CreationMediaItem, VideoGenerationTask
-from open_webui.extensions.creations.schemas import decode_keyset_cursor, encode_keyset_cursor
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.models import CreditUsage
-from open_webui.extensions.fal_catalog.video_schemas import FalVideoModelDefinition
+from open_webui.extensions.model_ops.service import ensure_model_enabled
 from open_webui.extensions.videos.billing import (
     begin_video_usage,
     credit_session,
@@ -23,46 +17,36 @@ from open_webui.extensions.videos.billing import (
     mark_usage_succeeded_in_session,
     mark_video_usage_failed,
     mark_video_usage_invoking,
+    quote_video_usage,
 )
-from open_webui.extensions.videos.catalog import build_video_provider_payload
+from open_webui.extensions.videos.catalog import VideoInputError, build_video_provider_payload
+from open_webui.extensions.videos.delivery import (
+    _cleanup_result_files,
+    _finalize_mock_video,
+    _finalize_real_video,
+    _now,
+    _run_mock_scenario,
+)
 from open_webui.extensions.videos.executor import (
     FalVideoExecutor,
     VideoExecutionError,
     VideoExecutionOutput,
+    enforce_fal_video_policy,
     resolve_video_executor,
 )
 from open_webui.extensions.videos.limits import (
     acquire_video_generation_slot,
     release_video_generation_slot,
 )
-from open_webui.extensions.videos.pexels_mock import (
-    PexelsMockClip,
-    extract_poster_from_video,
-    fetch_pexels_mock_clip,
-)
-from open_webui.extensions.videos.schemas import (
-    VideoAssetReference,
-    VideoTaskListResponse,
-    VideoTaskResponse,
-    VideoTaskResult,
-    VideoTaskSubmitForm,
-)
-from open_webui.models.files import Files
+from open_webui.extensions.videos.queries import _response, _submission_from_task
+from open_webui.extensions.videos.schemas import VideoTaskResponse, VideoTaskResult
+from open_webui.internal.db import get_async_db
 from open_webui.models.users import Users
-from open_webui.storage.provider import Storage
-from sqlalchemy import and_, delete, desc, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.datastructures import UploadFile
 
 log = logging.getLogger(__name__)
-upload_file_handler = None  # lazily bound; tests replace this module-level seam
 
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-_MOCK_VIDEO_PATH = _REPOSITORY_ROOT / 'static' / 'assets' / 'welcome.mp4'
-_MOCK_POSTER_PATH = _REPOSITORY_ROOT / 'static' / 'assets' / 'welcome.webp'
-# Mock 路径的模拟延迟：模拟真实生成耗时，避免 mock 完成过快导致前端轮询异常。
-_MOCK_VIDEO_DELAY_SECONDS = 1.2
 _RECOVERABLE_VIDEO_ERRORS = frozenset(
     {
         'video_delivery_failed',
@@ -70,248 +54,14 @@ _RECOVERABLE_VIDEO_ERRORS = frozenset(
         'video_provider_timeout',
     }
 )
+# 恢复路径（重启/60 秒扫描）重试投递/轮询的最大次数：超过后任务转终态，
+# 避免 URL 过期、模型下架等问题让任务永留 running、预扣积分永久占用。
+_VIDEO_DELIVERY_MAX_ATTEMPTS = 5
 
 
-def _now() -> int:
-    return int(time.time())
-
-
-def _positive_float_env(name: str, default: float) -> float:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        log.warning('Ignoring invalid %s=%r', name, raw)
-        return default
-    if value < 0:
-        log.warning('Ignoring negative %s=%r', name, raw)
-        return default
-    return value
-
-
-async def _run_mock_scenario() -> None:
-    """Run a deterministic, mock-only fault scenario without touching FAL."""
-    scenario = os.getenv('VIDEO_GENERATION_MOCK_SCENARIO', 'success').strip().lower()
-    delay = _positive_float_env('VIDEO_GENERATION_MOCK_DELAY_SECONDS', _MOCK_VIDEO_DELAY_SECONDS)
-    if scenario == 'slow':
-        delay = _positive_float_env('VIDEO_GENERATION_MOCK_SLOW_SECONDS', 5.0)
-    await asyncio.sleep(delay)
-    errors = {
-        'provider_timeout': 'video_provider_timeout',
-        'provider_failure': 'video_provider_failed',
-        'rate_limit': 'video_provider_rate_limited',
-        'malformed_result': 'video_result_missing',
-        'oversized_result': 'video_result_too_large',
-        'delivery_failure': 'video_delivery_failed',
-    }
-    if scenario in {'success', 'slow'}:
-        return
-    code = errors.get(scenario)
-    if code is None:
-        raise VideoExecutionError('video_mock_scenario_invalid')
-    # Mock failures always remain refundable: provider_completed must stay False.
-    raise VideoExecutionError(code)
-
-
-def _result(value: object) -> VideoTaskResult | None:
-    if not isinstance(value, dict):
-        return None
-    try:
-        return VideoTaskResult.model_validate(value)
-    except ValueError:
-        return None
-
-
-def _response(task: VideoGenerationTask) -> VideoTaskResponse:
-    assets = task.assets_json if isinstance(task.assets_json, list) else []
-    return VideoTaskResponse(
-        id=task.id,
-        status=task.status,
-        task=task.task,
-        prompt=task.prompt,
-        model_id=task.model_id,
-        params=task.params_json if isinstance(task.params_json, dict) else {},
-        assets=tuple(VideoAssetReference.model_validate(item) for item in assets),
-        result=_result(task.result_json),
-        error_code=task.error_code,
-        created_at=task.created_at,
-        started_at=task.started_at,
-        completed_at=task.completed_at,
-        updated_at=task.updated_at,
-    )
-
-
-async def validate_video_assets(
-    submission: VideoTaskSubmitForm,
-    definition: FalVideoModelDefinition,
-    user_id: str,
-) -> None:
-    constraints = {item.role: item for item in definition.asset_inputs or ()}
-    for reference in submission.assets:
-        file = await Files.get_file_by_id_and_user_id(reference.file_id, user_id)
-        if file is None:
-            raise ValueError(f'video_asset_not_found:{reference.role}')
-        constraint = constraints[reference.role]
-        metadata = file.meta if isinstance(file.meta, dict) else {}
-        content_type = metadata.get('content_type')
-        size = metadata.get('size')
-        if content_type not in constraint.mime_types:
-            raise ValueError(f'invalid_video_asset_type:{reference.role}')
-        if isinstance(size, int) and size > constraint.max_bytes:
-            raise ValueError(f'video_asset_too_large:{reference.role}')
-
-
-async def create_video_task(
-    session: AsyncSession,
-    *,
-    user_id: str,
-    idempotency_key: str,
-    submission: VideoTaskSubmitForm,
-) -> tuple[VideoTaskResponse, bool]:
-    existing = await session.scalar(
-        select(VideoGenerationTask).where(
-            VideoGenerationTask.user_id == user_id,
-            VideoGenerationTask.idempotency_key == idempotency_key,
-        )
-    )
-    if existing is not None:
-        return _response(existing), False
-
-    definition, _provider_payload, safe_params = build_video_provider_payload(submission)
-    await validate_video_assets(submission, definition, user_id)
-    now = _now()
-    task = VideoGenerationTask(
-        id=str(uuid4()),
-        user_id=user_id,
-        idempotency_key=idempotency_key,
-        status='queued',
-        task=submission.task,
-        prompt=submission.prompt,
-        model_id=submission.model,
-        params_json=safe_params,
-        assets_json=[item.model_dump() for item in submission.assets],
-        result_json=None,
-        error_code=None,
-        usage_id=None,
-        created_at=now,
-        started_at=None,
-        completed_at=None,
-        updated_at=now,
-    )
-    session.add(task)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raced = await session.scalar(
-            select(VideoGenerationTask).where(
-                VideoGenerationTask.user_id == user_id,
-                VideoGenerationTask.idempotency_key == idempotency_key,
-            )
-        )
-        if raced is None:
-            raise
-        return _response(raced), False
-    return _response(task), True
-
-
-async def get_video_task(session: AsyncSession, user_id: str, task_id: str) -> VideoTaskResponse | None:
-    task = await session.scalar(
-        select(VideoGenerationTask).where(
-            VideoGenerationTask.id == task_id,
-            VideoGenerationTask.user_id == user_id,
-        )
-    )
-    return _response(task) if task is not None else None
-
-
-async def get_video_task_by_idempotency_key(
-    session: AsyncSession,
-    user_id: str,
-    idempotency_key: str,
-) -> VideoTaskResponse | None:
-    task = await session.scalar(
-        select(VideoGenerationTask).where(
-            VideoGenerationTask.user_id == user_id,
-            VideoGenerationTask.idempotency_key == idempotency_key,
-        )
-    )
-    return _response(task) if task is not None else None
-
-
-def video_task_matches_submission(task: VideoTaskResponse, submission: VideoTaskSubmitForm) -> bool:
-    try:
-        _definition, _provider_payload, safe_params = build_video_provider_payload(submission)
-    except Exception:
-        return False
-    return bool(
-        task.task == submission.task
-        and task.model_id == submission.model
-        and task.prompt == submission.prompt
-        and task.assets == submission.assets
-        and task.params == safe_params
-    )
-
-
-async def list_video_tasks(
-    session: AsyncSession,
-    user_id: str,
-    limit: int,
-    cursor: str | None = None,
-    since: int | None = None,
-) -> VideoTaskListResponse:
-    statement = select(VideoGenerationTask).where(VideoGenerationTask.user_id == user_id)
-    # 创作页只展示最近 7 天的任务，更早的需到「我的作品」里查看。
-    # 进行中的任务（queued/running）不受时间窗限制，避免轮询时被过滤掉而看不到进度。
-    if since is not None:
-        statement = statement.where(
-            or_(
-                VideoGenerationTask.created_at >= since,
-                VideoGenerationTask.status.in_(['queued', 'running']),
-            )
-        )
-    if cursor:
-        cursor_created_at, cursor_id = decode_keyset_cursor(cursor)
-        statement = statement.where(
-            or_(
-                VideoGenerationTask.created_at < cursor_created_at,
-                and_(
-                    VideoGenerationTask.created_at == cursor_created_at,
-                    VideoGenerationTask.id < cursor_id,
-                ),
-            )
-        )
-    rows = (
-        (
-            await session.execute(
-                statement.order_by(
-                    desc(VideoGenerationTask.created_at),
-                    desc(VideoGenerationTask.id),
-                ).limit(limit + 1)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    page = rows[:limit]
-    next_cursor = encode_keyset_cursor(page[-1].created_at, page[-1].id) if len(rows) > limit and page else None
-    return VideoTaskListResponse(
-        items=tuple(_response(item) for item in page),
-        next_cursor=next_cursor,
-    )
-
-
-async def delete_video_task(session: AsyncSession, user_id: str, task_id: str) -> bool:
-    result = await session.execute(
-        delete(VideoGenerationTask).where(
-            VideoGenerationTask.id == task_id,
-            VideoGenerationTask.user_id == user_id,
-        )
-    )
-    await session.commit()
-    return bool(result.rowcount)
+def _task_has_provider_submission(row: VideoGenerationTask) -> bool:
+    """FAL 是否已受理过该任务的请求（存在任一持久化提交状态即视为已受理）。"""
+    return bool(row.provider_request_id or row.provider_response_url or row.provider_result_url)
 
 
 async def _set_task_state(
@@ -434,326 +184,6 @@ async def _increment_delivery_attempts(task_id: str) -> None:
         await session.commit()
 
 
-async def _upload_mock_file(
-    request: Request,
-    user: object,
-    source: Path | bytes,
-    filename: str,
-    content_type: str,
-):
-    """Upload an in-memory mock asset through the upstream file handler.
-
-    ``source`` may be a ``Path`` (read on a thread to avoid blocking the event
-    loop) or raw ``bytes`` already resident in memory (e.g. a Pexels clip).
-    """
-    return await _upload_video_file(
-        request,
-        user,
-        source,
-        filename,
-        content_type,
-        metadata={'video_generation_mock': True},
-    )
-
-
-async def _upload_video_file(
-    request: Request,
-    user: object,
-    source: Path | bytes,
-    filename: str,
-    content_type: str,
-    *,
-    metadata: dict[str, object],
-):
-    global upload_file_handler
-    if upload_file_handler is None:
-        from open_webui.routers.files import upload_file_handler as upstream_upload_file_handler
-
-        upload_file_handler = upstream_upload_file_handler
-
-    if isinstance(source, (bytes, bytearray)):
-        stream = io.BytesIO(bytes(source))
-    else:
-        stream = source.open('rb')
-    try:
-        return await upload_file_handler(
-            request,
-            file=UploadFile(
-                file=stream,
-                filename=filename,
-                headers={'content-type': content_type},
-            ),
-            metadata=metadata,
-            process=False,
-            user=user,
-        )
-    finally:
-        stream.close()
-
-
-def _duration_seconds(params: dict[str, object]) -> int:
-    value = params.get('duration', '5')
-    try:
-        return max(1, round(float(value)))
-    except (TypeError, ValueError):
-        return 5
-
-
-async def _finalize_mock_video(
-    request: Request,
-    user: object,
-    task: VideoTaskResponse,
-    session: AsyncSession,
-) -> dict[str, object]:
-    # Try the Pexels mock source first: it fetches a fresh random clip from the
-    # Pexels Videos API when PEXELS_API_KEY is configured, and returns None when
-    # the key is absent or any fetch/parse fails — in which case we fall back to
-    # the bundled static welcome.mp4 / welcome.webp assets so the mock path
-    # keeps working without the key. Mock data stays isolated from the default
-    # production path either way; nothing here is wired into real generation.
-    clip = await fetch_pexels_mock_clip()
-    if clip is not None:
-        return await _finalize_clip_mock_video(request, user, task, session, clip)
-    if not _MOCK_VIDEO_PATH.is_file() or not _MOCK_POSTER_PATH.is_file():
-        raise RuntimeError('video mock assets are missing')
-    # File uploads commit through their own sessions. Keep these writes sequential so
-    # SQLite does not have to arbitrate two writers for the same generated result.
-    video_file = await _upload_mock_file(request, user, _MOCK_VIDEO_PATH, 'generated-video.mp4', 'video/mp4')
-    poster_file = await _upload_mock_file(
-        request,
-        user,
-        _MOCK_POSTER_PATH,
-        'generated-video-poster.webp',
-        'image/webp',
-    )
-    created_at = int(video_file.created_at or _now())
-    duration = _duration_seconds(task.params)
-    creation_id = uuid4().hex
-    session.add(
-        CreationMediaItem(
-            id=creation_id,
-            user_id=getattr(user, 'id'),
-            kind='video',
-            file_id=video_file.id,
-            poster_file_id=poster_file.id,
-            duration_seconds=duration,
-            caption=None,
-            prompt=task.prompt,
-            negative_prompt=(str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None),
-            model_id=task.model_id,
-            model_name_snapshot=None,
-            task=task.task,
-            params_json=dict(task.params),
-            reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
-            source='web',
-            batch_id=task.id,
-            soft_deleted=False,
-            created_at=created_at,
-            updated_at=created_at,
-        )
-    )
-    await session.flush()
-
-    return VideoTaskResult(
-        creation_id=creation_id,
-        file_id=video_file.id,
-        poster_file_id=poster_file.id,
-        url=str(request.app.url_path_for('get_file_content_by_id', id=video_file.id)),
-        poster_url=str(request.app.url_path_for('get_file_content_by_id', id=poster_file.id)),
-        duration_seconds=duration,
-    ).model_dump()
-
-
-async def _finalize_clip_mock_video(
-    request: Request,
-    user: object,
-    task: VideoTaskResponse,
-    session: AsyncSession,
-    clip: PexelsMockClip,
-) -> dict[str, object]:
-    """Persist a Pexels-sourced mock clip through the same creation pipeline.
-
-    If Pexels returned a poster image we use it verbatim; otherwise we synthesize
-    a webp poster from the first frame of the downloaded video via pyav/Pillow.
-    """
-    poster_bytes = clip.poster_bytes
-    poster_content_type = clip.poster_content_type or 'image/jpeg'
-    if not poster_bytes:
-        synthesized = extract_poster_from_video(clip.video_bytes)
-        if synthesized is not None:
-            poster_bytes, poster_content_type = synthesized
-        else:
-            # No Pexels poster and frame extraction unavailable — fall back to the
-            # static welcome poster so the result still has a preview image.
-            if not _MOCK_POSTER_PATH.is_file():
-                raise RuntimeError('video mock assets are missing')
-            poster_bytes = await asyncio.to_thread(_MOCK_POSTER_PATH.read_bytes)
-            poster_content_type = 'image/webp'
-
-    if poster_content_type == 'image/jpeg':
-        poster_filename_ext = 'generated-video-poster.jpg'
-    elif poster_content_type == 'image/webp':
-        poster_filename_ext = 'generated-video-poster.webp'
-    else:
-        poster_filename_ext = 'generated-video-poster.bin'
-
-    # File uploads commit through their own sessions. Keep these writes sequential so
-    # SQLite does not have to arbitrate two writers for the same generated result.
-    video_file = await _upload_mock_file(request, user, clip.video_bytes, 'generated-video.mp4', 'video/mp4')
-    poster_file = await _upload_mock_file(request, user, poster_bytes, poster_filename_ext, poster_content_type)
-    created_at = int(video_file.created_at or _now())
-    # Prefer the real clip duration reported by Pexels; fall back to the task's
-    # configured duration when the API omits it.
-    duration = clip.duration_seconds or _duration_seconds(task.params)
-    creation_id = uuid4().hex
-    session.add(
-        CreationMediaItem(
-            id=creation_id,
-            user_id=getattr(user, 'id'),
-            kind='video',
-            file_id=video_file.id,
-            poster_file_id=poster_file.id,
-            duration_seconds=duration,
-            caption=None,
-            prompt=task.prompt,
-            negative_prompt=(str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None),
-            model_id=task.model_id,
-            model_name_snapshot=None,
-            task=task.task,
-            params_json=dict(task.params),
-            reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
-            source='web',
-            batch_id=task.id,
-            soft_deleted=False,
-            created_at=created_at,
-            updated_at=created_at,
-        )
-    )
-    await session.flush()
-
-    return VideoTaskResult(
-        creation_id=creation_id,
-        file_id=video_file.id,
-        poster_file_id=poster_file.id,
-        url=str(request.app.url_path_for('get_file_content_by_id', id=video_file.id)),
-        poster_url=str(request.app.url_path_for('get_file_content_by_id', id=poster_file.id)),
-        duration_seconds=duration,
-    ).model_dump()
-
-
-async def _finalize_real_video(
-    request: Request,
-    user: object,
-    task: VideoTaskResponse,
-    session: AsyncSession,
-    output: VideoExecutionOutput,
-) -> dict[str, object]:
-    uploaded_files: list[object] = []
-    try:
-        poster = await asyncio.to_thread(extract_poster_from_video, output.video_path)
-        if poster is None:
-            if not _MOCK_POSTER_PATH.is_file():
-                raise VideoExecutionError('video_poster_generation_failed', provider_completed=True)
-            poster_bytes = await asyncio.to_thread(_MOCK_POSTER_PATH.read_bytes)
-            poster_content_type = 'image/webp'
-        else:
-            poster_bytes, poster_content_type = poster
-        poster_filename = (
-            'generated-video-poster.jpg' if poster_content_type == 'image/jpeg' else 'generated-video-poster.webp'
-        )
-        metadata = {'video_generation_provider': 'fal', 'video_generation_mock': False}
-        video_file = await _upload_video_file(
-            request,
-            user,
-            output.video_path,
-            'generated-video.mp4',
-            output.content_type,
-            metadata=metadata,
-        )
-        uploaded_files.append(video_file)
-        poster_file = await _upload_video_file(
-            request,
-            user,
-            poster_bytes,
-            poster_filename,
-            poster_content_type,
-            metadata=metadata,
-        )
-        uploaded_files.append(poster_file)
-        created_at = int(video_file.created_at or _now())
-        duration = output.duration_seconds or _duration_seconds(task.params)
-        creation_id = uuid4().hex
-        session.add(
-            CreationMediaItem(
-                id=creation_id,
-                user_id=getattr(user, 'id'),
-                kind='video',
-                file_id=video_file.id,
-                poster_file_id=poster_file.id,
-                duration_seconds=duration,
-                caption=None,
-                prompt=task.prompt,
-                negative_prompt=(str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None),
-                model_id=task.model_id,
-                model_name_snapshot=None,
-                task=task.task,
-                params_json=dict(task.params),
-                reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
-                source='web',
-                batch_id=task.id,
-                soft_deleted=False,
-                created_at=created_at,
-                updated_at=created_at,
-            )
-        )
-        await session.flush()
-        return VideoTaskResult(
-            creation_id=creation_id,
-            file_id=video_file.id,
-            poster_file_id=poster_file.id,
-            url=str(request.app.url_path_for('get_file_content_by_id', id=video_file.id)),
-            poster_url=str(request.app.url_path_for('get_file_content_by_id', id=poster_file.id)),
-            duration_seconds=duration,
-        ).model_dump()
-    except asyncio.CancelledError as error:
-        setattr(error, 'provider_completed', True)
-        await _cleanup_generated_files(uploaded_files)
-        raise
-    except Exception as error:
-        await _cleanup_generated_files(uploaded_files)
-        if isinstance(error, VideoExecutionError):
-            raise
-        raise VideoExecutionError('video_delivery_failed', str(error), provider_completed=True) from error
-
-
-async def _cleanup_generated_files(files: list[object]) -> None:
-    for file in reversed(files):
-        file_id = getattr(file, 'id', None)
-        file_path = getattr(file, 'path', None)
-        if isinstance(file_path, str) and file_path:
-            try:
-                await asyncio.to_thread(Storage.delete_file, file_path)
-            except Exception:
-                log.exception('Could not remove orphaned generated file payload %s', file_id)
-        if isinstance(file_id, str) and file_id:
-            try:
-                await Files.delete_file_by_id(file_id)
-            except Exception:
-                log.exception('Could not remove orphaned generated file row %s', file_id)
-
-
-async def _cleanup_result_files(result: dict[str, object] | None) -> None:
-    if result is None:
-        return
-    files = []
-    for key in ('file_id', 'poster_file_id'):
-        file_id = result.get(key)
-        if isinstance(file_id, str):
-            file = await Files.get_file_by_id(file_id)
-            if file is not None:
-                files.append(file)
-    await _cleanup_generated_files(files)
-
 
 async def run_video_task(  # noqa: C901 - terminal billing and cancellation states must remain coordinated
     task_id: str,
@@ -765,14 +195,21 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
     result: dict[str, object] | None = None
     usage_succeeded = False
     output: VideoExecutionOutput | None = None
+    heartbeat: asyncio.Task | None = None
     try:
         await _set_task_state(task_id, 'running')
         await _publish_video_task_event(request.app, task_id, user_id, 'running')
         async with creation_session() as session:
-            task = await get_video_task(session, getattr(user, 'id', ''), task_id)
-        if task is None:
+            row = await session.scalar(
+                select(VideoGenerationTask).where(
+                    VideoGenerationTask.id == task_id,
+                    VideoGenerationTask.user_id == getattr(user, 'id', ''),
+                )
+            )
+        if row is None:
             return
-        executor = resolve_video_executor(request)
+        task = _response(row)
+        executor = await resolve_video_executor()
         begin = await begin_video_usage(user, task, execution_mode=executor.mode)
         if begin.outcome != 'new':
             raise RuntimeError(f'unexpected video usage outcome: {begin.outcome}')
@@ -780,31 +217,24 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
         await _set_task_usage_id(task_id, usage_id, executor.mode)
         await mark_video_usage_invoking(usage_id)
         if isinstance(executor, FalVideoExecutor):
-            submission = VideoTaskSubmitForm(
-                task=task.task,
-                model=task.model_id,
-                prompt=task.prompt,
-                assets=task.assets,
-                params=task.params,
-            )
+            submission = _submission_from_task(task)
             definition, provider_payload, _safe_params = build_video_provider_payload(submission)
+            # 心跳必须覆盖 invoke 与 finalize 两阶段：finalize 的两轮上传对大
+            # 视频可能超过 15 分钟 stale 阈值，只在 invoke 期间心跳会让 usage
+            # 被回收成 unknown → 成功转移写 0 行 → 已上传的付费视频被清理。
             heartbeat = asyncio.create_task(
                 heartbeat_video_usage(usage_id),
                 name=f'video-usage-heartbeat:{usage_id}',
             )
-            try:
-                output = await executor.invoke(
-                    request,
-                    user,
-                    task,
-                    definition,
-                    provider_payload,
-                    on_submitted=lambda payload: _persist_provider_submission(task_id, payload),
-                    on_result_url=lambda url: _persist_provider_result_for_delivery(task_id, url),
-                )
-            finally:
-                heartbeat.cancel()
-                await asyncio.gather(heartbeat, return_exceptions=True)
+            output = await executor.invoke(
+                request,
+                user,
+                task,
+                definition,
+                provider_payload,
+                on_submitted=lambda payload: _persist_provider_submission(task_id, payload),
+                on_result_url=lambda url: _persist_provider_result_for_delivery(task_id, url),
+            )
         else:
             await _run_mock_scenario()
         async with credit_session() as terminal_session, terminal_session.begin():
@@ -902,9 +332,7 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
             log.exception('Could not publish failed video task %s', task_id)
     except VideoExecutionError as error:
         log.exception('Video generation task %s failed with %s', task_id, error.code)
-        if usage_id is not None and (
-            error.provider_completed or (error.provider_submitted and error.retryable)
-        ):
+        if usage_id is not None and (error.provider_completed or (error.provider_submitted and error.retryable)):
             # FAL has completed or accepted a request whose response is
             # uncertain. Keep the task recoverable and retry only polling,
             # response fetch, download, or local delivery; never submit again.
@@ -973,6 +401,11 @@ async def run_video_task(  # noqa: C901 - terminal billing and cancellation stat
         except Exception:
             log.exception('Could not publish failed video task %s', task_id)
     finally:
+        if heartbeat is not None:
+            # 兜底取消：成功转移完成、异常处理结束后心跳不再有意义
+            #（usage 已离开 invoking，下一次 touch 返回 0 会自行退出）。
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
         if output is not None:
             try:
                 await asyncio.to_thread(output.video_path.unlink, missing_ok=True)
@@ -1013,6 +446,7 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
     usage_id: str | None = None
     result: dict[str, object] | None = None
     usage_succeeded = False
+    heartbeat: asyncio.Task | None = None
     try:
         async with creation_session() as session:
             row = await session.scalar(select(VideoGenerationTask).where(VideoGenerationTask.id == task_id))
@@ -1050,35 +484,30 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
         if row.execution_mode == 'mock':
             await _run_mock_scenario()
         elif row.execution_mode == 'fal':
-            executor = resolve_video_executor(request)
+            if row.delivery_attempts >= _VIDEO_DELIVERY_MAX_ATTEMPTS:
+                # 反复投递/轮询失败（如签名 URL 过期且无法刷新）：转终态，
+                # 不让 60 秒恢复循环无限重试、预扣积分永久占用。
+                raise VideoExecutionError('video_delivery_attempts_exceeded')
+            executor = await resolve_video_executor()
             if not isinstance(executor, FalVideoExecutor):
                 raise VideoExecutionError('video_fal_not_configured', retryable=True)
-            submission = VideoTaskSubmitForm(
-                task=task.task,
-                model=task.model_id,
-                prompt=task.prompt,
-                assets=task.assets,
-                params=task.params,
-            )
+            submission = _submission_from_task(task)
             definition, _provider_payload, _safe_params = build_video_provider_payload(submission)
             await _increment_delivery_attempts(task_id)
+            # 与 run_video_task 相同：心跳覆盖 resume 与 finalize 两阶段。
             heartbeat = asyncio.create_task(
                 heartbeat_video_usage(usage_id),
                 name=f'video-recovery-usage-heartbeat:{usage_id}',
             )
-            try:
-                output = await executor.resume(
-                    task,
-                    definition,
-                    status_url=row.provider_status_url,
-                    response_url=row.provider_response_url,
-                    result_url=row.provider_result_url,
-                    provider_request_id=row.provider_request_id,
-                    on_result_url=lambda url: _persist_provider_result_url(task_id, url),
-                )
-            finally:
-                heartbeat.cancel()
-                await asyncio.gather(heartbeat, return_exceptions=True)
+            output = await executor.resume(
+                task,
+                definition,
+                status_url=row.provider_status_url,
+                response_url=row.provider_response_url,
+                result_url=row.provider_result_url,
+                provider_request_id=row.provider_request_id,
+                on_result_url=lambda url: _persist_provider_result_url(task_id, url),
+            )
         else:
             raise VideoExecutionError('video_recovery_state_missing')
 
@@ -1105,13 +534,38 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
             await _set_task_state(task_id, 'running', error_code='video_delivery_pending')
             return
         if usage_id is not None:
-            await mark_video_usage_failed(
-                usage_id,
-                error.code,
-                restore_prepaid=False,
-            )
+            # 恢复状态缺失 ⇒ 无法确认 FAL 是否受理过该请求。与在线路径
+            # 语义对齐：供应商受理未确认即退款（在线检出同类失败会即时
+            # 退款）；已持久化提交状态（FAL 已受理）则保留预扣，交由
+            # 对账修复流程处理。
+            restore_prepaid = error.code == 'video_recovery_state_missing' and not _task_has_provider_submission(row)
+            try:
+                await mark_video_usage_failed(
+                    usage_id,
+                    error.code,
+                    restore_prepaid=restore_prepaid,
+                )
+            except Exception:
+                # 计费清理失败不能阻止任务终态写入（与 run_video_task 一致）。
+                log.exception('Could not fail usage for video recovery task %s', task_id)
         await _set_task_state(task_id, 'failed', error_code=error.code)
         await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=error.code)
+    except VideoInputError as error:
+        # 模型下架/参数不再受支持（catalog 变更）：交付永远无法完成，必须
+        # 转终态；留在 running 会让 60 秒恢复循环无限重试。
+        code = f'video_input_rejected:{error}'[:64]
+        log.warning('Video recovery task %s rejected by catalog: %s', task_id, error)
+        if usage_id is not None:
+            try:
+                await mark_video_usage_failed(
+                    usage_id,
+                    code,
+                    restore_prepaid=not _task_has_provider_submission(row),
+                )
+            except Exception:
+                log.exception('Could not fail usage for video recovery task %s', task_id)
+        await _set_task_state(task_id, 'failed', error_code=code)
+        await _publish_video_task_event(request.app, task_id, user_id, 'failed', error_code=code)
     except Exception:
         log.exception('Video recovery task %s failed', task_id)
         if usage_succeeded and result is not None:
@@ -1124,6 +578,9 @@ async def recover_video_task(task_id: str, request: Request, user: object) -> No
         await _cleanup_result_files(result)
         await _set_task_state(task_id, 'running', error_code='video_delivery_pending')
     finally:
+        if heartbeat is not None:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
         if output is not None:
             try:
                 await asyncio.to_thread(output.video_path.unlink, missing_ok=True)
@@ -1198,6 +655,50 @@ def schedule_video_recovery_task(request: Request, task_id: str, user: object) -
     return True
 
 
+async def _queued_task_rejection_code(row: VideoGenerationTask, user: object) -> str | None:
+    """排队任务恢复前的重新准入检查，返回拒绝错误码（None 表示放行调度）。
+
+    崩溃时排队任务尚未扣费，模型开关、FAL 限价或定价随后可能已调整：
+    恢复必须按当前配置重新校验（与提交路径一致的检查），而不是直接按
+    旧任务参数扣费。余额不足/价格未配置/执行器暂时不可用等非准入性
+    原因也返回 None 放行——由 run_video_task 的 begin_usage 走既有
+    CreditError 终态失败路径，排队任务不无限滞留。
+    """
+    try:
+        async with get_async_db() as model_session:
+            await ensure_model_enabled(model_session, row.model_id, media_kind='video')
+    except HTTPException as error:
+        detail = error.detail
+        code = detail.get('code') if isinstance(detail, dict) else None
+        return str(code or 'video_model_unavailable')[:64]
+    except Exception:
+        # 开关查询失败按暂时性处理，避免误杀可恢复的排队任务。
+        log.exception('Could not verify video model availability for queued task %s', row.id)
+        return None
+    try:
+        quote = await quote_video_usage(user, _submission_from_task(_response(row)))
+    except VideoInputError:
+        # 模型已从目录移除：交付永远无法完成，转终态。
+        return 'unknown_video_model'
+    except CreditError as error:
+        log.info(
+            'Queued video task %s passed admission (quote error %s; terminal handling left to run path)',
+            row.id,
+            error.code,
+        )
+        return None
+    try:
+        executor = await resolve_video_executor()
+    except VideoExecutionError:
+        return None
+    if isinstance(executor, FalVideoExecutor):
+        try:
+            enforce_fal_video_policy(model_id=row.model_id, charged_credits=quote.charged_credits or 0)
+        except VideoExecutionError as error:
+            return error.code
+    return None
+
+
 async def recover_incomplete_video_tasks(request: Request) -> int:
     async with creation_session() as session:
         rows = (
@@ -1217,6 +718,11 @@ async def recover_incomplete_video_tasks(request: Request) -> int:
         if user is None:
             await _set_task_state(row.id, 'failed', error_code='video_user_not_found')
             continue
+        if row.status == 'queued':
+            rejection = await _queued_task_rejection_code(row, user)
+            if rejection is not None:
+                await _set_task_state(row.id, 'failed', error_code=rejection)
+                continue
         try:
             await acquire_video_generation_slot(row.user_id)
         except CreditError:
@@ -1239,14 +745,8 @@ async def shutdown_video_tasks(app) -> None:
 
 
 __all__ = [
-    'create_video_task',
-    'delete_video_task',
-    'get_video_task',
-    'get_video_task_by_idempotency_key',
-    'list_video_tasks',
     'recover_incomplete_video_tasks',
     'recover_video_task',
     'schedule_video_task',
     'shutdown_video_tasks',
-    'video_task_matches_submission',
 ]

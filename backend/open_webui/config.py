@@ -1485,6 +1485,11 @@ FAL_API_BASE_URL = os.getenv('FAL_API_BASE_URL', 'https://queue.fal.run')
 FAL_API_KEY = os.getenv('FAL_API_KEY', os.getenv('FAL_KEY', ''))
 FAL_ADMIN_API_KEY = os.getenv('FAL_ADMIN_API_KEY', '')
 
+# EXT: 二开新增 —— FAL mock 开关（运营中心管理，默认关闭即真实 API）
+FAL_MOCK_ENABLED = os.getenv('FAL_MOCK_ENABLED', '').lower() == 'true'
+VIDEO_GENERATION_FAL_API_KEY = os.getenv('VIDEO_GENERATION_FAL_API_KEY', FAL_API_KEY)
+VIDEO_GENERATION_FAL_MOCK_ENABLED = os.getenv('VIDEO_GENERATION_FAL_MOCK_ENABLED', '').lower() == 'true'
+
 ENABLE_IMAGE_EDIT = os.getenv('ENABLE_IMAGE_EDIT', '').lower() == 'true'
 
 IMAGE_EDIT_ENGINE = os.getenv('IMAGE_EDIT_ENGINE', 'openai')
@@ -3004,6 +3009,9 @@ DEFAULT_CONFIG = {
     'image_generation.gemini.endpoint_method': IMAGES_GEMINI_ENDPOINT_METHOD,
     'image_generation.fal.api_base_url': FAL_API_BASE_URL,
     'image_generation.fal.api_key': FAL_API_KEY,
+    'image_generation.fal.mock_enabled': FAL_MOCK_ENABLED,
+    'video_generation.fal.api_key': VIDEO_GENERATION_FAL_API_KEY,
+    'video_generation.fal.mock_enabled': VIDEO_GENERATION_FAL_MOCK_ENABLED,
     'provider_ops.fal.admin_api_key': FAL_ADMIN_API_KEY,
     'images.edit.enable': ENABLE_IMAGE_EDIT,
     'images.edit.engine': IMAGE_EDIT_ENGINE,

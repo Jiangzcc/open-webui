@@ -1,38 +1,23 @@
 from __future__ import annotations
 
-import asyncio
-
-import pytest
-from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.images import limits
 
 
-def test_per_user_concurrency_limit_and_release(monkeypatch) -> None:
-    monkeypatch.setattr(limits, 'IMAGE_GENERATION_MAX_CONCURRENT_PER_USER', 2)
-    limits._active_by_user.clear()
+def test_rate_check_uses_image_bucket(monkeypatch) -> None:
+    # 图片限流使用独立的 images: 命名桶，不能与视频 videos: 桶共享配额。
+    captured: list[str] = []
 
-    async def scenario() -> None:
-        await limits.acquire_image_generation_slot('user-1')
-        await limits.acquire_image_generation_slot('user-1')
-        with pytest.raises(CreditError) as raised:
-            await limits.acquire_image_generation_slot('user-1')
-        assert raised.value.code == 'rate_limited'
+    def fake_is_limited(key: str) -> bool:
+        captured.append(key)
+        return False
 
-        # Limits are isolated by authenticated user ID.
-        await limits.acquire_image_generation_slot('user-2')
-        await limits.release_image_generation_slot('user-1')
-        await limits.acquire_image_generation_slot('user-1')
-        await limits.release_image_generation_slot('user-1')
-        await limits.release_image_generation_slot('user-1')
-        await limits.release_image_generation_slot('user-2')
-
-    asyncio.run(scenario())
-    assert limits._active_by_user == {}
+    monkeypatch.setattr(limits._gate._limiter, 'is_limited', fake_is_limited)
+    limits.enforce_image_generation_rate('user-1')
+    assert captured == ['images:generation:user-1']
 
 
-def test_request_rate_limit_returns_public_rate_limited_error(monkeypatch) -> None:
-    monkeypatch.setattr(limits._request_limiter, 'is_limited', lambda _key: True)
-    with pytest.raises(CreditError) as raised:
-        limits.enforce_image_generation_rate('user-1')
-    assert raised.value.code == 'rate_limited'
-    assert raised.value.status_code == 429
+def test_module_exports_delegate_to_gate() -> None:
+    assert limits._gate._bucket_prefix == 'images:generation'
+    assert limits.acquire_image_generation_slot == limits._gate.acquire_slot
+    assert limits.release_image_generation_slot == limits._gate.release_slot
+    assert limits.enforce_image_generation_rate == limits._gate.enforce_rate

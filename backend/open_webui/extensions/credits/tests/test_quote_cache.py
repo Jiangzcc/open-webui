@@ -5,12 +5,15 @@ from open_webui.extensions.credits import quote_cache
 from open_webui.extensions.credits.constants import CREDIT_QUOTE_CACHE_TTL_SECONDS
 
 
-@pytest.mark.asyncio
-async def test_memory_fallback_stores_and_reads_within_ttl(monkeypatch) -> None:
-    # 强制走进程内降级路径（Redis 不可用时）。
-    monkeypatch.setattr(quote_cache, '_async_redis', None)
-    quote_cache.clear_quote_cache_for_test()
+@pytest.fixture(autouse=True)
+def clean_cache():
+    quote_cache.memory_cache().clear()
+    yield
+    quote_cache.memory_cache().clear()
 
+
+@pytest.mark.asyncio
+async def test_cache_stores_and_reads_within_ttl() -> None:
     cache_key = ('user-1', 'price-a', 'text-to-image:abc', 1)
     response = {
         'balance': 100,
@@ -31,10 +34,7 @@ async def test_memory_fallback_stores_and_reads_within_ttl(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_memory_fallback_expires_after_ttl(monkeypatch) -> None:
-    monkeypatch.setattr(quote_cache, '_async_redis', None)
-    quote_cache.clear_quote_cache_for_test()
-
+async def test_cache_expires_after_ttl() -> None:
     cache_key = ('user-1', 'price-a', 'text-to-image:abc', 1)
     await quote_cache.cache_quote(cache_key, {'charged_credits': 5, 'balance': 100}, now=100.0)
 
@@ -48,9 +48,7 @@ async def test_memory_fallback_expires_after_ttl(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_memory_fallback_bounded_eviction(monkeypatch) -> None:
-    monkeypatch.setattr(quote_cache, '_async_redis', None)
-    quote_cache.clear_quote_cache_for_test()
+async def test_cache_bounded_eviction(monkeypatch) -> None:
     monkeypatch.setattr(quote_cache, 'CREDIT_QUOTE_CACHE_MAX_ENTRIES', 2)
 
     await quote_cache.cache_quote(('u', 'p1', 'a:1', 1), {'charged_credits': 1}, now=1.0)
@@ -60,88 +58,3 @@ async def test_memory_fallback_bounded_eviction(monkeypatch) -> None:
 
     assert await quote_cache.get_cached_quote(('u', 'p1', 'a:1', 1), 0, 3.0) is None
     assert await quote_cache.get_cached_quote(('u', 'p3', 'a:3', 1), 0, 3.0) is not None
-
-
-class _FakeRedis:
-    """模拟 Redis 客户端：内存 dict + setex 语义。"""
-
-    def __init__(self) -> None:
-        self.store: dict[str, str] = {}
-        # _ttl 必须是实例级属性，避免多个 _FakeRedis 实例共享同一个 dict。
-        self._ttl: dict[str, int] = {}
-
-    async def setex(self, key: str, ttl: int, value: str) -> None:
-        self.store[key] = value
-        self._ttl[key] = ttl
-
-    async def get(self, key: str) -> str | None:
-        return self.store.get(key)
-
-
-@pytest.mark.asyncio
-async def test_redis_path_round_trips_through_json(monkeypatch) -> None:
-    # 模拟 Redis 可用：验证缓存值经 JSON 序列化往返后仍可还原。
-    fake = _FakeRedis()
-    monkeypatch.setattr(quote_cache, '_async_redis', fake)
-    quote_cache.clear_quote_cache_for_test()
-
-    cache_key = ('user-1', 'price-a', 'text-to-image:abc', 1)
-    response = {
-        'balance': 100,
-        'sufficient': True,
-        'charged_credits': 7,
-        'configured': True,
-        'factors': [],
-        'error': None,
-    }
-    await quote_cache.cache_quote(cache_key, response, now=200.0)
-
-    # Redis key 应被写入。
-    assert any('webui:credits:quote:' in k for k in fake.store)
-    cached = await quote_cache.get_cached_quote(cache_key, balance=50, now=200.5)
-    assert cached is not None
-    assert cached['balance'] == 50  # 实时余额覆写
-    assert cached['sufficient'] is True
-    assert cached['charged_credits'] == 7  # 缓存的计费值保留
-
-
-@pytest.mark.asyncio
-async def test_redis_miss_does_not_return_worker_local_value(monkeypatch) -> None:
-    fake = _FakeRedis()
-    monkeypatch.setattr(quote_cache, '_async_redis', fake)
-    quote_cache.clear_quote_cache_for_test()
-
-    cache_key = ('user-1', 'price-a', 'text-to-image:abc', 1)
-    quote_cache._memory_cache[cache_key] = (999.0, {'charged_credits': 99})
-
-    assert await quote_cache.get_cached_quote(cache_key, balance=100, now=200.0) is None
-
-
-def test_redis_key_encodes_ambiguous_segments_without_collision() -> None:
-    first = quote_cache._redis_key(('user:a', 'price', 'action:hash', 1))
-    second = quote_cache._redis_key(('user', 'a:price', 'action:hash', 1))
-
-    assert first != second
-    assert first.startswith('webui:credits:quote:')
-
-
-@pytest.mark.asyncio
-async def test_redis_unavailable_falls_back_to_memory_silently(monkeypatch) -> None:
-    # Redis 抛异常时应降级到内存，不抛错。
-    class _BrokenRedis:
-        async def get(self, *_a, **_kw):
-            raise RuntimeError('redis down')
-
-        async def setex(self, *_a, **_kw):
-            raise RuntimeError('redis down')
-
-    monkeypatch.setattr(quote_cache, '_async_redis', _BrokenRedis())
-    quote_cache.clear_quote_cache_for_test()
-
-    cache_key = ('user-1', 'price-a', 'text-to-image:abc', 1)
-    # 写应走内存降级（setex 抛异常被吞）。
-    await quote_cache.cache_quote(cache_key, {'charged_credits': 9, 'balance': 100}, now=300.0)
-    # 读也应降级到内存（get 抛异常被吞，None 后查内存）。
-    cached = await quote_cache.get_cached_quote(cache_key, balance=100, now=300.5)
-    assert cached is not None
-    assert cached['charged_credits'] == 9

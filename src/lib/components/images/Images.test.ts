@@ -2,61 +2,72 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
-const source = readFileSync(fileURLToPath(new URL('./Images.svelte', import.meta.url)), 'utf-8');
+const read = (relative: string) =>
+	readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf-8');
+
+// 拆分后页面源码分布在多个文件：主页面（状态/提交/轮询）、表单（模型/参数/
+// 选项面板）、结果卡片（batch 展示）与共享的幂等键实现。
+const source = read('./Images.svelte');
+const form = read('./ImagePromptForm.svelte');
+const card = read('./ImageBatchCard.svelte');
+const idempotency = read('../../utils/submission-idempotency.ts');
+const all = [source, form, card, idempotency].join('\n');
 
 describe('images page controls', () => {
 	test('does not expose user cancellation for image generation tasks', () => {
-		expect(source).not.toContain('cancelImageGenerationTask');
-		expect(source).not.toContain('cancelGenerationBatch');
-		expect(source).not.toContain("$i18n.t('Cancel generation')");
+		expect(all).not.toContain('cancelImageGenerationTask');
+		expect(all).not.toContain('cancelGenerationBatch');
+		expect(all).not.toContain("$i18n.t('Cancel generation')");
 	});
 
 	test('uses concise option headings and omits generation mode helper text', () => {
-		expect(source).toContain("$i18n.t('Ratio')");
-		expect(source).toContain("$i18n.t('Resolution')");
-		expect(source).toContain("$i18n.t('Quantity')");
-		expect(source).not.toContain("$i18n.t('Select aspect ratio')");
-		expect(source).not.toContain(': modeLabel}');
+		expect(form).toContain("$i18n.t('Ratio')");
+		expect(form).toContain("$i18n.t('Resolution')");
+		expect(form).toContain("$i18n.t('Quantity')");
+		expect(all).not.toContain("$i18n.t('Select aspect ratio')");
+		expect(all).not.toContain(': modeLabel}');
 	});
 
 	test('renders only model-advertised advanced controls in a responsive disclosure', () => {
-		expect(source).toContain('{#if hasAdvancedSettings}');
-		expect(source).toContain('aria-controls="image-advanced-settings"');
-		expect(source).toContain('class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"');
-		expect(source).toContain('{#if seedField}');
-		expect(source).toContain('{#if stepsField}');
-		expect(source).toContain('{#if guidanceScaleField}');
-		expect(source).toContain('{#if strengthField}');
-		expect(source).toContain('{#if negativePromptField}');
-		expect(source).not.toContain('enable_safety_checker');
-		expect(source).not.toContain('sync_mode');
+		expect(form).toContain('{#if hasAdvancedSettings}');
+		expect(form).toContain('aria-controls="image-advanced-settings"');
+		expect(form).toContain('class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"');
+		expect(form).toContain('{#if seedField}');
+		expect(form).toContain('{#if stepsField}');
+		expect(form).toContain('{#if guidanceScaleField}');
+		expect(form).toContain('{#if strengthField}');
+		expect(form).toContain('{#if negativePromptField}');
+		expect(all).not.toContain('enable_safety_checker');
+		expect(all).not.toContain('sync_mode');
 	});
 
 	test('keeps advanced touch controls large and blocks invalid numeric submissions', () => {
-		expect(source).toContain('class="flex min-h-11 w-full');
-		expect(source).toContain('class="mt-1 min-h-11 w-full');
-		expect(source).toContain('advancedSettingsInvalid ||');
+		expect(form).toContain('class="flex min-h-11 w-full');
+		expect(form).toContain('class="mt-1 min-h-11 w-full');
+		expect(form).toContain('advancedSettingsInvalid ||');
 		expect(source).toContain("toast.error($i18n.t('Check the advanced settings'))");
 	});
 
 	test('uses auto without ratio or resolution icons in the selected options', () => {
-		const composerStart = source.indexOf(
+		const composerStart = form.indexOf(
 			'class="mt-2 flex min-w-0 items-center justify-between gap-2"'
 		);
-		const composerEnd = source.indexOf('</form>', composerStart);
-		const composer = source.slice(composerStart, composerEnd);
+		const composerEnd = form.indexOf('</form>', composerStart);
+		const composer = form.slice(composerStart, composerEnd);
 
-		expect(source).toContain("ratio === DEFAULT_IMAGE_ASPECT_RATIO ? $i18n.t('Auto') : ratio");
+		// Auto 文案映射集中在 imageLabels.ts，由表单包一层 $i18n.t 渲染。
+		const labels = read('./imageLabels.ts');
+		expect(labels).toContain("ratio === DEFAULT_IMAGE_ASPECT_RATIO ? 'Auto' : ratio");
 		expect(composer).not.toMatch(/getAspectRatioPreviewClass\(\s*selectedAspectRatio\s*\)/);
 		expect(composer).not.toContain('getAspectRatioPreviewStyle(selectedAspectRatio)');
-		expect(source).not.toContain('<ArrowsPointingOut');
-		expect(source).not.toContain('<Grid');
+		expect(all).not.toContain('<ArrowsPointingOut');
+		expect(all).not.toContain('<Grid');
 	});
 
 	test('uses compact illustrative ratio thumbnails instead of exact large ratios', () => {
-		expect(source).toContain('const previewSize = 20;');
-		expect(source).toContain('const minimumPreviewSize = 12;');
-		expect(source).toContain('Math.max(minimumPreviewSize');
+		expect(form).toContain('const previewSize = 20;');
+		expect(form).toContain('const minimumPreviewSize = 12;');
+		expect(form).toContain('Math.max(minimumPreviewSize');
 	});
 
 	test('shows only the model name in the trigger but keeps the provider in popup options', () => {
@@ -64,19 +75,19 @@ describe('images page controls', () => {
 		expect(source).toContain('getImageModelDisplayName(selectedModelConfig)');
 		// popup 选项剥掉厂商前缀只留模型短名(trigger 仍走 getImageModelDisplayName)；
 		// 内联映射现走 stripVendorFromName(model)，由共享 GenerationModelSelector 渲染短名。
-		expect(source).toContain('name: stripVendorFromName(model)');
-		expect(source).not.toContain('getImageModelDisplayName(model)');
+		expect(form).toContain('name: stripVendorFromName(model)');
+		expect(all).not.toContain('getImageModelDisplayName(model)');
 	});
 
 	test('shows operation metadata only while choosing a model', () => {
 		// recommended / tags / maintenance 现作为 SelectableModel 字段传入共享
 		// GenerationModelSelector，由后者内联渲染；页面不再直接写 {#if model.recommended}。
-		expect(source).toContain('recommended: model.recommended');
-		expect(source).toContain('tags: model.tags');
-		expect(source).toContain('maintenance: model.maintenanceMessage');
-		expect(source).not.toContain('selectedModelConfig?.recommended');
-		expect(source).not.toContain('selectedModelConfig?.tags');
-		expect(source).not.toContain('selectedModelConfig?.maintenanceMessage');
+		expect(form).toContain('recommended: model.recommended');
+		expect(form).toContain('tags: model.tags');
+		expect(form).toContain('maintenance: model.maintenanceMessage');
+		expect(all).not.toContain('selectedModelConfig?.recommended');
+		expect(all).not.toContain('selectedModelConfig?.tags');
+		expect(all).not.toContain('selectedModelConfig?.maintenanceMessage');
 	});
 
 	test('mobile page header carries the sidebar toggle and the tabs together', () => {
@@ -88,7 +99,7 @@ describe('images page controls', () => {
 
 		expect(nav).toContain('SidebarIcon');
 		expect(nav).toContain('{@render imageTabs()}');
-		expect(nav).not.toContain('bind:this={modelSelectorElement}');
+		expect(all).not.toContain('bind:this={modelSelectorElement}');
 	});
 
 	test('quotes the selected or default model before a prompt is entered', () => {
@@ -113,6 +124,27 @@ describe('images page controls', () => {
 		expect(submitHandler).not.toContain('toast.error(`${error}`)');
 	});
 
+	test('reuses the idempotency key for retried identical submissions', () => {
+		// 复盘 #6：每次点击生成新 uuid 会让网络失败后的重试变成二次扣费。
+		// 现在与视频端共享 submission-idempotency.ts 工厂：同载荷指纹复用同一键
+		// （内存 + sessionStorage 兜底），成功或收到确定性 4xx（408/429 除外）后清除。
+		expect(idempotency).toContain('const submissionFingerprint = async (payload: object) => {');
+		expect(idempotency).toContain("sessionStorage.getItem(storageKey) ?? 'null'");
+		expect(source).toContain(
+			"const imageSubmissionIdempotency = createSubmissionIdempotency('pending-image-submission')"
+		);
+		expect(source).toContain(
+			'await imageSubmissionIdempotency.idempotencyKeyFor(payload)'
+		);
+		expect(all).not.toContain("payload,\n\t\t\t\tuuidv4()");
+		const submitHandlerStart = source.indexOf('const submitHandler = async () => {');
+		const submitHandlerEnd = source.indexOf('\n\tonMount', submitHandlerStart);
+		const submitHandler = source.slice(submitHandlerStart, submitHandlerEnd);
+		expect(submitHandler).toContain('error instanceof ImageTaskRequestError');
+		expect(submitHandler).toContain('![408, 429].includes(error.status)');
+		expect(submitHandler).toContain('imageSubmissionIdempotency.clearPendingSubmission()');
+	});
+
 	test('replaces the current creation draft without a confirmation dialog', () => {
 		const applyDraftStart = source.indexOf('const applyCreationDraft = async');
 		const applyDraftEnd = source.indexOf('\n\tconst loadRecentGenerationTasks', applyDraftStart);
@@ -120,15 +152,16 @@ describe('images page controls', () => {
 
 		expect(applyDraft).not.toContain('window.confirm');
 		expect(applyDraft).not.toContain("$i18n.t('Replace your current creation draft?')");
-		expect(applyDraft).toContain('prompt = draft.prompt;');
+		// 草稿 prompt 为纯文本，直接应用。
+		expect(applyDraft).toContain('prompt = draft.prompt');
 	});
 
 	test('places the credit quote directly before the submit button on the right', () => {
-		const toolbarStart = source.indexOf(
+		const toolbarStart = form.indexOf(
 			'class="mt-2 flex min-w-0 items-center justify-between gap-2"'
 		);
-		const toolbarEnd = source.indexOf('</form>', toolbarStart);
-		const toolbar = source.slice(toolbarStart, toolbarEnd);
+		const toolbarEnd = form.indexOf('</form>', toolbarStart);
+		const toolbar = form.slice(toolbarStart, toolbarEnd);
 
 		expect(toolbar.indexOf('<ImageCreditQuoteBadge')).toBeGreaterThan(
 			toolbar.indexOf('bind:this={imageOptionsElement}')
@@ -140,17 +173,14 @@ describe('images page controls', () => {
 
 	test('places the model selector above the composer in normal flow and shares the generation button', () => {
 		// 模型选择器从表单内 absolute 定位改为表单上方正常文档流，避免与结果图片重叠。
-		expect(source).not.toContain('absolute bottom-full');
-		expect(source).toContain('mb-2 flex flex-row items-center gap-2');
-		expect(source).toContain('<GenerationModelSelector');
-		expect(source).toContain('<GenerationSubmitButton');
+		expect(all).not.toContain('absolute bottom-full');
+		expect(form).toContain('mb-2 flex flex-row items-center gap-2');
+		expect(form).toContain('<GenerationModelSelector');
+		expect(form).toContain('<GenerationSubmitButton');
 	});
 
 	test('does not render loading text while the credit quote is pending', () => {
-		const badgeSource = readFileSync(
-			fileURLToPath(new URL('../credits/ImageCreditQuoteBadge.svelte', import.meta.url)),
-			'utf-8'
-		);
+		const badgeSource = read('../credits/ImageCreditQuoteBadge.svelte');
 
 		expect(badgeSource).not.toContain("$i18n.t('credits.common.loading')");
 	});
@@ -173,34 +203,32 @@ describe('images page controls', () => {
 	test('sizes completed result cards as fixed square thumbnails in a 4/2 column grid', () => {
 		// 图网格固定列数（宽屏 4 列、窄屏 2 列），单张图尺寸不随数量变化。
 		// 图框 aspect-square + object-cover；无 contain 退路、无按比例定型的旧 style。
-		expect(source).toContain('const getGeneratedImageCardClass = ()');
-		expect(source).toContain('aspect-square w-full');
-		expect(source).toContain('block h-full w-full object-cover');
-		expect(source).not.toContain('block h-full w-full object-contain');
-		expect(source).toMatch(/getCompletedBatchGridClass\(\)/);
-		expect(source).toMatch(/getGeneratedImageFrameClass\(\)/);
-		expect(source).toMatch(/getGeneratedImageClass\(\)/);
-		expect(source).toContain("'grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4'");
+		expect(card).toContain('const getGeneratedImageCardClass = ()');
+		expect(card).toContain('aspect-square w-full');
+		expect(card).toContain('block h-full w-full object-cover');
+		expect(card).not.toContain('block h-full w-full object-contain');
+		expect(card).toMatch(/getCompletedBatchGridClass\(\)/);
+		expect(card).toMatch(/getGeneratedImageFrameClass\(\)/);
+		expect(card).toMatch(/getGeneratedImageClass\(\)/);
+		expect(card).toContain("'grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4'");
 		// 已删除按数量动态算列数与移动端横滚分支。
-		expect(source).not.toContain('getCompletedBatchMobileClass');
-		expect(source).not.toContain('lg:grid-cols-${n}');
+		expect(all).not.toContain('getCompletedBatchMobileClass');
+		expect(all).not.toContain('lg:grid-cols-${n}');
 
-		const completedResultStart = source.indexOf("{#if batch.status === 'succeeded'");
-		const completedResultEnd = source.indexOf('{:else if batch.status', completedResultStart);
-		const completedResult = source.slice(completedResultStart, completedResultEnd);
+		const completedResultStart = card.indexOf("{#if batch.status === 'succeeded'");
+		const completedResultEnd = card.indexOf('{:else if batch.status', completedResultStart);
+		const completedResult = card.slice(completedResultStart, completedResultEnd);
 
 		expect(completedResult).toContain('getGeneratedImageFrameClass()');
 		// aspect-square 在 frame class 定义里；骨架/失败块用 batchSquareStyle（aspect-ratio: 1/1）。
-		expect(source).toContain('aspect-square');
-		expect(source).toContain('style={batchSquareStyle()}');
-		expect(source).not.toContain('style={batchAspectStyle(batch)}');
+		expect(card).toContain('aspect-square');
+		expect(card).toContain('style={batchSquareStyle()}');
+		expect(all).not.toContain('style={batchAspectStyle(batch)}');
 	});
 
 	test('keeps repeated metadata labels from colliding in a keyed each block', () => {
-		expect(source).toContain(
-			'{#each getBatchMetaPills(batch, primaryModels) as pill, index (`${index}-${pill}`)}'
-		);
-		expect(source).not.toContain('{#each getBatchMetaPills(batch, primaryModels) as pill (pill)}');
+		expect(card).toContain('{#each getBatchMetaPills(batch) as pill, index (`${index}-${pill}`)}');
+		expect(card).not.toContain('{#each getBatchMetaPills(batch) as pill (pill)}');
 	});
 
 	test('lifts the three-segment pill out of flow so the library tops out', () => {
@@ -247,9 +275,9 @@ describe('images page controls', () => {
 	});
 
 	test('drops the canUseImagesPage import and reactive gate', () => {
-		expect(source).not.toContain('canUseImagesPage');
-		expect(source).not.toContain('$: canUseImages =');
-		expect(source).not.toContain("$i18n.t('Image generation is not available)");
+		expect(all).not.toContain('canUseImagesPage');
+		expect(all).not.toContain('$: canUseImages =');
+		expect(all).not.toContain("$i18n.t('Image generation is not available)");
 	});
 
 	// --- Task #14: drop binary model filtering so every model stays selectable --
@@ -259,41 +287,41 @@ describe('images page controls', () => {
 	// editModel,反之亦然)也随之拆除,腾出位置给 #15/#16 的灰显与温和降级。
 	test('#14 removes the passive task-flip reactions around referenceImages', () => {
 		// 旧的两组 reaction:选中 t2i 且有参考图 → 强切 editModel;选中 i2i 且无参考图 → 强切 generationModel
-		expect(source).not.toContain(
+		expect(all).not.toContain(
 			"$: if (loaded && selectedModelConfig?.task === 'text-to-image' && referenceImages.length > 0)"
 		);
-		expect(source).not.toContain(
+		expect(all).not.toContain(
 			"$: if (loaded && selectedModelConfig?.task === 'image-to-image' && referenceImages.length === 0)"
 		);
-		expect(source).not.toContain('selectModel(selectedModelConfig.generationModel ?? ');
-		expect(source).not.toContain('? `${selectedModelConfig.id}/edit`');
+		expect(all).not.toContain('selectModel(selectedModelConfig.generationModel ?? ');
+		expect(all).not.toContain('? `${selectedModelConfig.id}/edit`');
 	});
 
 	// --- Task #16: auto-switch to a same-brand enabled model with a toast --------
 	test('shows model base price and proxy latency inline in the model list', () => {
-		// 价格/慢启动现通过 extras 具名槽由页面注入共享 GenerationModelSelector 渲染，
+		// 价格/慢启动现通过 extras 具名槽由表单注入共享 GenerationModelSelector 渲染，
 		// 引用 modelBasePrice(model.raw as ImageGenerationModel) 与对应 i18n。
-		expect(source).toContain('modelBasePrice(model.raw as ImageGenerationModel)');
-		expect(source).toContain("$i18n.t('credits.common.unit')");
-		expect(source).not.toContain("$i18n.t('credits.unit')");
-		expect(source).toContain("$i18n.t('First image may be slower')");
-		expect(source).not.toContain("<Tooltip content={$i18n.t('First image may be slower')}");
+		expect(form).toContain('modelBasePrice(model.raw as ImageGenerationModel)');
+		expect(form).toContain("$i18n.t('credits.common.unit')");
+		expect(all).not.toContain("$i18n.t('credits.unit')");
+		expect(form).toContain("$i18n.t('First image may be slower')");
+		expect(all).not.toContain("<Tooltip content={$i18n.t('First image may be slower')}");
 	});
 
 	test('left-aligns model names in the dropdown options', () => {
 		// 名称占据剩余空间并左对齐,右侧留给价格/慢启动/不支持等徽标;
 		// 按钮不再用 justify-between,否则名称会被挤到中间而不是贴着 Logo。
 		// 「左对齐」样式现内联在共享 GenerationModelSelector 里。
-		expect(source).toContain('<GenerationModelSelector');
-		expect(source).not.toContain('flex w-full items-center justify-between gap-2 rounded-xl');
+		expect(form).toContain('<GenerationModelSelector');
+		expect(all).not.toContain('flex w-full items-center justify-between gap-2 rounded-xl');
 	});
 
 	test('positions the model list from its trigger and respects the mobile visual viewport', () => {
-		const modelStart = source.indexOf('<GenerationModelSelector');
-		const modelEnd = source.indexOf('{#if referenceImages.length > 0}', modelStart);
-		const modelSelector = source.slice(modelStart, modelEnd);
+		const modelStart = form.indexOf('<GenerationModelSelector');
+		const modelEnd = form.indexOf('{#if referenceImages.length > 0}', modelStart);
+		const modelSelector = form.slice(modelStart, modelEnd);
 
-		expect(source).toContain('<GenerationModelSelector');
+		expect(form).toContain('<GenerationModelSelector');
 		// 弹出层宽度已内联在共享 GenerationModelSelector（统一为 32rem 上限），
 		// 页面不再写 w-[min(30rem,...)]；只确认共享组件被引用且无旧 fixed 浮层残留。
 		expect(modelSelector).not.toContain('fixed inset-x-3 bottom-14');
@@ -309,20 +337,20 @@ describe('images page controls', () => {
 
 	test('shows only primary models without foreign-mode dimming or fallback switching', () => {
 		expect(source).toContain('$: availableModels = primaryModels;');
-		expect(source).not.toContain('isModelEnabledForMode');
-		expect(source).not.toContain('pickFallbackModel');
-		expect(source).not.toContain('ensureSelectableModelForMode');
-		expect(source).not.toContain('disabled={!modelEnabled}');
-		expect(source).not.toContain("$i18n.t('Unsupported')");
+		expect(all).not.toContain('isModelEnabledForMode');
+		expect(all).not.toContain('pickFallbackModel');
+		expect(all).not.toContain('ensureSelectableModelForMode');
+		expect(all).not.toContain('disabled={!modelEnabled}');
+		expect(all).not.toContain("$i18n.t('Unsupported')");
 	});
 
 	test('marks primary models that support reference images', () => {
-		expect(source).toContain('supportsImageEditing(model, models)');
-		expect(source).toContain("$i18n.t('Supports reference images')");
+		expect(form).toContain('supportsImageEditing(model.raw as ImageGenerationModel, models)');
+		expect(form).toContain("$i18n.t('Supports reference images')");
 	});
 
 	test('hides and blocks reference uploads for unsupported primary models', () => {
-		expect(source).toContain('{#if selectedModelSupportsEditing}');
+		expect(form).toContain('{#if selectedModelSupportsEditing}');
 		expect(source).toContain('if (!selectedModelSupportsEditing) {\n\t\t\treturn;\n\t\t}');
 		expect(source).toContain('referenceImages = [];');
 		expect(source).toContain(
@@ -331,20 +359,29 @@ describe('images page controls', () => {
 	});
 
 	test('places the model selector above the unchanged reference image strip and textarea', () => {
-		const formStart = source.indexOf('<form');
-		const formEnd = source.indexOf('</form>', formStart);
-		const form = source.slice(formStart, formEnd);
-		expect(form.indexOf('bind:this={modelSelectorElement}')).toBeLessThan(
-			form.indexOf('{#if referenceImages.length > 0}')
+		const formStart = form.indexOf('<form');
+		const formEnd = form.indexOf('</form>', formStart);
+		const formBody = form.slice(formStart, formEnd);
+		expect(formBody.indexOf('<GenerationModelSelector')).toBeLessThan(
+			formBody.indexOf('{#if referenceImages.length > 0}')
 		);
-		expect(form.indexOf('{#if referenceImages.length > 0}')).toBeLessThan(
-			form.indexOf('bind:this={promptTextareaElement}')
+		// 提示词输入框是原生 textarea；点击标签直接插入实际文本。
+		expect(formBody.indexOf('{#if referenceImages.length > 0}')).toBeLessThan(
+			formBody.indexOf('bind:this={promptEditorElement}')
 		);
 	});
 
+	test('inserts tag text into the prompt box on picker click', () => {
+		// 标签退化为快捷提示词片段：点击即把 insert_text 追加进输入框，
+		// 提交/落库都是所见即所得的纯文本。
+		expect(source).toContain('appendPromptText(prompt, text)');
+		expect(source).toContain('const validation = validateImagePrompt(prompt);');
+		expect(all).not.toContain('composePromptWithTags');
+	});
+
 	test('keeps image options, quote, and submit control on one mobile row', () => {
-		expect(source).toContain('mt-2 flex min-w-0 items-center justify-between gap-2');
-		expect(source).not.toContain(
+		expect(form).toContain('mt-2 flex min-w-0 items-center justify-between gap-2');
+		expect(all).not.toContain(
 			'mt-2 flex flex-col gap-2 sm:h-8 sm:flex-row sm:items-center sm:justify-between'
 		);
 	});

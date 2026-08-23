@@ -21,7 +21,7 @@ export type ProviderOverview = {
 };
 
 export type VideoRuntimeStatus = {
-	engine: 'mock' | 'fal' | 'invalid';
+	mock_enabled: boolean;
 	fal_api_key_configured: boolean;
 	allowed_models: string[];
 	max_credits_per_request: number | null;
@@ -29,6 +29,16 @@ export type VideoRuntimeStatus = {
 	result_max_bytes: number;
 	active_task_count: number;
 	configuration_error: string | null;
+};
+
+export type FalRuntimeConfig = {
+	image_generation_api_base_url: string;
+	image_generation_api_key: string;
+	image_edit_api_base_url: string;
+	image_edit_api_key: string;
+	video_api_key: string;
+	image_mock_enabled: boolean;
+	video_mock_enabled: boolean;
 };
 
 export type ProviderModelSummary = {
@@ -112,6 +122,14 @@ export const getProviderOverview = (token: string, provider: string, windowHours
 
 export const getVideoRuntimeStatus = (token: string) =>
 	request<VideoRuntimeStatus>('/admin/video-runtime', token);
+
+export const getFalRuntimeConfig = (token: string) => request<FalRuntimeConfig>('/admin/fal-config', token);
+
+export const updateFalRuntimeConfig = (token: string, config: FalRuntimeConfig) =>
+	request<FalRuntimeConfig>('/admin/fal-config/update', token, {
+		method: 'POST',
+		body: JSON.stringify(config)
+	});
 
 export const listProviderModelSummary = (token: string, provider: string, windowHours: number) =>
 	request<{ items: ProviderModelSummary[] }>(

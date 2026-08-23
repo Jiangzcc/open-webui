@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from open_webui.extensions.fal_catalog.loader import load_image_catalog
-from open_webui.utils.images import fal_models
+from open_webui.extensions.fal_images import models as fal_models
 
 
 def test_legacy_facade_projects_every_packaged_catalog_model() -> None:

@@ -262,7 +262,7 @@ def attach_model_base_prices(
 	mutated — each returned dict is a shallow copy with the extra keys layered on.
 	"""
 	if id_resolver is None:
-		from open_webui.utils.images.fal_models import normalize_fal_image_model_id
+		from open_webui.extensions.fal_images.models import normalize_fal_image_model_id
 
 		id_resolver = normalize_fal_image_model_id
 

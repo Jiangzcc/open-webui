@@ -328,3 +328,11 @@ def test_rejects_malformed_structured_advanced_parameters() -> None:
 
     with pytest.raises(VideoInputError, match='invalid_multi_prompt'):
         build_video_provider_payload(submission)
+
+
+def test_resolve_video_model_reuses_cached_catalog() -> None:
+    """回归（对抗性审查）：视频提交热路径（resolve/quote/create）必须复用
+    目录缓存，否则每次提交全量解析 11 个目录 JSON 文件 3-4 次。"""
+    from open_webui.extensions.videos.catalog import resolve_video_model
+
+    assert resolve_video_model('kling-video-v3-pro') is resolve_video_model('kling-video-v3-pro')

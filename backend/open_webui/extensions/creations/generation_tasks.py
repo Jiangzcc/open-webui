@@ -31,6 +31,10 @@ _PRIVATE_PAYLOAD_KEYS = frozenset({'prompt', 'image', 'mask', 'mask_url', 'mask_
 _TERMINAL_STATUSES = frozenset({'succeeded', 'failed'})
 
 
+class IdempotencyPayloadConflictError(Exception):
+    """幂等键命中但载荷不一致（客户端复用了键却改了提示词/参数）。"""
+
+
 def _now() -> int:
     return int(time.time())
 
@@ -41,6 +45,26 @@ def _safe_params(payload: dict[str, Any]) -> dict[str, object]:
         for key, value in payload.items()
         if key not in _PRIVATE_PAYLOAD_KEYS and value is not None and isinstance(value, (str, int, float, bool))
     }
+
+
+def _task_matches_payload(task: ImageGenerationTask, *, kind: str, payload: dict[str, Any]) -> bool:
+    """幂等重放校验：同键同载荷才复用既有任务。
+
+    同键不同载荷说明客户端复用了键却修改了内容（如网络失败后改了提示词
+    重试）：静默复用旧任务会丢弃新载荷，必须由调用方拒绝。持久化行只存
+    prompt/model/safe_params/n，比对也只覆盖这些可复原字段（image 等
+    私有载荷不落库，无法比对）。
+    """
+    if task.kind != kind:
+        return False
+    if task.prompt != str(payload.get('prompt') or ''):
+        return False
+    model = payload.get('model') if isinstance(payload.get('model'), str) else None
+    if task.model_id != model:
+        return False
+    if (task.params_json or {}) != _safe_params(payload):
+        return False
+    return task.expected_count == max(1, int(payload.get('n') or 1))
 
 
 def _response(task: ImageGenerationTask) -> ImageGenerationTaskResponse:
@@ -79,6 +103,8 @@ async def create_generation_task(
         )
     ).scalar_one_or_none()
     if existing is not None:
+        if not _task_matches_payload(existing, kind=kind, payload=payload):
+            raise IdempotencyPayloadConflictError(idempotency_key)
         return _response(existing), False
 
     now = _now()
@@ -112,6 +138,8 @@ async def create_generation_task(
                 )
             )
         ).scalar_one()
+        if not _task_matches_payload(raced, kind=kind, payload=payload):
+            raise IdempotencyPayloadConflictError(idempotency_key) from None
         return _response(raced), False
     return _response(task), True
 
@@ -289,7 +317,13 @@ def _error_code(error: Exception) -> str:
     return 'image_generation_failed'
 
 
-async def run_generation_task(task_id: str, request: Request, user: object, form: object, kind: str) -> None:
+async def run_generation_task(
+    task_id: str,
+    request: Request,
+    user: object,
+    form: object,
+    kind: str,
+) -> None:
     user_id = getattr(user, 'id', '')
     result: object | None = None
     try:
@@ -414,7 +448,9 @@ def schedule_generation_task(
     on_finished: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     running: dict[str, asyncio.Task] = request.app.state.creation_generation_tasks
-    task = asyncio.create_task(_run_generation_task_and_finish(task_id, request, user, form, kind, on_finished))
+    task = asyncio.create_task(
+        _run_generation_task_and_finish(task_id, request, user, form, kind, on_finished)
+    )
     running[task_id] = task
 
     def discard_finished(finished: asyncio.Task) -> None:

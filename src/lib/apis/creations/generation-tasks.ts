@@ -12,13 +12,48 @@ const headers = (token: string, idempotencyKey?: string): HeadersInit => ({
 	...(idempotencyKey && { 'Idempotency-Key': idempotencyKey })
 });
 
+// 结构化请求错误：code 供既有 getImageGenerationErrorCode 映射文案，
+// status 供提交方区分「确定被拒」（4xx 清除幂等键）与「响应不确定」
+//（网络错误/5xx 保留幂等键，重试不会二次扣费）。
+export class ImageTaskRequestError extends Error {
+	code: string;
+	status?: number;
+
+	constructor(code: string, status?: number) {
+		super(code);
+		this.name = 'ImageTaskRequestError';
+		this.code = code;
+		this.status = status;
+	}
+}
+
+const errorFromResponse = async (response: Response): Promise<ImageTaskRequestError> => {
+	const payload: unknown = await response.json().catch(() => null);
+	let code = 'image_task_failed';
+	if (payload && typeof payload === 'object') {
+		const body = payload as Record<string, unknown>;
+		const detail = body.detail;
+		if (typeof body.code === 'string') code = body.code;
+		else if (
+			detail &&
+			typeof detail === 'object' &&
+			typeof (detail as Record<string, unknown>).code === 'string'
+		) {
+			code = (detail as Record<string, unknown>).code as string;
+		} else if (typeof detail === 'string') {
+			code = detail;
+		}
+	}
+	return new ImageTaskRequestError(code, response.status);
+};
+
 const requestJson = async <T>(path: string, token: string, init: RequestInit = {}): Promise<T> => {
 	const response = await fetch(`${WEBUI_API_BASE_URL}${path}`, {
 		...init,
 		headers: { ...headers(token), ...(init.headers ?? {}) }
 	});
 	if (!response.ok) {
-		throw await response.json().catch(() => null);
+		throw await errorFromResponse(response);
 	}
 	return (await response.json()) as T;
 };
@@ -29,7 +64,7 @@ const requestNoContent = async (path: string, token: string, init: RequestInit =
 		headers: { ...headers(token), ...(init.headers ?? {}) }
 	});
 	if (!response.ok) {
-		throw await response.json().catch(() => null);
+		throw await errorFromResponse(response);
 	}
 };
 
@@ -42,6 +77,8 @@ export const createImageGenerationTask = (
 	requestJson<ImageGenerationTask>('/creations/generation-tasks', token, {
 		method: 'POST',
 		headers: headers(token, idempotencyKey),
+		// 提示词中的 ⟦id⟧ token 由服务端从标签库解析，提交体不再携带
+		// 标签目录快照（insert_text 不下发前端）。
 		body: JSON.stringify({ kind, payload })
 	});
 

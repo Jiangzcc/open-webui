@@ -186,6 +186,35 @@ describe('credit API client', () => {
 		});
 	});
 
+	test('parses FastAPI HTTPException details instead of reporting unavailable', async () => {
+		/** 回归（对抗性审查）：{detail: {code, reason?}} 形态（限流 429、修复
+		 * 校验 422）此前全部回退成 credit_service_unavailable，真实原因丢失。 */
+		fetchMock
+			.mockResolvedValueOnce(
+				new Response(JSON.stringify({ detail: { code: 'rate_limit_exceeded' } }), {
+					status: 429,
+					headers: { 'Content-Type': 'application/json' }
+				})
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						detail: { code: 'invalid_repair_request', reason: 'expected_balance mismatch' }
+					}),
+					{ status: 422, headers: { 'Content-Type': 'application/json' } }
+				)
+			);
+
+		await expect(getMyCredits('token')).rejects.toMatchObject<CreditApiError>({
+			code: 'rate_limit_exceeded',
+			context: {}
+		});
+		await expect(getMyCredits('token')).rejects.toMatchObject<CreditApiError>({
+			code: 'invalid_repair_request',
+			context: { reason: 'expected_balance mismatch' }
+		});
+	});
+
 	test('sends paginated reconciliation queries and returns compensation details', async () => {
 		fetchMock
 			.mockResolvedValueOnce(success({ items: [], total: 125 }))

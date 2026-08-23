@@ -263,5 +263,3 @@ If you believe you've found a security vulnerability, or something that shouldn'
 ---
 
 Created by [Timothy Jaeryang Baek](https://github.com/tjbck) - Let's make Open WebUI even more amazing together! 💪
-
-$env:PYTHONPATH = 'backend'; $env:WEBUI_SECRET_KEY = 'test-secret-key-for-fal-unit-tests'; D:\code\github\open-webui-main\venv\Scripts\python.exe -m uvicorn open_webui.main:app --host 127.0.0.1 --port 9000 --reload --reload-dir backend/open_webui "--forwarded-allow-ips=\*"

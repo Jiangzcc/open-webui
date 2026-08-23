@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -147,42 +146,3 @@ async def test_recovery_pass_marks_only_stale_unfinished_usage_and_records_metri
     assert await registration._recover_stale_usages() == 2
     assert cutoffs == [10_000 - registration.CREDIT_USAGE_STALE_SECONDS]
     assert metrics == [2]
-
-
-def test_schema_validation_rejects_missing_tables_before_version_lookup(monkeypatch) -> None:
-    from open_webui.extensions.credits import registration
-
-    connection = MagicMock()
-    connection.__enter__.return_value = connection
-    inspector = MagicMock()
-    inspector.get_table_names.return_value = ['ext_credit_account']
-    monkeypatch.setattr(registration.engine, 'connect', lambda: connection)
-    monkeypatch.setattr(registration, 'inspect', lambda _connection: inspector)
-
-    with pytest.raises(RuntimeError, match='missing tables'):
-        registration._validate_credit_schema()
-
-
-def test_schema_validation_rejects_wrong_version_and_missing_constraint(monkeypatch) -> None:
-    from open_webui.extensions.credits import registration
-
-    connection = MagicMock()
-    connection.__enter__.return_value = connection
-    inspector = MagicMock()
-    inspector.get_table_names.return_value = list(registration._REQUIRED_TABLES)
-    inspector.get_check_constraints.return_value = []
-    migration_context = MagicMock()
-    migration_context.get_current_heads.return_value = ('old-version',)
-    script_directory = MagicMock()
-    script_directory.get_heads.return_value = ['current-version']
-    monkeypatch.setattr(registration.engine, 'connect', lambda: connection)
-    monkeypatch.setattr(registration, 'inspect', lambda _connection: inspector)
-    monkeypatch.setattr(registration.MigrationContext, 'configure', lambda *_args, **_kwargs: migration_context)
-    monkeypatch.setattr(registration.ScriptDirectory, 'from_config', lambda _config: script_directory)
-
-    with pytest.raises(RuntimeError, match='expected version'):
-        registration._validate_credit_schema()
-
-    migration_context.get_current_heads.return_value = ('current-version',)
-    with pytest.raises(RuntimeError, match='missing constraints'):
-        registration._validate_credit_schema()

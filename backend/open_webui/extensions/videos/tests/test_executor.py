@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from open_webui.extensions.fal_catalog.video_schemas import FalVideoModelDefinition, VideoAssetInput
-from open_webui.extensions.videos import executor, service
+from open_webui.extensions.videos import delivery, executor, service
 from open_webui.extensions.videos.executor import (
     FalVideoExecutor,
     MockVideoExecutor,
@@ -51,24 +51,80 @@ def _request(*, key: str = ''):
     return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(config=SimpleNamespace(FAL_API_KEY=key))))
 
 
-def test_resolve_executor_defaults_to_mock(monkeypatch) -> None:
-    monkeypatch.delenv('VIDEO_GENERATION_ENGINE', raising=False)
-    assert isinstance(resolve_video_executor(_request()), MockVideoExecutor)
+def _row_of(task: VideoTaskResponse):
+    """run_video_task 直接按行查询（读取 params_json 等原始列）。"""
+    return SimpleNamespace(
+        id=task.id,
+        user_id='user-1',
+        status=task.status,
+        task=task.task,
+        prompt=task.prompt,
+        model_id=task.model_id,
+        params_json=dict(task.params),
+        assets_json=[asset.model_dump() for asset in task.assets],
+        result_json=None,
+        error_code=task.error_code,
+        created_at=task.created_at,
+        started_at=None,
+        completed_at=None,
+        updated_at=task.updated_at,
+    )
 
 
-def test_resolve_executor_requires_explicit_fal_key(monkeypatch) -> None:
-    monkeypatch.setenv('VIDEO_GENERATION_ENGINE', 'fal')
-    monkeypatch.setattr(executor, 'FAL_API_KEY', '')
+class RowContext:
+    """creation_session 替身：scalar 返回预置任务行。"""
+
+    def __init__(self, row):
+        self.row = row
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    def begin(self):
+        return self
+
+    async def scalar(self, _statement):
+        return self.row
+
+
+def _fal_settings(mock_enabled: bool = False, api_key: str = ''):
+    async def fake() -> tuple[bool, str]:
+        return mock_enabled, api_key
+
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_resolve_executor_real_mode_requires_api_key(monkeypatch) -> None:
+    monkeypatch.setattr(executor, 'get_video_fal_settings', _fal_settings(api_key=''))
     with pytest.raises(VideoExecutionError) as captured:
-        resolve_video_executor(_request())
+        await resolve_video_executor()
     assert captured.value.code == 'video_fal_not_configured'
 
 
-def test_resolve_executor_uses_dedicated_fal_settings(monkeypatch) -> None:
-    monkeypatch.setenv('VIDEO_GENERATION_ENGINE', 'fal')
-    monkeypatch.setenv('VIDEO_GENERATION_FAL_API_KEY', 'video-key')
+@pytest.mark.asyncio
+async def test_resolve_executor_mock_enabled_returns_mock_executor(monkeypatch) -> None:
+    monkeypatch.setattr(executor, 'get_video_fal_settings', _fal_settings(mock_enabled=True))
+    assert isinstance(await resolve_video_executor(), MockVideoExecutor)
+
+
+@pytest.mark.asyncio
+async def test_resolve_executor_rejects_invalid_mock_scenario(monkeypatch) -> None:
+    monkeypatch.setattr(executor, 'get_video_fal_settings', _fal_settings(mock_enabled=True))
+    monkeypatch.setenv('VIDEO_GENERATION_MOCK_SCENARIO', 'bogus')
+    with pytest.raises(VideoExecutionError) as captured:
+        await resolve_video_executor()
+    assert captured.value.code == 'video_mock_scenario_invalid'
+
+
+@pytest.mark.asyncio
+async def test_resolve_executor_real_mode_uses_dedicated_settings(monkeypatch) -> None:
+    monkeypatch.setattr(executor, 'get_video_fal_settings', _fal_settings(api_key='video-key'))
     monkeypatch.setenv('VIDEO_GENERATION_FAL_TIMEOUT_SECONDS', '1200')
-    resolved = resolve_video_executor(_request(key='image-key'))
+    resolved = await resolve_video_executor()
     assert isinstance(resolved, FalVideoExecutor)
     assert resolved.api_key == 'video-key'
     assert resolved.timeout_seconds == 1200
@@ -96,19 +152,28 @@ def test_fal_policy_rejects_invalid_credit_limit(monkeypatch) -> None:
     assert captured.value.code == 'video_fal_policy_invalid'
 
 
-def test_video_runtime_diagnostics_never_exposes_api_key(monkeypatch) -> None:
-    monkeypatch.setenv('VIDEO_GENERATION_ENGINE', 'fal')
-    monkeypatch.setenv('VIDEO_GENERATION_FAL_API_KEY', 'super-secret-key')
+@pytest.mark.asyncio
+async def test_video_runtime_diagnostics_never_exposes_api_key(monkeypatch) -> None:
+    monkeypatch.setattr(executor, 'get_video_fal_settings', _fal_settings(api_key='super-secret-key'))
     monkeypatch.setenv('VIDEO_GENERATION_FAL_ALLOWED_MODELS', 'model-b,model-a')
     monkeypatch.setenv('VIDEO_GENERATION_DELIVERY_MAX_ATTEMPTS', '4')
 
-    diagnostics = executor.video_runtime_diagnostics(_request())
+    diagnostics = await executor.video_runtime_diagnostics(_request())
 
-    assert diagnostics['engine'] == 'fal'
+    assert diagnostics['mock_enabled'] is False
     assert diagnostics['fal_api_key_configured'] is True
     assert diagnostics['allowed_models'] == ['model-a', 'model-b']
     assert diagnostics['delivery_max_attempts'] == 4
     assert 'super-secret-key' not in repr(diagnostics)
+
+
+@pytest.mark.asyncio
+async def test_video_runtime_diagnostics_flags_missing_key_in_real_mode(monkeypatch) -> None:
+    monkeypatch.setattr(executor, 'get_video_fal_settings', _fal_settings(api_key=''))
+
+    diagnostics = await executor.video_runtime_diagnostics(_request())
+
+    assert diagnostics['configuration_error'] == 'video_fal_not_configured'
 
 
 def test_extract_fal_video_url_supports_nested_and_direct_results() -> None:
@@ -220,7 +285,7 @@ async def test_real_executor_maps_provider_timeout(monkeypatch) -> None:
         return None
 
     async def timeout(*_args, **_kwargs):
-        from open_webui.utils.images.fal import FalImageError
+        from open_webui.extensions.fal_images.client import FalImageError
 
         raise FalImageError('fal.ai request timed out')
 
@@ -239,7 +304,7 @@ async def test_real_executor_preserves_completed_provider_error_state(monkeypatc
         return None
 
     async def completed_result_failure(*_args, **_kwargs):
-        from open_webui.utils.images.fal import FalImageError
+        from open_webui.extensions.fal_images.client import FalImageError
 
         error = FalImageError('fal.ai request failed: temporary response failure', status_code=503)
         error.provider_submitted = True
@@ -454,8 +519,7 @@ async def test_run_video_task_dispatches_to_real_executor(monkeypatch, tmp_path)
     async def set_state(_task_id, status, **_kwargs):
         states.append(status)
 
-    async def get_task(*_args, **_kwargs):
-        return _task()
+    task = _task()
 
     async def begin_usage(*_args, **_kwargs):
         return SimpleNamespace(outcome='new', usage=SimpleNamespace(id='usage-1'))
@@ -470,17 +534,19 @@ async def test_run_video_task_dispatches_to_real_executor(monkeypatch, tmp_path)
         return 1
 
     monkeypatch.setattr(FalVideoExecutor, 'invoke', invoke)
-    monkeypatch.setattr(service, 'resolve_video_executor', lambda _request: real)
+    async def resolve_executor():
+        return real
+
+    monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
     monkeypatch.setattr(service, '_set_task_state', set_state)
     monkeypatch.setattr(service, '_publish_video_task_event', no_op)
-    monkeypatch.setattr(service, 'creation_session', lambda: Context())
+    monkeypatch.setattr(service, 'creation_session', lambda: RowContext(_row_of(task)))
     monkeypatch.setattr(service, 'credit_session', lambda: Context())
-    monkeypatch.setattr(service, 'get_video_task', get_task)
     monkeypatch.setattr(service, 'begin_video_usage', begin_usage)
     monkeypatch.setattr(service, '_set_task_usage_id', no_op)
     monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
     monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
-    monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission: (_definition(), {}, {}))
+    monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission, **_kwargs: (_definition(), {}, {}))
     monkeypatch.setattr(service, '_finalize_real_video', finalize)
     monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
     await service.run_video_task('task-1', _request(), SimpleNamespace(id='user-1'))
@@ -516,8 +582,7 @@ async def test_real_delivery_failure_keeps_prepaid_charge_for_reconciliation(  #
     async def set_state(_task_id, status, **kwargs):
         states.append((status, kwargs.get('error_code')))
 
-    async def get_task(*_args, **_kwargs):
-        return _task()
+    task = _task()
 
     async def begin_usage(*_args, **_kwargs):
         return SimpleNamespace(outcome='new', usage=SimpleNamespace(id='usage-1'))
@@ -532,17 +597,19 @@ async def test_real_delivery_failure_keeps_prepaid_charge_for_reconciliation(  #
         failure.update(usage_id=usage_id, code=code, restore_prepaid=restore_prepaid)
 
     monkeypatch.setattr(FalVideoExecutor, 'invoke', invoke)
-    monkeypatch.setattr(service, 'resolve_video_executor', lambda _request: real)
+    async def resolve_executor():
+        return real
+
+    monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
     monkeypatch.setattr(service, '_set_task_state', set_state)
     monkeypatch.setattr(service, '_publish_video_task_event', no_op)
-    monkeypatch.setattr(service, 'creation_session', lambda: Context())
+    monkeypatch.setattr(service, 'creation_session', lambda: RowContext(_row_of(task)))
     monkeypatch.setattr(service, 'credit_session', lambda: Context())
-    monkeypatch.setattr(service, 'get_video_task', get_task)
     monkeypatch.setattr(service, 'begin_video_usage', begin_usage)
     monkeypatch.setattr(service, '_set_task_usage_id', no_op)
     monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
     monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
-    monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission: (_definition(), {}, {}))
+    monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission, **_kwargs: (_definition(), {}, {}))
     monkeypatch.setattr(service, '_finalize_real_video', fail_delivery)
     monkeypatch.setattr(service, 'mark_video_usage_failed', mark_failed)
 
@@ -563,15 +630,15 @@ async def test_orphan_cleanup_removes_storage_payload_and_file_row(monkeypatch) 
     deleted_rows: list[str] = []
     file = SimpleNamespace(id='file-1', path='generated/file-1.mp4')
 
-    monkeypatch.setattr(service.Storage, 'delete_file', deleted_payloads.append)
+    monkeypatch.setattr(delivery.Storage, 'delete_file', deleted_payloads.append)
 
     async def delete_row(file_id):
         deleted_rows.append(file_id)
         return True
 
-    monkeypatch.setattr(service.Files, 'delete_file_by_id', delete_row)
+    monkeypatch.setattr(delivery.Files, 'delete_file_by_id', delete_row)
 
-    await service._cleanup_generated_files([file])
+    await delivery._cleanup_generated_files([file])
 
     assert deleted_payloads == ['generated/file-1.mp4']
     assert deleted_rows == ['file-1']

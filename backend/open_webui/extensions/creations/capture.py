@@ -198,7 +198,7 @@ def build_creation_capture_context(
     usage_id: str,
     generation_task_id: str | None = None,
 ) -> CreationCaptureContext:
-    from open_webui.utils.images.fal_models import normalize_fal_image_model_id, public_fal_image_model_id
+    from open_webui.extensions.fal_images.models import normalize_fal_image_model_id, public_fal_image_model_id
 
     billing = getattr(prepared, 'billing', None)
     provider_input = getattr(prepared, 'provider_input', None)
@@ -209,7 +209,7 @@ def build_creation_capture_context(
     public_model_id = public_fal_image_model_id(internal_model) if internal_model is not None else resource_id
     model_name_snapshot = None
     if internal_model is not None:
-        from open_webui.utils.images.fal_models import FAL_IMAGE_MODELS
+        from open_webui.extensions.fal_images.models import FAL_IMAGE_MODELS
 
         registered_model = next((model for model in FAL_IMAGE_MODELS if model.get('id') == internal_model), None)
         if registered_model is not None and isinstance(registered_model.get('name'), str):
@@ -217,7 +217,10 @@ def build_creation_capture_context(
 
     raw_negative = getattr(raw_form, 'negative_prompt', None)
     negative_prompt = _normalize_negative_prompt(raw_negative, provider_input)
-    prompt = getattr(provider_input, 'prompt', '') or getattr(raw_form, 'prompt', '')
+    # raw_form 保留 token 形态（⟦id⟧ 占位符）：作品捕获层存储的是用户可见
+    # 形态，真实提示词（insert_text）只进 provider payload，不落库。
+    # provider_input 仅作兜底（与 negative_prompt 的 raw 优先口径一致）。
+    prompt = getattr(raw_form, 'prompt', '') or getattr(provider_input, 'prompt', '')
 
     return CreationCaptureContext(
         user_id=getattr(user, 'id'),

@@ -151,25 +151,6 @@ async def test_direct_scope_skips_feature_switch_and_permission(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
-async def test_terminal_preparation_failure_leaves_usage_invoking(billing_module, monkeypatch) -> None:
-    module, _, _, _ = billing_module
-    monkeypatch.setattr(
-        module,
-        'begin_image_usage',
-        AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
-    )
-    module.mark_usage_failed.reset_mock()
-    invoke = AsyncMock(side_effect=module.ImageTerminalPreparationError())
-
-    with pytest.raises(CreditError) as raised:
-        await call_bill(invoke=invoke)
-
-    assert raised.value.code == 'credit_service_unavailable'
-    assert raised.value.context['reason'] == 'terminal_preparation_failed'
-    module.mark_usage_failed.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_finalize_failure_leaves_usage_invoking_and_never_marks_provider_failed(
     billing_module, monkeypatch
 ) -> None:

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from open_webui.extensions.credits import router_admin
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
 from sqlalchemy import func, select
 
@@ -14,7 +15,7 @@ from .router_test_support import AuthenticatedUser
 def _admin_app(credits_router, session_dependency):
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = session_dependency
@@ -23,6 +24,7 @@ def _admin_app(credits_router, session_dependency):
 
 def test_credit_error_response_is_the_direct_public_envelope(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
     from open_webui.extensions.credits.errors import CreditError
 
     app = FastAPI()
@@ -552,7 +554,7 @@ def test_price_update_rejects_unregistered_rules_without_committing(router_datab
     async def publish(*_args, **_kwargs):
         events.append(True)
 
-    monkeypatch.setattr(credits_router, 'publish_credit_price_event', publish)
+    monkeypatch.setattr(router_admin, 'publish_credit_price_event', publish)
     response = TestClient(_admin_app(credits_router, database_session), raise_server_exceptions=False).put(
         '/api/v1/credits/admin/prices/price-1',
         json={
@@ -601,8 +603,8 @@ def test_price_update_advances_the_cache_version_within_the_same_second(router_d
     async def publish(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(credits_router, 'time', lambda: 100.0)
-    monkeypatch.setattr(credits_router, 'publish_credit_price_event', publish)
+    monkeypatch.setattr(router_admin, 'time', lambda: 100.0)
+    monkeypatch.setattr(router_admin, 'publish_credit_price_event', publish)
     response = TestClient(_admin_app(credits_router, database_session), raise_server_exceptions=False).put(
         '/api/v1/credits/admin/prices/price-1', json={'enabled': False}
     )
@@ -641,7 +643,7 @@ def test_price_create_returns_conflict_for_an_existing_business_key(router_datab
     async def publish(*_args, **_kwargs):
         events.append(True)
 
-    monkeypatch.setattr(credits_router, 'publish_credit_price_event', publish)
+    monkeypatch.setattr(router_admin, 'publish_credit_price_event', publish)
     response = TestClient(_admin_app(credits_router, database_session), raise_server_exceptions=False).post(
         '/api/v1/credits/admin/prices',
         json={
@@ -753,7 +755,7 @@ def test_accounts_use_the_compatibility_boundary(monkeypatch) -> None:
         return {'users': [], 'total': 0}
 
     app = _admin_app(credits_router, lambda: object())
-    monkeypatch.setattr(credits_router, 'get_credit_users', users)
+    monkeypatch.setattr(router_admin, 'get_credit_users', users)
 
     response = TestClient(app).get('/api/v1/credits/admin/accounts?query=alice&skip=1&limit=2')
 
@@ -769,7 +771,7 @@ def test_adjustment_audit_rejects_invalid_request_id_before_service(monkeypatch)
     async def adjust(*_args):
         called.append(True)
 
-    monkeypatch.setattr(credits_router, 'adjust_balance', adjust)
+    monkeypatch.setattr(router_admin, 'adjust_balance', adjust)
     response = TestClient(_admin_app(credits_router, lambda: object()), raise_server_exceptions=False).post(
         '/api/v1/credits/admin/accounts/user-2/adjustments',
         headers={'X-Request-ID': 'r' * 129},

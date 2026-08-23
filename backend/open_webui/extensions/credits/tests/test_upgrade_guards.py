@@ -232,7 +232,10 @@ def test_static_bridges_keep_router_lifecycle_channels_and_frontend_mounts() -> 
     assert "'credit_channel': 'chat'" in middleware_source
 
     _assert_frontend_mount(_source('src/lib/components/layout/Sidebar/UserMenu.svelte'), 'CreditMenuEntry')
-    _assert_frontend_mount(_source('src/lib/components/images/Images.svelte'), 'ImageCreditQuoteBadge')
+    # 报价徽章随表单拆分到 ImagePromptForm.svelte（复盘：超长文件拆分）。
+    _assert_frontend_mount(
+        _source('src/lib/components/images/ImagePromptForm.svelte'), 'ImageCreditQuoteBadge'
+    )
     admin_source = _source('src/routes/(app)/admin/+layout.svelte')
     assert 'href="/admin/credits"' in admin_source
     assert "includes('/admin/credits')" in admin_source
@@ -269,7 +272,8 @@ def test_all_image_production_callers_use_public_wrappers_and_only_wrappers_call
 
 
 def test_credit_price_crud_routes_delegate_to_the_compatibility_event_boundary() -> None:
-    source = _source('backend/open_webui/extensions/credits/router.py')
+    # 定价 CRUD 路由拆分后位于 router_admin.py（复盘：超长文件拆分）。
+    source = _source('backend/open_webui/extensions/credits/router_admin.py')
     tree = ast.parse(source)
 
     for function_name, operation in (

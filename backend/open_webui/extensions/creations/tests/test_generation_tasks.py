@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from open_webui.extensions.creations import generation_tasks
 from open_webui.extensions.creations.generation_tasks import (
+    IdempotencyPayloadConflictError,
     create_generation_task,
     delete_generation_task,
     get_generation_task,
@@ -34,13 +35,41 @@ async def test_generation_task_is_idempotent_and_user_scoped(creation_sessions) 
                 'aspect_ratio': '16:9',
             },
         )
+        # 同键同载荷才幂等复用（网络失败后的安全重试）。
         replay, replay_created = await create_generation_task(
             session,
             user_id='user-1',
             idempotency_key='request-1',
             kind='text-to-image',
-            payload={'prompt': 'different prompt'},
+            payload={
+                'prompt': 'quiet lake',
+                'model': 'fal/model',
+                'n': 2,
+                'aspect_ratio': '16:9',
+            },
         )
+        # 同键不同载荷必须拒绝，而不是静默复用旧任务丢弃新载荷。
+        with pytest.raises(IdempotencyPayloadConflictError):
+            await create_generation_task(
+                session,
+                user_id='user-1',
+                idempotency_key='request-1',
+                kind='text-to-image',
+                payload={'prompt': 'different prompt'},
+            )
+        with pytest.raises(IdempotencyPayloadConflictError):
+            await create_generation_task(
+                session,
+                user_id='user-1',
+                idempotency_key='request-1',
+                kind='image-to-image',
+                payload={
+                    'prompt': 'quiet lake',
+                    'model': 'fal/model',
+                    'n': 2,
+                    'aspect_ratio': '16:9',
+                },
+            )
 
     assert created is True
     assert replay_created is False

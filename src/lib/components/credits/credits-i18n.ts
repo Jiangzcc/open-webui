@@ -30,6 +30,7 @@ const zh = {
 			manual_refund: '人工退款',
 			accounting_correction: '账务更正',
 			violation_deduction: '违规扣减',
+			redeem: '卡密兑换',
 			other: '其他'
 		},
 		entryTypes: {
@@ -47,6 +48,16 @@ const zh = {
 			'text-to-video': '文生视频',
 			'image-to-video': '图生视频',
 			'video-to-video': '视频生视频'
+		},
+		redeem: {
+			title: '卡密充值',
+			codeLabel: '卡密',
+			placeholder: '输入卡密，例如 OWC-…',
+			submit: '立即兑换',
+			submitting: '兑换中',
+			success: '兑换成功，已到账 {{credits}} 积分',
+			failed: '暂时无法兑换，请稍后重试',
+			ledgerLabel: '卡密兑换'
 		},
 		dimensionKeys: {
 			size: '尺寸',
@@ -98,6 +109,58 @@ const zh = {
 			pricingTab: '价目',
 			dimensions: '维度',
 			reconciliation: '异常对账',
+			redeemCodes: '卡密',
+			redeem: {
+				title: '卡密批次',
+				description: '生成一次性卡密、查看兑换进度并作废尚未使用的卡密。',
+				create: '生成卡密',
+				createTitle: '生成卡密批次',
+				batchName: '批次名称',
+				batchNamePlaceholder: '例如：八月体验活动',
+				faceValue: '单张面值',
+				quantity: '生成数量',
+				expiresAt: '过期日期（可选）',
+				perUserLimit: '单用户限兑（可选）',
+				generate: '确认生成',
+				generating: '生成中',
+				createdTitle: '卡密已生成',
+				copyAll: '复制全部',
+				copy: '复制',
+				copied: '已复制',
+				downloadCsv: '下载 CSV',
+				closeAfterSave: '我已安全保存，关闭',
+				loadError: '无法加载卡密批次',
+				createError: '无法生成卡密批次',
+				expiryNotFuture: '过期时间必须晚于当前时间，请选择更晚的日期或留空',
+				copyError: '复制失败，请手动选择文本复制',
+				empty: '尚未生成卡密批次',
+				redeemed: '已兑换',
+				unused: '未使用',
+				voided: '已作废',
+				available: '可兑换',
+				expired: '已过期',
+				neverExpires: '永久有效',
+				expires: '{{date}} 过期',
+				perUser: '每位用户最多 {{count}} 张',
+				viewDetails: '查看明细',
+				voidBatch: '作废未用卡密',
+				voidBatchConfirm: '确定作废此批次中所有尚未使用的卡密吗？已兑换积分不会受影响。',
+				voidCode: '作废此卡',
+				voidError: '无法完成作废操作',
+				codes: '卡密状态',
+				audit: '审计记录',
+				codeHint: '卡密标识',
+				status: '状态',
+				redeemedBy: '兑换用户',
+				noCodes: '没有卡密记录',
+				noAudit: '没有审计记录',
+				actions: {
+					generate: '生成批次',
+					redeem: '用户兑换',
+					void_batch: '作废批次',
+					void_code: '作废卡密'
+				}
+			},
 			reconciliationTitle: '异常扣费对账',
 			reconciliationDescription: '核查失败或状态未知但已扣费的图片和视频请求，并进行一次性补偿。',
 			mockMode: '模拟',
@@ -133,6 +196,19 @@ const zh = {
 				decrease: '减少',
 				reason: '原因',
 				note: '备注'
+			},
+			repair: {
+				button: '台账修复',
+				title: '台账修复',
+				description:
+					'账户余额与台账合计不一致时使用。请确认已备份数据库，然后填写事件编号与台账合计（即修复后期望余额），系统将把账户余额校准为台账合计并留下审计记录。',
+				incidentId: '事件编号',
+				expectedBalance: '台账合计（修复后余额）',
+				note: '修复说明',
+				backupConfirmed: '我已确认完成数据库备份',
+				submit: '执行修复',
+				saved: '台账修复已完成',
+				saveError: '无法完成台账修复'
 			},
 			ledgerTitle: '积分流水',
 			ledgerDescription: '已删除用户的审计历史仍会永久保留。',
@@ -200,10 +276,18 @@ const zh = {
 			credit_account_conflict: '积分账户已被并发更新，请重试',
 			invalid_adjustment: '积分调整无效',
 			credit_service_unavailable: '积分服务暂不可用',
+			account_ledger_mismatch: '账户与台账不一致，请先在「账户」页执行台账修复后再调整',
 			provider_failed: '图片服务请求失败',
 			invalid_image_size: '图片尺寸不符合模型要求',
 			generation_cancelled: '图片生成已取消',
-			rate_limited: '生成请求过于频繁，请稍后再试'
+			rate_limited: '请求过于频繁，请稍后再试',
+			rate_limit_exceeded: '请求过于频繁，请稍后再试',
+			redeem_code_invalid: '卡密错误，请检查后重试',
+			redeem_code_used: '该卡密已被使用',
+			redeem_code_voided: '该卡密已被作废',
+			redeem_code_expired: '该卡密已过期',
+			redeem_code_limit_reached: '你已达到该批次的兑换上限',
+			redeem_batch_not_found: '未找到该卡密批次'
 		}
 	}
 };
@@ -235,6 +319,7 @@ const en = {
 			manual_refund: 'Manual refund',
 			accounting_correction: 'Accounting correction',
 			violation_deduction: 'Violation deduction',
+			redeem: 'Redeem code',
 			other: 'Other'
 		},
 		entryTypes: {
@@ -252,6 +337,16 @@ const en = {
 			'text-to-video': 'Text to video',
 			'image-to-video': 'Image to video',
 			'video-to-video': 'Video to video'
+		},
+		redeem: {
+			title: 'Redeem code',
+			codeLabel: 'Redeem code',
+			placeholder: 'Enter a code, for example OWC-…',
+			submit: 'Redeem now',
+			submitting: 'Redeeming',
+			success: '{{credits}} credits were added to your balance',
+			failed: 'Unable to redeem this code right now',
+			ledgerLabel: 'Code redemption'
 		},
 		dimensionKeys: {
 			size: 'Size',
@@ -304,6 +399,58 @@ const en = {
 			pricingTab: 'Pricing',
 			dimensions: 'Dimensions',
 			reconciliation: 'Reconciliation',
+			redeemCodes: 'Redeem codes',
+			redeem: {
+				title: 'Redeem-code batches',
+				description: 'Generate one-time codes, monitor redemption, and void unused codes.',
+				create: 'Generate codes',
+				createTitle: 'Generate a redeem-code batch',
+				batchName: 'Batch name',
+				batchNamePlaceholder: 'For example: August trial campaign',
+				faceValue: 'Credits per code',
+				quantity: 'Number of codes',
+				expiresAt: 'Expiry date (optional)',
+				perUserLimit: 'Per-user limit (optional)',
+				generate: 'Generate',
+				generating: 'Generating',
+				createdTitle: 'Codes generated',
+				copyAll: 'Copy all',
+				copy: 'Copy',
+				copied: 'Copied',
+				downloadCsv: 'Download CSV',
+				closeAfterSave: 'Saved securely, close',
+				loadError: 'Unable to load redeem-code batches',
+				createError: 'Unable to generate redeem codes',
+				expiryNotFuture: 'Expiry must be in the future; pick a later date or leave it empty',
+				copyError: 'Copy failed; please select the text manually',
+				empty: 'No redeem-code batches yet',
+				redeemed: 'Redeemed',
+				unused: 'Unused',
+				voided: 'Voided',
+				available: 'Available',
+				expired: 'Expired',
+				neverExpires: 'Never expires',
+				expires: 'Expires {{date}}',
+				perUser: 'Up to {{count}} per user',
+				viewDetails: 'View details',
+				voidBatch: 'Void unused codes',
+				voidBatchConfirm: 'Void every unused code in this batch? Redeemed credits are unaffected.',
+				voidCode: 'Void code',
+				voidError: 'Unable to void the selected codes',
+				codes: 'Code status',
+				audit: 'Audit log',
+				codeHint: 'Code reference',
+				status: 'Status',
+				redeemedBy: 'Redeemed by',
+				noCodes: 'No code records',
+				noAudit: 'No audit records',
+				actions: {
+					generate: 'Batch generated',
+					redeem: 'User redeemed',
+					void_batch: 'Batch voided',
+					void_code: 'Code voided'
+				}
+			},
 			reconciliationTitle: 'Abnormal charge reconciliation',
 			reconciliationDescription:
 				'Review failed or unknown image and video requests that were charged and compensate once.',
@@ -340,6 +487,19 @@ const en = {
 				decrease: 'Decrease',
 				reason: 'Reason',
 				note: 'Note'
+			},
+			repair: {
+				button: 'Ledger repair',
+				title: 'Ledger repair',
+				description:
+					'Use when the account balance diverges from its ledger total. Confirm a database backup, then provide the incident id and the ledger total (the balance after repair). The account is calibrated to the ledger total and the repair is audited.',
+				incidentId: 'Incident id',
+				expectedBalance: 'Ledger total (balance after repair)',
+				note: 'Repair note',
+				backupConfirmed: 'I have confirmed a database backup',
+				submit: 'Run repair',
+				saved: 'Ledger repair completed',
+				saveError: 'Unable to complete ledger repair'
 			},
 			ledgerTitle: 'Credit ledger',
 			ledgerDescription: 'Audit history is retained for deleted users.',
@@ -409,10 +569,19 @@ const en = {
 			credit_account_conflict: 'Credit account was updated concurrently',
 			invalid_adjustment: 'Credit adjustment is invalid',
 			credit_service_unavailable: 'Credit service is unavailable',
+			account_ledger_mismatch:
+				'Account and ledger are inconsistent; run a ledger repair on the Accounts page before adjusting',
 			provider_failed: 'Image provider request failed',
 			invalid_image_size: 'Image size is invalid',
 			generation_cancelled: 'Image generation was cancelled',
-			rate_limited: 'Too many image generation requests'
+			rate_limited: 'Too many requests; try again shortly',
+			rate_limit_exceeded: 'Too many requests; try again shortly',
+			redeem_code_invalid: 'The redeem code is invalid',
+			redeem_code_used: 'This redeem code has already been used',
+			redeem_code_voided: 'This redeem code has been voided',
+			redeem_code_expired: 'This redeem code has expired',
+			redeem_code_limit_reached: 'You have reached this batch’s redemption limit',
+			redeem_batch_not_found: 'The redeem-code batch was not found'
 		}
 	}
 };
@@ -431,7 +600,14 @@ const creditErrorCodes = new Set([
 	'provider_failed',
 	'invalid_image_size',
 	'generation_cancelled',
-	'rate_limited'
+	'rate_limited',
+	'rate_limit_exceeded',
+	'redeem_code_invalid',
+	'redeem_code_used',
+	'redeem_code_voided',
+	'redeem_code_expired',
+	'redeem_code_limit_reached',
+	'redeem_batch_not_found'
 ]);
 
 export const registerCreditTranslations = (contextI18n: CreditI18n) => {
@@ -449,10 +625,18 @@ export const translateCreditApiError = (
 		typeof error === 'object' &&
 		error !== null &&
 		'code' in error &&
-		typeof (error as CreditApiError).code === 'string' &&
-		creditErrorCodes.has((error as CreditApiError).code)
+		typeof (error as CreditApiError).code === 'string'
 	) {
-		return i18n.t(`credits.errors.${(error as CreditApiError).code}`);
+		const creditError = error as CreditApiError;
+		if (creditErrorCodes.has(creditError.code)) {
+			return i18n.t(`credits.errors.${creditError.code}`);
+		}
+		// 白名单外的错误码：后端附带的具体原因（如修复校验失败详情）优先于
+		// 组件回退文案，避免把校验/限流错误误报成「积分服务暂不可用」。
+		const reason = creditError.context?.reason;
+		if (typeof reason === 'string' && reason) {
+			return reason;
+		}
 	}
 
 	return i18n.t(fallbackKey);

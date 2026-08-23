@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -106,7 +107,7 @@ class CreditLedger(CreditBase):
         ),
         CheckConstraint(
             "reason_code IS NULL OR reason_code IN ('offline_recharge', 'promotion_gift', 'manual_refund', "
-            "'accounting_correction', 'violation_deduction', 'other')",
+            "'accounting_correction', 'violation_deduction', 'other', 'redeem')",
             name='ck_ext_credit_ledger_reason_code',
         ),
         Index('ix_ext_credit_ledger_account', 'account_id'),
@@ -165,4 +166,140 @@ class CreditPrice(CreditBase):
     updated_at = Column(BigInteger, nullable=False)
 
 
-__all__ = ['CreditAccount', 'CreditLedger', 'CreditPrice', 'CreditUsage']
+class CreditRedeemBatch(CreditBase):
+    __tablename__ = 'ext_credit_redeem_batch'
+    __table_args__ = (
+        CheckConstraint('face_value > 0', name='ck_ext_credit_redeem_batch_face_value'),
+        CheckConstraint('code_count > 0', name='ck_ext_credit_redeem_batch_code_count'),
+        CheckConstraint(
+            'per_user_limit IS NULL OR (per_user_limit > 0 AND per_user_limit <= code_count)',
+            name='ck_ext_credit_redeem_batch_user_limit',
+        ),
+        CheckConstraint(
+            'expires_at IS NULL OR expires_at > created_at',
+            name='ck_ext_credit_redeem_batch_expiry',
+        ),
+        CheckConstraint(
+            '(voided_at IS NULL AND voided_by_id IS NULL) OR '
+            '(voided_at IS NOT NULL AND voided_by_id IS NOT NULL)',
+            name='ck_ext_credit_redeem_batch_void_fields',
+        ),
+        Index('ix_ext_credit_redeem_batch_created', 'created_at'),
+    )
+
+    id = Column(String(128), primary_key=True)
+    name = Column(String(128), nullable=False)
+    face_value = Column(BigInteger, nullable=False)
+    code_count = Column(Integer, nullable=False)
+    expires_at = Column(BigInteger, nullable=True)
+    per_user_limit = Column(Integer, nullable=True)
+    created_by_id = Column(String(128), nullable=False)
+    created_by_name_snapshot = Column(String(256), nullable=True)
+    created_by_email_snapshot = Column(String(320), nullable=True)
+    voided_at = Column(BigInteger, nullable=True)
+    voided_by_id = Column(String(128), nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+    updated_at = Column(BigInteger, nullable=False)
+
+
+class CreditRedeemCode(CreditBase):
+    __tablename__ = 'ext_credit_redeem_code'
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ['batch_id'],
+            [_credit_table('ext_credit_redeem_batch') + '.id'],
+            ondelete='RESTRICT',
+            name='fk_ext_credit_redeem_code_batch',
+        ),
+        ForeignKeyConstraint(
+            ['redeemed_ledger_id'],
+            [_credit_table('ext_credit_ledger') + '.id'],
+            ondelete='RESTRICT',
+            name='fk_ext_credit_redeem_code_ledger',
+        ),
+        Index('ux_ext_credit_redeem_code_hash', 'code_hash', unique=True),
+        Index('ux_ext_credit_redeem_code_ledger', 'redeemed_ledger_id', unique=True),
+        CheckConstraint(
+            'NOT (redeemed_at IS NOT NULL AND voided_at IS NOT NULL)',
+            name='ck_ext_credit_redeem_code_terminal_state',
+        ),
+        CheckConstraint(
+            '(redeemed_at IS NULL AND redeemed_by_user_id IS NULL AND redeemed_ledger_id IS NULL) OR '
+            '(redeemed_at IS NOT NULL AND redeemed_by_user_id IS NOT NULL AND redeemed_ledger_id IS NOT NULL)',
+            name='ck_ext_credit_redeem_code_redemption_fields',
+        ),
+        CheckConstraint(
+            '(voided_at IS NULL AND voided_by_id IS NULL) OR '
+            '(voided_at IS NOT NULL AND voided_by_id IS NOT NULL)',
+            name='ck_ext_credit_redeem_code_void_fields',
+        ),
+        CheckConstraint("code <> ''", name='ck_ext_credit_redeem_code_code_nonempty'),
+        Index('ix_ext_credit_redeem_code_batch', 'batch_id'),
+        Index('ix_ext_credit_redeem_code_batch_user', 'batch_id', 'redeemed_by_user_id'),
+        Index('ix_ext_credit_redeem_code_batch_state', 'batch_id', 'redeemed_at', 'voided_at'),
+    )
+
+    id = Column(String(128), primary_key=True)
+    batch_id = Column(String(128), nullable=False)
+    code_hash = Column(String(64), nullable=False)
+    code_hint = Column(String(16), nullable=False)
+    code = Column(String(64), nullable=False)
+    redeemed_by_user_id = Column(String(128), nullable=True)
+    redeemed_by_name_snapshot = Column(String(256), nullable=True)
+    redeemed_by_email_snapshot = Column(String(320), nullable=True)
+    redeemed_ledger_id = Column(String(128), nullable=True)
+    redeemed_at = Column(BigInteger, nullable=True)
+    voided_at = Column(BigInteger, nullable=True)
+    voided_by_id = Column(String(128), nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+
+
+class CreditRedeemAudit(CreditBase):
+    __tablename__ = 'ext_credit_redeem_audit'
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ['batch_id'],
+            [_credit_table('ext_credit_redeem_batch') + '.id'],
+            ondelete='RESTRICT',
+            name='fk_ext_credit_redeem_audit_batch',
+        ),
+        ForeignKeyConstraint(
+            ['code_id'],
+            [_credit_table('ext_credit_redeem_code') + '.id'],
+            ondelete='RESTRICT',
+            name='fk_ext_credit_redeem_audit_code',
+        ),
+        CheckConstraint(
+            "action IN ('generate', 'redeem', 'void_batch', 'void_code')",
+            name='ck_ext_credit_redeem_audit_action',
+        ),
+        CheckConstraint(
+            "request_source IN ('web', 'api', 'api_key', 'internal_admin')",
+            name='ck_ext_credit_redeem_audit_request_source',
+        ),
+        Index('ix_ext_credit_redeem_audit_batch_created', 'batch_id', 'created_at'),
+    )
+
+    id = Column(String(128), primary_key=True)
+    batch_id = Column(String(128), nullable=False)
+    code_id = Column(String(128), nullable=True)
+    action = Column(String(32), nullable=False)
+    actor_id = Column(String(128), nullable=False)
+    actor_name_snapshot = Column(String(256), nullable=True)
+    actor_email_snapshot = Column(String(320), nullable=True)
+    request_source = Column(String(32), nullable=False)
+    request_id = Column(String(128), nullable=False)
+    remote_address_hash = Column(String(64), nullable=True)
+    metadata_snapshot = Column(JSONField, nullable=True)
+    created_at = Column(BigInteger, nullable=False)
+
+
+__all__ = [
+    'CreditAccount',
+    'CreditLedger',
+    'CreditPrice',
+    'CreditRedeemAudit',
+    'CreditRedeemBatch',
+    'CreditRedeemCode',
+    'CreditUsage',
+]

@@ -236,6 +236,82 @@ export type CompensationResult = {
 	amount: number;
 };
 
+export type CreditRedeemResult = {
+	ledger_id: string;
+	credited: number;
+	balance: number;
+	redeemed_at: number;
+};
+
+export type CreditRedeemBatch = {
+	id: string;
+	name: string;
+	face_value: number;
+	code_count: number;
+	redeemed_count: number;
+	voided_count: number;
+	unused_count: number;
+	available_count: number;
+	expires_at: number | null;
+	per_user_limit: number | null;
+	voided_at: number | null;
+	created_by_id: string;
+	created_by_name_snapshot: string | null;
+	created_at: number;
+};
+
+export type CreditRedeemBatchPage = {
+	items: CreditRedeemBatch[];
+	total: number;
+};
+
+export type CreditRedeemBatchInput = {
+	name: string;
+	face_value: number;
+	quantity: number;
+	expires_at: number | null;
+	per_user_limit: number | null;
+};
+
+export type CreditRedeemBatchCreated = CreditRedeemBatch & {
+	codes: string[];
+};
+
+export type CreditRedeemCodeStatus = 'available' | 'redeemed' | 'voided' | 'expired';
+
+export type CreditRedeemCode = {
+	id: string;
+	code: string;
+	hint: string;
+	status: CreditRedeemCodeStatus;
+	redeemed_by_user_id: string | null;
+	redeemed_by_name_snapshot: string | null;
+	redeemed_at: number | null;
+	voided_at: number | null;
+};
+
+export type CreditRedeemCodePage = {
+	items: CreditRedeemCode[];
+	total: number;
+};
+
+export type CreditRedeemAudit = {
+	id: string;
+	action: 'generate' | 'redeem' | 'void_batch' | 'void_code';
+	code_id: string | null;
+	actor_id: string;
+	actor_name_snapshot: string | null;
+	request_source: 'web' | 'api' | 'api_key' | 'internal_admin';
+	request_id: string;
+	metadata: Record<string, unknown> | null;
+	created_at: number;
+};
+
+export type CreditRedeemAuditPage = {
+	items: CreditRedeemAudit[];
+	total: number;
+};
+
 type QueryValue = string | number | boolean | null | undefined;
 type Query = Record<string, QueryValue>;
 
@@ -245,6 +321,8 @@ type CreditRequest = {
 	token: string;
 	query?: Query;
 	body?: object;
+	headers?: Record<string, string>;
+	cache?: RequestCache;
 	signal?: AbortSignal;
 };
 
@@ -258,6 +336,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const parseCreditApiError = (value: unknown): CreditApiError => {
+	if (isRecord(value) && 'detail' in value) {
+		return parseCreditApiError(value.detail);
+	}
 	if (
 		isRecord(value) &&
 		typeof value.code === 'string' &&
@@ -268,6 +349,18 @@ const parseCreditApiError = (value: unknown): CreditApiError => {
 			code: value.code,
 			message: value.message,
 			context: { ...value.context }
+		};
+	}
+	// FastAPI HTTPException detail 形态：{code, reason?}（限流、修复校验等）。
+	// 缺少该分支时这类错误全部回退成 credit_service_unavailable，限流/校验
+	// 失败会被误报成基础设施故障。reason 放入 context 与 CreditError 的
+	// context.reason 约定一致（如 redeem_expiry_not_future）。
+	if (isRecord(value) && typeof value.code === 'string') {
+		const reason = typeof value.reason === 'string' ? value.reason : '';
+		return {
+			code: value.code,
+			message: reason,
+			context: reason ? { reason } : {}
 		};
 	}
 
@@ -304,6 +397,8 @@ const requestCredits = async <T>({
 	token,
 	query,
 	body,
+	headers,
+	cache,
 	signal
 }: CreditRequest): Promise<T> => {
 	let response: Response;
@@ -313,8 +408,10 @@ const requestCredits = async <T>({
 			headers: {
 				Accept: 'application/json',
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${token}`
+				Authorization: `Bearer ${token}`,
+				...headers
 			},
+			...(cache ? { cache } : {}),
 			...(body ? { body: JSON.stringify(body) } : {}),
 			...(signal ? { signal } : {})
 		});
@@ -367,6 +464,34 @@ export const adjustCreditAccount = (
 	requestCredits<CreditAdjustment>({
 		method: 'POST',
 		path: `/admin/accounts/${encodeURIComponent(userId)}/adjustments`,
+		token,
+		body: input,
+		signal
+	});
+
+export type CreditAccountRepairInput = {
+	incident_id: string;
+	expected_balance: number;
+	note: string;
+	backup_confirmed: boolean;
+};
+
+export type CreditAccountRepairResult = {
+	ledger_id: string;
+	balance_before: number;
+	balance_after: number;
+	request_id: string;
+};
+
+export const repairCreditAccount = (
+	token: string,
+	userId: string,
+	input: CreditAccountRepairInput,
+	signal?: AbortSignal
+) =>
+	requestCredits<CreditAccountRepairResult>({
+		method: 'POST',
+		path: `/admin/accounts/${encodeURIComponent(userId)}/repair`,
 		token,
 		body: input,
 		signal
@@ -465,5 +590,91 @@ export const compensateCreditReconciliationCase = (
 		path: `/admin/reconciliation/${encodeURIComponent(usageId)}/compensate`,
 		token,
 		body: { note: note?.trim() || null },
+		signal
+	});
+
+export const redeemCreditCode = (token: string, code: string, signal?: AbortSignal) =>
+	requestCredits<CreditRedeemResult>({
+		method: 'POST',
+		path: '/redeem',
+		token,
+		headers: { 'X-Credit-Redeem-Code': code },
+		cache: 'no-store',
+		signal
+	});
+
+export const getCreditRedeemBatches = (
+	token: string,
+	query: { skip?: number; limit?: number } = {},
+	signal?: AbortSignal
+) =>
+	requestCredits<CreditRedeemBatchPage>({
+		method: 'GET',
+		path: '/admin/redeem-batches',
+		token,
+		query,
+		signal
+	});
+
+export const createCreditRedeemBatch = (
+	token: string,
+	input: CreditRedeemBatchInput,
+	signal?: AbortSignal
+) =>
+	requestCredits<CreditRedeemBatchCreated>({
+		method: 'POST',
+		path: '/admin/redeem-batches',
+		token,
+		body: input,
+		cache: 'no-store',
+		signal
+	});
+
+export const getCreditRedeemCodes = (
+	token: string,
+	batchId: string,
+	query: { skip?: number; limit?: number } = {},
+	signal?: AbortSignal
+) =>
+	requestCredits<CreditRedeemCodePage>({
+		method: 'GET',
+		path: `/admin/redeem-batches/${encodeURIComponent(batchId)}/codes`,
+		token,
+		query,
+		signal
+	});
+
+export const getCreditRedeemAudit = (
+	token: string,
+	batchId: string,
+	query: { skip?: number; limit?: number } = {},
+	signal?: AbortSignal
+) =>
+	requestCredits<CreditRedeemAuditPage>({
+		method: 'GET',
+		path: `/admin/redeem-batches/${encodeURIComponent(batchId)}/audit`,
+		token,
+		query,
+		signal
+	});
+
+export const voidCreditRedeemBatch = (token: string, batchId: string, signal?: AbortSignal) =>
+	requestCredits<{ voided_count: number }>({
+		method: 'POST',
+		path: `/admin/redeem-batches/${encodeURIComponent(batchId)}/void`,
+		token,
+		signal
+	});
+
+export const voidCreditRedeemCode = (
+	token: string,
+	batchId: string,
+	codeId: string,
+	signal?: AbortSignal
+) =>
+	requestCredits<{ voided: boolean }>({
+		method: 'POST',
+		path: `/admin/redeem-batches/${encodeURIComponent(batchId)}/codes/${encodeURIComponent(codeId)}/void`,
+		token,
 		signal
 	});

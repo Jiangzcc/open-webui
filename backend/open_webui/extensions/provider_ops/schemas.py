@@ -196,7 +196,7 @@ class ProviderOverview(StrictModel):
 
 
 class VideoRuntimeStatus(StrictModel):
-    engine: Literal['mock', 'fal', 'invalid']
+    mock_enabled: bool
     fal_api_key_configured: bool
     allowed_models: tuple[str, ...]
     max_credits_per_request: int | None = Field(default=None, ge=1)
@@ -206,7 +206,20 @@ class VideoRuntimeStatus(StrictModel):
     configuration_error: str | None
 
 
+class FalRuntimeConfig(StrictModel):
+    """运营中心 FAL 运行时配置：图片/视频的 API Key、Base URL 与 mock 开关。"""
+
+    image_generation_api_base_url: str
+    image_generation_api_key: str
+    image_edit_api_base_url: str
+    image_edit_api_key: str
+    video_api_key: str
+    image_mock_enabled: bool
+    video_mock_enabled: bool
+
+
 __all__ = [
+    'FalRuntimeConfig',
     'ProviderInvocationItem',
     'ProviderInvocationList',
     'ProviderInvocationStatus',

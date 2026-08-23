@@ -86,22 +86,6 @@ class FrozenMapping(Mapping[str, object]):
     def __deepcopy__(self, memo: dict[int, object]) -> FrozenMapping:
         return self
 
-    # JSON serialization support — return plain dict representation
-
-    def __json__(self) -> dict[str, object]:
-        return {key: _json_value(item) for key, item in self._data.items()}
-
-
-def _json_value(value: object) -> object:
-    """Convert a frozen value to a JSON-safe plain representation."""
-    if isinstance(value, FrozenMapping):
-        return value.__json__()
-    if isinstance(value, tuple):
-        return [_json_value(item) for item in value]
-    if isinstance(value, frozenset):
-        return sorted([_json_value(item) for item in value])
-    return value
-
 
 def _freeze(value: object) -> object:
     if isinstance(value, Mapping):
@@ -325,7 +309,7 @@ def _generation_model(engine: str, configured: str, requested: str) -> str:
     if engine == 'gemini':
         return _gemini_base(configured or 'imagen-3.0-generate-002')
     if engine == 'fal':
-        from open_webui.utils.images.fal import get_fal_generation_model
+        from open_webui.extensions.fal_images.client import get_fal_generation_model
 
         return get_fal_generation_model(requested or configured or None)
     if engine == 'comfyui':
@@ -335,7 +319,7 @@ def _generation_model(engine: str, configured: str, requested: str) -> str:
 
 def _edit_model(engine: str, configured: str, requested: str) -> str:
     if engine == 'fal':
-        from open_webui.utils.images.fal import get_fal_edit_model
+        from open_webui.extensions.fal_images.client import get_fal_edit_model
 
         return get_fal_edit_model(requested or configured or None)
     if engine == 'gemini':
@@ -343,10 +327,51 @@ def _edit_model(engine: str, configured: str, requested: str) -> str:
     return requested or configured
 
 
+# A1111 实例级 checkpoint 短 TTL 缓存：报价随参数变化高频触发，若每次都
+# 同步请求 /sdapi/v1/options 会把延迟与 A1111 负载翻倍（审查发现：报价路径
+# 的高频往返）。checkpoint 只被管理员手动切换，60s 内取旧值对报价精度足够；
+# 生成路径在上游 get_image_model 中仍会实时解析。单 worker 部署下进程内缓存有效。
+_DYNAMIC_MODEL_TTL_SECONDS = 60.0
+_dynamic_model_cache: tuple[str | None, float] | None = None
+
+
+def _reset_dynamic_model_cache() -> None:
+    global _dynamic_model_cache
+    _dynamic_model_cache = None
+
+
+async def resolve_dynamic_engine_model(request: object, config: object, image_input: CompatImageInput) -> str | None:
+    """A1111 未静态配置模型时动态取实例当前 checkpoint（对齐上游 get_image_model）。
+
+    上游对 automatic1111 引擎的模型是实例级动态值（/sdapi/v1/options 的
+    sd_model_checkpoint），config 默认为空；若计费层只认静态配置，未配置
+    模型的整个部署都会 409（missing_provider_model）。已配置模型或用户已
+    指定时无需动态解析，返回 None。其余引擎同样返回 None。
+    """
+    engine = getattr(config, 'IMAGE_GENERATION_ENGINE', None)
+    if engine not in ('', 'automatic1111'):
+        return None
+    if _clean_model(image_input.model) or _clean_model(getattr(config, 'IMAGE_GENERATION_MODEL', None)):
+        return None
+    from time import monotonic
+
+    global _dynamic_model_cache
+    now = monotonic()
+    if _dynamic_model_cache is not None and now - _dynamic_model_cache[1] < _DYNAMIC_MODEL_TTL_SECONDS:
+        return _dynamic_model_cache[0] or None
+    from open_webui.routers.images import get_image_model
+
+    model = _clean_model(await get_image_model(request))
+    _dynamic_model_cache = (model, now)
+    return model or None
+
+
 def resolve_provider_model(
     config: object,
     image_input: CompatImageInput,
     action: Literal['text-to-image', 'image-to-image'],
+    *,
+    dynamic_model: str | None = None,
 ) -> ProviderModelResolution:
     if action == 'text-to-image':
         raw_engine = getattr(config, 'IMAGE_GENERATION_ENGINE', None)
@@ -365,7 +390,7 @@ def resolve_provider_model(
 
     requested = _clean_model(image_input.model)
     if engine == 'fal' and requested:
-        from open_webui.utils.images.fal_models import normalize_fal_image_model_id
+        from open_webui.extensions.fal_images.models import normalize_fal_image_model_id
 
         normalized_requested = normalize_fal_image_model_id(requested)
         if normalized_requested is None:
@@ -379,6 +404,9 @@ def resolve_provider_model(
     )
 
     model = _clean_model(model)
+    if not model and dynamic_model:
+        # A1111 未静态配置模型：使用实例当前 checkpoint 作为计费资源。
+        model = _clean_model(dynamic_model)
     if not model:
         raise _price_error('missing_provider_model', engine)
     return ProviderModelResolution(engine=engine, resource_id=model, transport_model=model)
@@ -438,6 +466,7 @@ __all__ = [
     'map_generation_form',
     'publish_credit_price_event',
     'provider_transport_model',
+    'resolve_dynamic_engine_model',
     'resolve_provider_model',
     'thaw_mapping',
     'to_edit_form',

@@ -44,7 +44,7 @@
 
 ### 任务生命周期（图片）
 
-1. `POST /api/v1/creations/generation-tasks` → 幂等落库 `ImageGenerationTask`（状态 `queued`）+ `schedule_generation_task` 创建 asyncio 任务，HTTP 立即 202 返回。
+1. `POST /api/v1/creations/generation-tasks` → 幂等落库 `ImageGenerationTask`（状态 `queued`）+ `schedule_generation_task` 创建 asyncio 任务，HTTP 立即 202 返回。幂等键命中且**载荷一致**（同提示词/模型/参数/数量）才复用既有任务；同键不同载荷返回 409 `idempotency_key_conflict`（与视频端一致），不再静默丢弃新载荷。前端提交时按载荷指纹复用幂等键（内存 + `sessionStorage` 兜底）：网络失败后的重试复用同一键，收到确定性 4xx（408/429 除外）后清除，避免二次扣费。
 2. `run_generation_task` 复用 `image_generations/image_edits(..., 'direct', ...)`，计费走 `bill_image_call` 的预扣→invoking→终态事务。
 3. 终态写入后通过事件总线 `publish_generation_event` 广播 SSE（见下）。
 4. 服务重启时 `fail_incomplete_generation_tasks` 把 queued/running 批量改 `failed` + `error_code='server_restarted'`。
@@ -66,17 +66,18 @@
 
 ## Videos 扩展
 
-### 双执行体：默认 mock，显式开启 FAL
+### 双执行体：默认真实 FAL，mock 由运营中心开关控制
 
-`videos/executor.py` 提供隔离的 mock / FAL 双执行体。默认 `VIDEO_GENERATION_ENGINE=mock`，仍走 Pexels 随机片段或 `static/assets/welcome.mp4`，用于不产生 FAL 费用的端到端计费与任务测试。只有显式设置 `VIDEO_GENERATION_ENGINE=fal` 才会调用真实 FAL queue。
+`videos/executor.py` 提供隔离的 mock / FAL 双执行体。默认调用真实 FAL queue；mock 由运营中心「供应商运营」页 FAL 配置区的开关控制（持久化配置键 `video_generation.fal.mock_enabled`），开启后走 Pexels 随机片段或 `static/assets/welcome.mp4`，用于不产生 FAL 厂商费用的端到端计费与任务测试。注意：mock 任务仍按真实价格扣积分（用于演练完整计费链）。
+
+FAL API Key 统一在运营中心 FAL 配置区管理：视频 key（`video_generation.fal.api_key`）留空时自动沿用图片生成 key（`image_generation.fal.api_key`）。环境变量 `VIDEO_GENERATION_FAL_API_KEY` 仅作为首次启动的种子默认值，之后以运营中心配置为准。图片侧的 mock 开关同在该配置区（`image_generation.fal.mock_enabled`）。
 
 真实模式按以下顺序执行：读取当前用户拥有的参考素材 → 上传到 FAL 临时存储 → 将 `fal.media` URL 注入模型字段 → 提交 queue 并记录 `ProviderInvocation(task_id=...)` → 下载视频到 Open WebUI 文件存储 → 抽取首帧海报 → 写入作品库。不能把受登录保护的 `/api/v1/files/{id}/content` 地址直接交给 FAL。
 
 | 环境变量                                       | 默认值             | 说明                                          |
 | ---------------------------------------------- | ------------------ | --------------------------------------------- |
-| `VIDEO_GENERATION_ENGINE`                      | `mock`             | `mock` 或 `fal`；默认值保证开发测试不会误收费 |
-| `VIDEO_GENERATION_FAL_API_KEY`                 | 复用 `FAL_API_KEY` | 可为视频使用独立密钥；不要写入仓库            |
-| `VIDEO_GENERATION_FAL_TIMEOUT_SECONDS`         | `900`              | 视频 queue 独立超时，图片仍保持原 180 秒      |
+| `VIDEO_GENERATION_FAL_API_KEY`                 | 复用 `FAL_API_KEY` | 仅作首次启动种子值；之后以运营中心配置为准    |
+| `VIDEO_GENERATION_FAL_TIMEOUT_SECONDS`         | `900`              | 视频 queue 独立超时；图片非 FAL 引擎与上游会话级 `AIOHTTP_CLIENT_TIMEOUT`（默认 300s）一致 |
 | `VIDEO_GENERATION_FAL_UPLOAD_LIFETIME_SECONDS` | `86400`            | 参考素材在 FAL 临时存储中的期望生命周期       |
 | `VIDEO_GENERATION_RESULT_MAX_BYTES`            | `524288000`        | 下载生成视频的硬上限                          |
 | `VIDEO_GENERATION_FAL_ALLOWED_MODELS`          | 未设置             | 真实模式公开模型 ID 白名单，逗号分隔          |
@@ -86,11 +87,9 @@
 | `VIDEO_GENERATION_MOCK_DELAY_SECONDS`          | `1.2`              | 仅 mock：普通场景延迟                         |
 | `VIDEO_GENERATION_MOCK_SLOW_SECONDS`           | `5`                | 仅 mock：`slow` 场景延迟                      |
 
-PowerShell 开启真实模式示例（密钥只放当前进程环境）：
+可选的保险丝环境变量示例（密钥请配置在运营中心 FAL 配置区）：
 
 ```powershell
-$env:VIDEO_GENERATION_ENGINE='fal'
-$env:VIDEO_GENERATION_FAL_API_KEY='<your-fal-key>'
 $env:VIDEO_GENERATION_FAL_ALLOWED_MODELS='kling-video-v3-pro'
 $env:VIDEO_GENERATION_FAL_MAX_CREDITS_PER_REQUEST='100'
 ```
@@ -108,20 +107,26 @@ FAL 接受请求后，任务表会保存 `request_id/status_url/response_url`；
 生成请求。已过期的签名媒体 URL 会通过原 `response_url` 重新获取。浏览器提交还会把请求内容
 哈希和幂等键暂存在 `sessionStorage`：响应不确定时重试复用同一个键，收到明确 HTTP 响应后清除。
 
-管理员的「供应商运营」页面会显示当前视频执行模式、FAL Key 是否已配置、模型白名单、
-单次积分上限、交付重试次数、活动任务数，以及成功但尚未同步到实际账单的请求数；
-接口只返回 Key 是否存在，不返回密钥内容。
+恢复的边界与兜底：
 
-切回无厂商费用的模拟模式：
+- **心跳覆盖交付全程**：usage 心跳覆盖 invoke/resume 与 finalize（上传视频和海报）两阶段，
+  大文件上传不会因超过 15 分钟 stale 阈值把 usage 回收成 `unknown` 导致已上传视频被清理。
+- **重试有上限**：恢复投递/轮询最多 5 次（`delivery_attempts`），超过后任务转 `failed`
+ （`video_delivery_attempts_exceeded`），不会无限重试或永久占用预扣积分。
+- **排队任务重新准入**：崩溃时尚未扣费的 `queued` 任务在恢复调度前按当前配置重新校验
+  模型开关、目录存在性与 FAL 单次积分限价；模型已停用/下架或超过限价时转 `failed`，
+  不按旧参数照常扣费。余额不足等非准入性失败照常调度，由扣费阶段走既有终态失败路径。
+- **恢复状态缺失**：任务没有任何持久化提交状态时（无法确认 FAL 是否受理过请求），
+  恢复失败按「供应商受理未确认」退款，与在线路径一致；有提交状态则保留预扣等待对账。
+
+管理员的「供应商运营」页面会显示当前视频执行模式（真实 FAL / mock）、FAL Key 是否已配置、
+模型白名单、单次积分上限、交付重试次数、活动任务数，以及成功但尚未同步到实际账单的请求数；
+接口只返回 Key 是否存在，不返回密钥内容。FAL 的 Key、Base URL 与图片/视频 mock 开关
+都在该页 FAL 配置区维护（`GET/POST /api/v1/provider-ops/admin/fal-config`），无需改环境变量。
+
+无需厂商费用的故障模拟示例（先在运营中心开启视频 mock 开关）：
 
 ```powershell
-$env:VIDEO_GENERATION_ENGINE='mock'
-```
-
-无需费用的故障模拟示例：
-
-```powershell
-$env:VIDEO_GENERATION_ENGINE='mock'
 $env:VIDEO_GENERATION_MOCK_SCENARIO='provider_timeout'
 ```
 
@@ -149,7 +154,9 @@ request。关停仍会 best-effort 调用 FAL 的取消 URL，但不能把取消
 ### 失败退费
 
 Mock 或 FAL 提交前失败默认退预扣。FAL 已提交、已完成或交付结果不确定时不自动退款，保留
-usage 供恢复或供应商账单对账，避免厂商已收费而平台同时退款。
+usage 供恢复或供应商账单对账，避免厂商已收费而平台同时退款。恢复时若任务没有任何持久化
+提交状态（无法确认 FAL 受理），按「受理未确认」退款，与在线路径语义一致。进行中/待恢复
+任务不允许删除（DELETE 返回 409，与图片端一致），避免 worker 照常扣费产生孤儿媒体记录。
 
 ## Provider Ops 扩展
 
@@ -186,7 +193,7 @@ provider_ops 全部 GET + 一个 POST sync，无 PATCH/DELETE。无法手动修�
 1. **SSE 跨进程不互通**：`GenerationEventBus` 是进程内广播，多 worker 部署下客户端连到不同 worker 收不到彼此的事件。生产多实例需接 Redis pub/sub。
 2. **并发槽非全局**：`videos/limits.py` 和 `images/limits.py` 的 `_active_by_user` 是进程内 dict，多 worker 下每进程独立计数。
 3. **报价缓存跨进程**：已改用 Redis（`credits/quote_cache.py`），Redis 不可用时降级进程内 dict——降级期间多 worker 不共享。
-4. **视频真实调用会产生厂商费用**：默认保持 `mock`；仅在明确的真实联调窗口设置 `VIDEO_GENERATION_ENGINE=fal`。
+4. **视频/图片默认即真实调用会产生厂商费用**：mock 开关默认关闭，需免费联调时在运营中心 FAL 配置区开启对应 mock 开关。
 5. **provider_ops 无 DELETE/PATCH**：账单/请求记录无法清理。
 6. **三个上游后台任务 shutdown 未 cancel**：见上文「启动与关停生命周期」。
 
@@ -194,7 +201,7 @@ provider_ops 全部 GET + 一个 POST sync，无 PATCH/DELETE。无法手动修�
 
 | 症状                     | 排查方向                                                                                 |
 | ------------------------ | ---------------------------------------------------------------------------------------- |
-| 视频生成总是返回固定片段 | 检查 `VIDEO_GENERATION_ENGINE`；`mock` 会使用 Pexels 或 `welcome.mp4`                    |
+| 视频生成总是返回固定片段 | 检查运营中心 FAL 配置区的视频 mock 开关；mock 使用 Pexels 或 `welcome.mp4`              |
 | 真实视频任务立即失败     | 检查 `VIDEO_GENERATION_FAL_API_KEY`/`FAL_API_KEY`、FAL 上传与 queue 网络连通性           |
 | 视频任务失败但未退积分   | 检查 `mark_video_usage_failed` 是否传 `restore_prepaid=True`；查 `ext_credit_usage` 状态 |
 | 生成任务状态不更新       | 检查 SSE 是否连上 `/generation-tasks/events`；降级为轮询兜底                             |

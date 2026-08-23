@@ -3,16 +3,9 @@
 	import type { i18n as I18n } from 'i18next';
 	import type { Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
-	import { v4 as uuidv4 } from 'uuid';
 
 	import { uploadFile } from '$lib/apis/files';
 	import { quoteVideoCredits, type VideoQuote } from '$lib/apis/credits';
-	import {
-		GENERATION_EVENT_RECONNECT_INITIAL_MS,
-		iterateGenerationEvents,
-		nextGenerationEventReconnectDelay,
-		subscribeToGenerationEvents
-	} from '$lib/apis/creations/generation-tasks';
 	import {
 		getVideoModels,
 		getVideoTask,
@@ -22,8 +15,6 @@
 		VideoRequestError,
 		type VideoAssetCapability,
 		type VideoAssetRole,
-		type VideoAdvancedField,
-		type VideoAdvancedFieldKey,
 		type VideoGenerationTask,
 		type VideoModel,
 		type VideoTask
@@ -31,151 +22,34 @@
 	import { WEBUI_NAME, mobile, showSidebar, user } from '$lib/stores';
 	import CreationDetailsModal from '$lib/components/images/CreationDetailsModal.svelte';
 	import CreationsLibrary from '$lib/components/images/CreationsLibrary.svelte';
-	import ImageCreditQuoteBadge from '$lib/components/credits/ImageCreditQuoteBadge.svelte';
-	import {
-		isImageQuoteSubmittable,
-		type ImageQuoteState
-	} from '$lib/components/credits/quote-state';
-	import Dropdown from '$lib/components/common/Dropdown.svelte';
-	import GenerationModelSelector from '$lib/components/common/GenerationModelSelector.svelte';
-	import GenerationSubmitButton from '$lib/components/common/GenerationSubmitButton.svelte';
+	import type { ImageQuoteState } from '$lib/components/credits/quote-state';
 	import Loader from '$lib/components/common/Loader.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
 	import { downloadBlob } from '$lib/utils/download';
 	import {
 		firstVideoAdvancedError,
 		normalizeVideoParamsForModel,
-		videoAdvancedFieldError,
-		videoAdvancedFieldValue
+		videoDurationChoices
 	} from '$lib/utils/video-generation';
+	import { createGenerationEventStream } from '$lib/utils/generation-events';
+	import { createSubmissionIdempotency } from '$lib/utils/submission-idempotency';
+	import { appendPromptText } from '$lib/components/prompt-tags/tagToggle';
+	import VideoTaskCard from './VideoTaskCard.svelte';
+	import VideoPromptForm from './VideoPromptForm.svelte';
+	import {
+		videoAdvancedFieldLabels,
+		videoAssetLabels,
+		videoCreditErrorI18nKey,
+		videoTaskErrorI18nKey,
+		videoTaskOptions,
+		type UploadedVideoAsset
+	} from './videoLabels';
 
 	const i18n = getContext<Writable<I18n>>('i18n');
-	const PENDING_VIDEO_SUBMISSION_KEY = 'pending-video-submission';
-	type PendingVideoSubmission = { fingerprint: string; idempotencyKey: string };
-	let pendingVideoSubmission: PendingVideoSubmission | null = null;
-
-	const submissionFingerprint = async (payload: object) => {
-		const bytes = new TextEncoder().encode(JSON.stringify(payload));
-		const digest = await crypto.subtle.digest('SHA-256', bytes);
-		return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
-			''
-		);
-	};
-
-	const idempotencyKeyFor = async (payload: object) => {
-		const fingerprint = await submissionFingerprint(payload);
-		if (pendingVideoSubmission?.fingerprint === fingerprint) {
-			return pendingVideoSubmission.idempotencyKey;
-		}
-		try {
-			const stored = JSON.parse(
-				sessionStorage.getItem(PENDING_VIDEO_SUBMISSION_KEY) ?? 'null'
-			) as PendingVideoSubmission | null;
-			if (stored?.fingerprint === fingerprint && stored.idempotencyKey) {
-				pendingVideoSubmission = stored;
-				return stored.idempotencyKey;
-			}
-		} catch {
-			// Replace malformed browser state below.
-		}
-		const idempotencyKey = uuidv4();
-		pendingVideoSubmission = { fingerprint, idempotencyKey };
-		try {
-			sessionStorage.setItem(PENDING_VIDEO_SUBMISSION_KEY, JSON.stringify(pendingVideoSubmission));
-		} catch {
-			// In-memory reuse still protects retries when sessionStorage is unavailable.
-		}
-		return idempotencyKey;
-	};
-
-	const clearPendingVideoSubmission = () => {
-		pendingVideoSubmission = null;
-		try {
-			sessionStorage.removeItem(PENDING_VIDEO_SUBMISSION_KEY);
-		} catch {
-			// Nothing else to clear when browser storage is unavailable.
-		}
-	};
-	const taskOptions: { id: VideoTask; label: string; hint: string }[] = [
-		{ id: 'text-to-video', label: 'Text to Video', hint: 'Describe the motion and scene' },
-		{ id: 'image-to-video', label: 'Image to Video', hint: 'Animate a start frame' },
-		{ id: 'video-to-video', label: 'Video to Video', hint: 'Restyle or edit a clip' }
-	];
-	const assetLabels: Record<VideoAssetRole, string> = {
-		start_image: 'Start image',
-		end_image: 'End image',
-		source_video: 'Source video',
-		reference_image: 'Reference image',
-		reference_video: 'Reference video',
-		reference_audio: 'Reference audio'
-	};
-	const audioLabels: Record<string, string> = {
-		silent: 'Silent',
-		generate: 'Generate audio',
-		upload: 'Use uploaded audio',
-		preserve: 'Preserve audio',
-		auto: 'Auto'
-	};
-	const advancedFieldLabels: Record<VideoAdvancedFieldKey, string> = {
-		seed: 'Seed',
-		negative_prompt: 'Negative Prompt',
-		prompt_enhancement: 'Prompt enhancement',
-		motion_amplitude: 'Motion amplitude',
-		guidance_scale: 'Prompt adherence',
-		fps: 'Frame rate',
-		output_quality: 'Output quality',
-		loop: 'Loop video',
-		edit_strength: 'Edit strength',
-		retake_mode: 'Retake mode',
-		start_time: 'Start time',
-		ingredients_mode: 'Reference mode'
-	};
-	const advancedFieldDescriptions: Partial<Record<VideoAdvancedFieldKey, string>> = {
-		seed: 'Leave empty to use a random seed.',
-		negative_prompt: 'Describe what should not appear in the video.',
-		prompt_enhancement: 'The model may rewrite or expand your prompt.',
-		motion_amplitude: 'Controls the overall amount of subject and scene motion.',
-		guidance_scale: 'Higher values follow the prompt more closely.',
-		fps: 'Higher frame rates look smoother and may create larger files.',
-		output_quality: 'Higher quality may create a larger file.',
-		edit_strength: 'Controls how closely the edit preserves the source video.',
-		start_time: 'Where the retake begins in the source video.'
-	};
-	const advancedOptionLabels: Record<string, string> = {
-		auto: 'Auto',
-		on: 'On',
-		off: 'Off',
-		small: 'Small',
-		medium: 'Medium',
-		large: 'Large',
-		standard: 'Standard',
-		high: 'High',
-		precise: 'Precise',
-		creative: 'Creative',
-		replace_audio: 'Replace audio',
-		replace_video: 'Replace video',
-		replace_audio_and_video: 'Replace audio and video',
-		adhere_1: 'Preserve · Low',
-		adhere_2: 'Preserve · Medium',
-		adhere_3: 'Preserve · High',
-		flex_1: 'Balanced · Low',
-		flex_2: 'Balanced · Medium',
-		flex_3: 'Balanced · High',
-		reimagine_1: 'Reimagine · Low',
-		reimagine_2: 'Reimagine · Medium',
-		reimagine_3: 'Reimagine · High'
-	};
-	type UploadedVideoAsset = {
-		id: string;
-		name: string;
-		url: string;
-		mime_type: string;
-	};
 
 	let task: VideoTask = 'text-to-video';
 	let models: VideoModel[] = [];
@@ -183,6 +57,24 @@
 	let modelId = '';
 	let prompt = '';
 	let params: Record<string, string | number | boolean | null> = {};
+
+	// 提交幂等键：网络失败后的重试复用同一指纹的键，服务端幂等重放返回
+	// 既有任务而不是二次扣费；收到确定性响应后清除。
+	const videoSubmissionIdempotency = createSubmissionIdempotency('pending-video-submission');
+
+	// 标签是快捷提示词片段：点击即把 insert_text 追加进对应的输入框，
+	// 提交的就是输入框里所见即所得的纯文本（负面标签进负向提示词参数）。
+	const handlePromptTagInsert = (event: CustomEvent<{ text: string; isNegative: boolean }>) => {
+		const { text, isNegative } = event.detail;
+		if (isNegative) {
+			params = {
+				...params,
+				negative_prompt: appendPromptText(String(params['negative_prompt'] ?? ''), text)
+			};
+		} else {
+			prompt = appendPromptText(prompt, text);
+		}
+	};
 	let assets: Partial<Record<VideoAssetRole, UploadedVideoAsset[]>> = {};
 	let history: VideoGenerationTask[] = [];
 	let loading = true;
@@ -190,20 +82,15 @@
 	let loadingMore = false;
 	let submitting = false;
 	let showAdvanced = false;
+	// 弹层开关：changeTask/changeModel 选中后需主动关闭（选择器自身不关闭）。
+	let showModelSelector = false;
+	let showVideoOptions = false;
 	let taskFallbackPollTimer: ReturnType<typeof setInterval> | null = null;
-	let generationEventReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	let generationEventController: AbortController | null = null;
-	let generationEventsDestroyed = false;
-	let generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
-	let quote: VideoQuote | null = null;
 	let quoteState: ImageQuoteState = { status: 'loading' };
 	let quoteTimer: ReturnType<typeof setTimeout> | null = null;
 	let quoteGeneration = 0;
 	let showCreationDetails = false;
 	let detailsTask: VideoGenerationTask | null = null;
-	let showModelSelector = false;
-	let showVideoOptions = false;
-	let showTaskSelector = false;
 	let showDeleteConfirm = false;
 	let taskToDelete: VideoGenerationTask | null = null;
 	let downloadingIds: Set<string> = new Set();
@@ -222,23 +109,7 @@
 	$: vendorModels = taskModels.filter((item) => item.provider === selectedVendor);
 	$: advancedFields = selectedModel?.advanced_fields ?? [];
 	$: advancedError = firstVideoAdvancedError(selectedModel, params);
-	$: durationChoices = (() => {
-		if (selectedModel?.durations?.length) return selectedModel.durations;
-		if (selectedModel?.duration_min === null || selectedModel?.duration_min === undefined)
-			return [];
-		if (selectedModel.duration_max === null || selectedModel.duration_max === undefined) return [];
-		const step = selectedModel.duration_step ?? 1;
-		const values: string[] = [];
-		for (
-			let value = selectedModel.duration_min;
-			value <= selectedModel.duration_max + step / 2;
-			value += step
-		) {
-			values.push(String(Number(value.toFixed(3))));
-		}
-		return values;
-	})();
-	$: durationIndex = Math.max(0, durationChoices.indexOf(String(params.duration ?? '')));
+	$: durationChoices = videoDurationChoices(selectedModel);
 	$: quoteKey = selectedModel
 		? JSON.stringify([
 				task,
@@ -252,22 +123,6 @@
 			])
 		: '';
 	$: if (!loading && quoteKey) scheduleQuote();
-	$: videoOptionsLabel = [
-		params.duration === 'auto'
-			? $i18n.t('Auto')
-			: params.duration === '0'
-				? $i18n.t('Match source duration')
-				: params.duration
-					? `${params.duration}s`
-					: null,
-		params.aspect_ratio,
-		params.resolution,
-		params.audio_mode
-			? $i18n.t(audioLabels[String(params.audio_mode)] ?? String(params.audio_mode))
-			: null
-	]
-		.filter(Boolean)
-		.join(' · ');
 
 	const quoteDimensions = (): Record<string, string | number> => ({
 		duration: String(params.duration ?? selectedModel?.default_duration ?? '1'),
@@ -289,7 +144,6 @@
 				dimensions: quoteDimensions()
 			});
 			if (generation === quoteGeneration) {
-				quote = next;
 				quoteState = next.exempt
 					? { status: 'exempt', chargedCredits: 0 }
 					: !next.configured
@@ -303,7 +157,6 @@
 			return next;
 		} catch {
 			if (generation === quoteGeneration) {
-				quote = null;
 				quoteState = { status: 'error' };
 			}
 			return null;
@@ -316,87 +169,7 @@
 		quoteTimer = setTimeout(refreshQuote, 250);
 	};
 
-	const fieldValue = (field: VideoAdvancedField, values = params) =>
-		videoAdvancedFieldValue(field, values);
-	const setAdvancedParam = (field: VideoAdvancedField, value: string | number | boolean) => {
-		params = { ...params, [field.key]: value };
-	};
-	const updateAdvancedInput = (
-		field: VideoAdvancedField,
-		event: Event & { currentTarget: HTMLInputElement }
-	) => {
-		setAdvancedParam(field, event.currentTarget.value);
-	};
-	const advancedErrorLabel = (field: VideoAdvancedField) => {
-		const error = videoAdvancedFieldError(field, params[field.key] ?? field.default);
-		return error ? $i18n.t(error.key, error.value === undefined ? {} : { value: error.value }) : '';
-	};
-	const durationLabel = (value: string) =>
-		value === 'auto'
-			? $i18n.t('Auto')
-			: value === '0'
-				? $i18n.t('Match source duration')
-				: `${value}s`;
-	const advancedRangeLabel = (field: VideoAdvancedField) => {
-		if (field.min === undefined && field.max === undefined) return $i18n.t('Model default');
-		if (field.min !== undefined && field.max !== undefined) return `${field.min}–${field.max}`;
-		if (field.min !== undefined) return `≥ ${field.min}`;
-		return `≤ ${field.max}`;
-	};
-	const aspectRatioPreviewClass = (ratio: string) =>
-		ratio === 'auto' ? 'size-5 rounded-full' : 'rounded-[3px]';
-	const aspectRatioPreviewStyle = (ratio: string) => {
-		if (ratio === 'auto') return '';
-		const [width, height] = ratio.split(':').map(Number);
-		if (!width || !height) return '';
-		const previewSize = 20;
-		const minimumPreviewSize = 12;
-		return width >= height
-			? `width: ${previewSize}px; height: ${Math.max(minimumPreviewSize, (previewSize * height) / width)}px;`
-			: `width: ${Math.max(minimumPreviewSize, (previewSize * width) / height)}px; height: ${previewSize}px;`;
-	};
-
 	const videoRequestErrorMessage = (fallback: string) => $i18n.t(fallback);
-
-	// 后端 CreditError 的 code → i18n key 映射，使余额不足/限流/价格未配置等
-	// 竞态错误能显示具体提示而非通用「视频生成失败」。
-	// 同时包含 VideoInputError 的校验码（后端返回 {detail: 'invalid_duration'} 等，
-	// API 层 detail 优先于 code，因此这些码通过 error.message 查找）。
-	const videoCreditErrorI18nKey: Record<string, string> = {
-		insufficient_credits: 'Insufficient credits',
-		price_not_configured: 'Video price is not configured',
-		price_rule_incomplete: 'Video price is not configured',
-		rate_limited: 'Too many video generation requests',
-		unknown_video_model: 'Unknown video model',
-		video_model_task_mismatch: 'Video model does not support this task type',
-		prompt_required: 'Please enter a prompt',
-		unsupported_duration: 'Unsupported duration',
-		unsupported_aspect_ratio: 'Unsupported aspect ratio',
-		unsupported_resolution: 'Unsupported resolution',
-		unsupported_audio_mode: 'Unsupported audio mode',
-		invalid_duration: 'Invalid duration',
-		invalid_aspect_ratio: 'Invalid aspect ratio',
-		invalid_resolution: 'Invalid resolution',
-		invalid_audio_mode: 'Invalid audio mode',
-		idempotency_key_conflict: 'The video submission changed; please try again',
-		video_model_unavailable: 'This model is temporarily unavailable.',
-		video_fal_not_configured: 'Real video generation is not configured',
-		video_fal_model_not_allowed: 'This model is not allowed for real video generation',
-		video_fal_cost_limit_exceeded: 'This video exceeds the per-request cost limit',
-		video_mock_scenario_invalid: 'The mock video scenario is invalid'
-	};
-
-	const videoTaskErrorI18nKey: Record<string, string> = {
-		video_delivery_failed: 'The provider generated the video, but local delivery failed',
-		video_provider_failed: 'The video provider failed to generate this video',
-		video_provider_timeout: 'The video provider timed out',
-		video_provider_rate_limited: 'The video provider rate limited this request',
-		video_result_missing: 'The video provider returned no video',
-		video_result_download_failed: 'The generated video could not be downloaded',
-		video_result_too_large: 'The generated video is too large',
-		video_result_invalid_type: 'The video provider returned an invalid file',
-		server_shutdown: 'Video generation was interrupted by a server restart'
-	};
 
 	const videoTaskErrorMessage = (record: VideoGenerationTask) =>
 		$i18n.t(videoTaskErrorI18nKey[record.error_code ?? ''] ?? 'Generation failed');
@@ -466,7 +239,7 @@
 				localStorage.removeItem('video-creation-draft');
 				try {
 					const draft = JSON.parse(rawDraft);
-					const draftTask = taskOptions.some((item) => item.id === draft.task)
+					const draftTask = videoTaskOptions.some((item) => item.id === draft.task)
 						? (draft.task as VideoTask)
 						: task;
 					const draftModel = models.find(
@@ -477,8 +250,14 @@
 					resetForModel(models.find((model) => model.id === modelId) ?? null);
 					prompt = typeof draft.prompt === 'string' ? draft.prompt : '';
 					if (draft.params && typeof draft.params === 'object' && !Array.isArray(draft.params)) {
+						const rawNegative = (draft.params as Record<string, unknown>).negative_prompt;
 						const model = models.find((item) => item.id === modelId);
-						if (model) params = normalizeVideoParamsForModel(model, { ...params, ...draft.params });
+						if (model)
+							params = normalizeVideoParamsForModel(model, {
+								...params,
+								...draft.params,
+								...(typeof rawNegative === 'string' ? { negative_prompt: rawNegative } : {})
+							});
 					}
 				} catch {
 					// Ignore stale or malformed local drafts.
@@ -601,41 +380,12 @@
 		await Promise.all(activeIds.map((taskId) => refreshVideoTask(taskId).catch(() => undefined)));
 	};
 
-	const consumeGenerationEvents = async () => {
-		generationEventController?.abort();
-		const controller = new AbortController();
-		generationEventController = controller;
-		try {
-			for await (const event of iterateGenerationEvents(
-				subscribeToGenerationEvents(localStorage.token, controller.signal)
-			)) {
-				generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
-				if (event.kind === 'video' && event.task_id) {
-					await refreshVideoTask(event.task_id).catch(() => undefined);
-				}
-			}
-		} catch (error) {
-			if (!(error instanceof DOMException && error.name === 'AbortError')) {
-				await pollActiveVideoTasks();
-			}
-		} finally {
-			// 仅当此调用的 controller 仍为活跃 controller 时才设重连定时器。
-			// 如果已被新调用替换（abort），旧调用的 finally 不应再调度重连，
-			// 否则定时器会周期性 abort 新连接，造成 SSE 连接振荡。
-			const wasActive = generationEventController === controller;
-			if (wasActive) generationEventController = null;
-			if (wasActive && !generationEventsDestroyed) {
-				const reconnectAfter = generationEventReconnectDelay;
-				generationEventReconnectDelay = nextGenerationEventReconnectDelay(
-					generationEventReconnectDelay
-				);
-				generationEventReconnectTimer = setTimeout(
-					() => void consumeGenerationEvents(),
-					reconnectAfter
-				);
-			}
-		}
-	};
+	// SSE 事件流（含指数退避重连与断流兜底轮询）与图片页共享同一实现。
+	const generationEventStream = createGenerationEventStream(
+		'video',
+		refreshVideoTask,
+		pollActiveVideoTasks
+	);
 
 	const generate = async () => {
 		if (!selectedModel || submitting) return;
@@ -645,17 +395,33 @@
 		}
 		for (const capability of selectedModel.asset_inputs ?? []) {
 			if (capability.required && !(assets[capability.role]?.length ?? 0)) {
-				toast.error(`${$i18n.t(assetLabels[capability.role])} ${$i18n.t('is required')}`);
+				toast.error(`${$i18n.t(videoAssetLabels[capability.role])} ${$i18n.t('is required')}`);
 				return;
 			}
 		}
 		if (advancedError) {
+			const error = advancedError.error;
 			toast.error(
-				`${$i18n.t(advancedFieldLabels[advancedError.field.key])}: ${advancedErrorLabel(advancedError.field)}`
+				`${$i18n.t(videoAdvancedFieldLabels[advancedError.field.key])}: ${$i18n.t(
+					error.key,
+					error.value === undefined ? {} : { value: error.value }
+				)}`
 			);
 			return;
 		}
-		const submittedParams = normalizeVideoParamsForModel(selectedModel, params);
+		const negativePromptText = String(params['negative_prompt'] ?? '');
+		const submittedParams = normalizeVideoParamsForModel(selectedModel, {
+			...params,
+			...(negativePromptText ? { negative_prompt: negativePromptText } : {})
+		});
+		// 用户已填写的负面提示词被模型参数归一化丢弃时明确提示，不得静默（审查发现 #6）。
+		const submittedNegative = negativePromptText.trim();
+		if (submittedNegative && !('negative_prompt' in submittedParams)) {
+			toast.error(
+				$i18n.t('This model does not support negative prompts; remove it or pick another model.')
+			);
+			return;
+		}
 		const latestQuote = await refreshQuote();
 		if (!latestQuote?.configured) {
 			toast.error($i18n.t('Video price is not configured'));
@@ -674,11 +440,13 @@
 				(items ?? []).map((item) => ({ role: role as VideoAssetRole, file_id: item.id }))
 			),
 			params: submittedParams
+			// 提示词是所见即所得的纯文本（点击标签直接插入 insert_text）；
+			// 若用户手动残留 ⟦id⟧ token，服务端仍会从标签库解析展开。
 		};
 		try {
-			const idempotencyKey = await idempotencyKeyFor(submission);
+			const idempotencyKey = await videoSubmissionIdempotency.idempotencyKeyFor(submission);
 			const created = await submitVideoTask(localStorage.token, submission, idempotencyKey);
-			clearPendingVideoSubmission();
+			videoSubmissionIdempotency.clearPendingSubmission();
 			// 新任务插入列表顶部，立刻可见其生成进度。
 			// SSE 可能先于 POST 响应写入同一任务；此时保留 SSE 读到的较新状态，
 			// 既避免重复卡片，也避免用 queued 响应覆盖 running/succeeded。
@@ -693,7 +461,7 @@
 				error.status < 500 &&
 				![408, 429].includes(error.status)
 			) {
-				clearPendingVideoSubmission();
+				videoSubmissionIdempotency.clearPendingSubmission();
 			}
 			const code = error instanceof VideoRequestError ? error.code : '';
 			const i18nKey = videoCreditErrorI18nKey[code];
@@ -713,14 +481,12 @@
 
 	onMount(() => {
 		void load();
-		void consumeGenerationEvents();
+		void generationEventStream.start();
 		// SSE 断线、代理不支持流式响应或事件落在其他 worker 时，用低频轮询补偿。
 		taskFallbackPollTimer = setInterval(() => void pollActiveVideoTasks(), 10_000);
 	});
 	onDestroy(() => {
-		generationEventsDestroyed = true;
-		generationEventController?.abort();
-		if (generationEventReconnectTimer) clearTimeout(generationEventReconnectTimer);
+		generationEventStream.stop();
 		if (taskFallbackPollTimer) clearInterval(taskFallbackPollTimer);
 		if (quoteTimer) clearTimeout(quoteTimer);
 		for (const items of Object.values(assets)) {
@@ -737,11 +503,13 @@
 		resetForModel(models.find((model) => model.id === modelId) ?? null);
 		prompt = record.prompt ?? '';
 		if (record.params && typeof record.params === 'object' && !Array.isArray(record.params)) {
+			const rawNegative = (record.params as Record<string, unknown>).negative_prompt;
 			const model = models.find((item) => item.id === modelId);
 			if (model) {
 				params = normalizeVideoParamsForModel(model, {
 					...params,
-					...(record.params as Record<string, string | number | boolean | null>)
+					...(record.params as Record<string, string | number | boolean | null>),
+					...(typeof rawNegative === 'string' ? { negative_prompt: rawNegative } : {})
 				});
 			}
 		}
@@ -794,97 +562,9 @@
 			deletingIds = next;
 		}
 	};
-	// 视频任务文案：复用图片结果区的状态标签口径，保持一致。
-	const videoTaskStatusLabel = (record: VideoGenerationTask) => {
-		if (record.status === 'queued') return $i18n.t('Queued');
-		if (record.status === 'running') return $i18n.t('Generating');
-		if (record.status === 'failed') return videoTaskErrorMessage(record);
-		return $i18n.t('Completed');
-	};
-
-	// 按任务类型查回对应模型（含 provider），供消息头厂商图标与模型短名使用。
+	// 按任务类型查回对应模型（含 provider），供任务卡片厂商图标与模型短名使用。
 	const getTaskModel = (record: VideoGenerationTask) =>
 		models.find((m) => m.id === record.model_id) ?? null;
-
-	// 模型短名：剥厂商前缀，回退到「默认模型」。
-	const getTaskModelLabel = (record: VideoGenerationTask) => {
-		const model = getTaskModel(record);
-		return model ? stripVendorFromName(model) : $i18n.t('Default Model');
-	};
-
-	// 关键参数 pill 行：模型 · 任务 · 时长 · 比例 · 分辨率 · 音频；与图片结果区口径一致。
-	const getTaskMetaPills = (record: VideoGenerationTask) => {
-		const model = getTaskModel(record);
-		const pills: string[] = [getTaskModelLabel(record)];
-		// 任务类型中文名
-		const taskLabelMap: Record<VideoTask, string> = {
-			'text-to-video': $i18n.t('Text to Video'),
-			'image-to-video': $i18n.t('Image to Video'),
-			'video-to-video': $i18n.t('Video to Video')
-		};
-		pills.push(taskLabelMap[record.task]);
-		const durationStr = record.params?.duration;
-		if (durationStr !== undefined && durationStr !== null && durationStr !== '') {
-			pills.push(
-				durationStr === 'auto'
-					? $i18n.t('Auto')
-					: durationStr === '0'
-						? $i18n.t('Match source duration')
-						: `${durationStr}s`
-			);
-		}
-		if (record.params?.aspect_ratio) pills.push(String(record.params.aspect_ratio));
-		if (record.params?.resolution) pills.push(String(record.params.resolution));
-		if (record.params?.audio_mode) {
-			pills.push(
-				$i18n.t(audioLabels[String(record.params.audio_mode)] ?? String(record.params.audio_mode))
-			);
-		}
-		if (record.params?.fps) pills.push(`${record.params.fps} FPS`);
-		if (record.params?.output_quality) {
-			pills.push(
-				$i18n.t(
-					advancedOptionLabels[String(record.params.output_quality)] ??
-						String(record.params.output_quality)
-				)
-			);
-		}
-		if (record.params?.motion_amplitude) {
-			pills.push(
-				`${$i18n.t('Motion amplitude')}: ${$i18n.t(advancedOptionLabels[String(record.params.motion_amplitude)] ?? String(record.params.motion_amplitude))}`
-			);
-		}
-		if (record.params?.guidance_scale !== null && record.params?.guidance_scale !== undefined) {
-			pills.push(`${$i18n.t('Prompt adherence')}: ${record.params.guidance_scale}`);
-		}
-		if (record.params?.seed !== null && record.params?.seed !== undefined) {
-			pills.push(`${$i18n.t('Seed')}: ${record.params.seed}`);
-		}
-		if (record.params?.loop === true) pills.push($i18n.t('Loop video'));
-		return pills;
-	};
-
-	// 时间：优先 completed_at，其次 started_at，回退 created_at（秒级时间戳）。
-	// 与图片结果区 formatBatchTime 口径一致：今天只显示 HH:MM；今年其它天补 M/D；跨年带年份。
-	const formatTaskTime = (ts: number | null) => {
-		if (!ts) return '';
-		const date = new Date(ts * 1000);
-		if (Number.isNaN(date.getTime())) return '';
-		const now = new Date();
-		const hh = String(date.getHours()).padStart(2, '0');
-		const mm = String(date.getMinutes()).padStart(2, '0');
-		const time = `${hh}:${mm}`;
-		const sameDay =
-			date.getFullYear() === now.getFullYear() &&
-			date.getMonth() === now.getMonth() &&
-			date.getDate() === now.getDate();
-		if (sameDay) return time;
-		const md = `${date.getMonth() + 1}/${date.getDate()}`;
-		if (date.getFullYear() === now.getFullYear()) return `${md} ${time}`;
-		return `${date.getFullYear()}/${md} ${time}`;
-	};
-	const getTaskTime = (record: VideoGenerationTask) =>
-		formatTaskTime(record.completed_at ?? record.started_at ?? record.created_at);
 
 	// 打开任务详情弹窗：复用 CreationDetailsModal，指定该任务的 creation_id。
 	const openTaskDetails = (record: VideoGenerationTask) => {
@@ -903,11 +583,6 @@
 		history = history.filter((item) => item.result?.creation_id !== creationId);
 		creationRevision += 1;
 	};
-
-	// 视频结果卡片样式：与图片结果区 BATCH_ARTICLE_CLASS 同构，保持视觉统一。
-	// 任务列表流式布局，卡片自然高度，新任务在顶部；播放器在卡片内靠左、固定 16:9 宽度。
-	const VIDEO_TASK_ARTICLE_CLASS =
-		'rounded-2xl bg-gray-50/60 p-3 dark:bg-gray-900/30 sm:p-4 mx-auto w-full max-w-5xl flex flex-col gap-3';
 </script>
 
 <svelte:head>
@@ -1041,193 +716,16 @@
 							<!-- 任务列表流：每个任务一块卡片，消息头→prompt→pill→播放器→操作行 -->
 							<section class="flex flex-col gap-3" aria-live="polite">
 								{#each history as taskItem (taskItem.id)}
-									{@const taskModel = getTaskModel(taskItem)}
-									<article id={`video-task-${taskItem.id}`} class={VIDEO_TASK_ARTICLE_CLASS}>
-										<!-- 消息头：厂商图标 + 模型短名 + 时间 -->
-										<div class="flex items-center gap-2">
-											{#if taskModel?.provider}
-												<VendorLogo
-													provider={taskModel.provider}
-													className="size-5 shrink-0 rounded-full object-cover"
-												/>
-											{:else}
-												<span
-													class="size-5 shrink-0 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700"
-												></span>
-											{/if}
-											<span
-												class="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100"
-												>{getTaskModelLabel(taskItem)}</span
-											>
-											<span class="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500"
-												>{getTaskTime(taskItem)}</span
-											>
-										</div>
-
-										<!-- prompt：全展开，不折叠 -->
-										{#if taskItem.prompt}
-											<p
-												class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200"
-											>
-												{taskItem.prompt}
-											</p>
-										{/if}
-
-										<!-- pill 参数行：模型 · 任务 · 时长 · 比例 · 分辨率 · 音频 -->
-										<div class="flex flex-wrap items-center gap-1.5">
-											{#each getTaskMetaPills(taskItem) as pill, index (`${index}-${pill}`)}
-												<span
-													class="inline-flex min-h-6 items-center rounded-md bg-gray-100 px-2 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-													>{pill}</span
-												>
-											{/each}
-											{#if taskItem.status === 'queued' || taskItem.status === 'running'}
-												<span
-													class="inline-flex min-h-6 items-center gap-1 rounded-md bg-amber-50 px-2 text-[11px] text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-												>
-													<Spinner className="size-3" />
-													{videoTaskStatusLabel(taskItem)}
-												</span>
-											{/if}
-										</div>
-
-										{#if taskItem.result}
-											<!-- 结果区：固定 16:9 宽度的播放器盒子，靠左对齐；视频 object-contain。
-											     盒子尺寸与 poster/video 内在比例解耦，消除 poster→播放的高度跳变；
-											     横屏/竖屏视频共用同一播放器宽度，竖屏视频自动 letterbox。 -->
-											<div class="flex w-full justify-start overflow-hidden">
-												<div class="relative aspect-video w-full max-w-[36rem]">
-													<video
-														class="absolute inset-0 h-full w-full rounded-2xl object-contain shadow-sm dark:shadow-black/40"
-														controls
-														playsinline
-														preload="metadata"
-														poster={taskItem.result.poster_url}
-														src={taskItem.result.url}
-													></video>
-												</div>
-											</div>
-										{:else if taskItem.status === 'queued' || taskItem.status === 'running'}
-											<!-- 生成中：占位骨架 + 提示（对齐图片页 animate-pulse 骨架风格） -->
-											<div class="flex w-full justify-start overflow-hidden">
-												<div
-													class="relative flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center dark:border-gray-700 dark:bg-gray-900 sm:px-5 sm:py-10"
-												>
-													<!-- 骨架 shimmer 覆盖层，与 Images.svelte 生成中占位一致 -->
-													<div
-														class="absolute inset-0 animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
-													></div>
-													<div class="relative flex flex-col items-center gap-3">
-														<Spinner className="size-6" />
-														<p class="text-sm font-medium text-gray-600 dark:text-gray-300">
-															{$i18n.t('Creating your video')}
-														</p>
-														<p class="text-xs text-gray-400 dark:text-gray-500">
-															{$i18n.t('The result will appear here shortly')}
-														</p>
-													</div>
-												</div>
-											</div>
-										{:else if taskItem.status === 'failed'}
-											<div class="flex w-full justify-start overflow-hidden">
-												<div
-													class="flex aspect-video w-full max-w-[36rem] flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-4 py-5 text-center dark:border-red-900/60 dark:bg-red-950/20 sm:px-5 sm:py-6"
-												>
-													<p class="text-sm font-medium text-red-600 dark:text-red-300">
-														{videoTaskStatusLabel(taskItem)}
-													</p>
-												</div>
-											</div>
-										{/if}
-
-										<!-- 操作行：再次生成 · 下载 · 查看详情 · 移除，紧凑次级按钮，触屏常驻可见 -->
-										<div class="flex flex-wrap items-center gap-1.5">
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => reuseTask(taskItem)}
-												aria-label={$i18n.t('Regenerate')}
-											>
-												<svg
-													class="size-3.5"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
-												>
-												{$i18n.t('Regenerate')}
-											</button>
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => downloadResult(taskItem)}
-												disabled={downloadingIds.has(taskItem.id)}
-												aria-label={$i18n.t('Download')}
-											>
-												{#if downloadingIds.has(taskItem.id)}
-													<Spinner className="size-3.5" />
-												{:else}
-													<svg
-														class="size-3.5"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="2"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
-													>
-												{/if}
-												{$i18n.t('Download')}
-											</button>
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => openTaskDetails(taskItem)}
-												aria-label={$i18n.t('View details')}
-											>
-												<svg
-													class="size-3.5"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"
-													><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
-												>
-												{$i18n.t('View details')}
-											</button>
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => requestDeleteTask(taskItem)}
-												disabled={deletingIds.has(taskItem.id)}
-												aria-label={$i18n.t('Remove record')}
-											>
-												{#if deletingIds.has(taskItem.id)}
-													<Spinner className="size-3.5" />
-												{:else}
-													<svg
-														class="size-3.5"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="2"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														aria-hidden="true"
-														><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
-													>
-												{/if}
-												{$i18n.t('Remove')}
-											</button>
-										</div>
-									</article>
+									<VideoTaskCard
+										record={taskItem}
+										model={getTaskModel(taskItem)}
+										downloading={downloadingIds.has(taskItem.id)}
+										deleting={deletingIds.has(taskItem.id)}
+										onRegenerate={reuseTask}
+										onDownload={downloadResult}
+										onViewDetails={openTaskDetails}
+										onRemove={requestDeleteTask}
+									/>
 								{/each}
 
 								{#if recentCursor}
@@ -1254,514 +752,31 @@
 							</section>
 						{/if}
 
-						<section
-							class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
-						>
-							<div class="mx-auto w-full max-w-5xl sm:px-2">
-								<!-- 模型选择器 + 任务选择：移动端下拉框、桌面端按钮标签，始终保持单行 -->
-								<div class="mb-2 flex flex-row items-center justify-between gap-2">
-									<div class="inline-flex min-w-0 max-w-[12rem] shrink">
-										<GenerationModelSelector
-											bind:show={showModelSelector}
-											label={selectedModel ? stripVendorFromName(selectedModel) : $i18n.t('Model')}
-											provider={selectedModel?.provider}
-											vendors={modelVendors}
-											bind:selectedVendor
-											models={vendorModels.map((model) => ({
-												id: model.id,
-												name: stripVendorFromName(model),
-												provider: model.provider,
-												recommended: model.recommended,
-												tags: model.tags,
-												maintenance: model.maintenance_message,
-												enabled: model.enabled,
-												raw: model
-											}))}
-											selectedId={modelId}
-											onSelectVendor={(vendor) => (selectedVendor = vendor)}
-											onSelectModel={(model) => {
-												const videoModel = model.raw as VideoModel;
-												if (videoModel.enabled !== false) changeModel(videoModel.id);
-											}}
-											listboxLabel={$i18n.t('Model')}
-										>
-											<svelte:fragment slot="extras" let:model>
-												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-													{#if (model.raw as VideoModel).base_price}
-														{(model.raw as VideoModel).base_price} {$i18n.t('credits.common.unit')}
-													{:else}
-														{$i18n.t('credits.unconfigured')}
-													{/if}
-												</span>
-											</svelte:fragment>
-										</GenerationModelSelector>
-									</div>
-
-									{#snippet taskIcon(id: string, className: string = 'size-4 shrink-0')}
-										{#if id === 'text-to-video'}
-											<svg
-												class={className}
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="1.8"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												aria-hidden="true"
-											>
-												<path
-													d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
-												/>
-											</svg>
-										{:else if id === 'image-to-video'}
-											<svg
-												class={className}
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="1.8"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												aria-hidden="true"
-											>
-												<rect x="3" y="3" width="18" height="18" rx="2" />
-												<circle cx="9" cy="9" r="2" />
-												<path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-											</svg>
-										{:else if id === 'video-to-video'}
-											<svg
-												class={className}
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="1.8"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												aria-hidden="true"
-											>
-												<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
-												<path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 7h5M17 17h5" />
-											</svg>
-										{/if}
-									{/snippet}
-
-									<!-- 移动端：紧凑下拉框（复用项目 Dropdown 组件），风格与模型选择器一致 -->
-									<div class="shrink-0 sm:hidden">
-										<Dropdown
-											bind:show={showTaskSelector}
-											side="top"
-											align="end"
-											visualViewportAware={$mobile}
-											contentClass="z-50 w-40 overflow-y-auto rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-900/98"
-										>
-											<button
-												type="button"
-												class="inline-flex h-8 items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-												aria-expanded={showTaskSelector}
-												aria-haspopup="true"
-											>
-												{@render taskIcon(task)}
-												<span class="truncate"
-													>{$i18n.t(
-														taskOptions.find((item) => item.id === task)?.label ?? ''
-													)}</span
-												>
-												<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
-											</button>
-
-											<div slot="content" class="flex flex-col gap-0.5">
-												{#each taskOptions as option}
-													<button
-														type="button"
-														class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {task ===
-														option.id
-															? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-															: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-														on:click={() => {
-															changeTask(option.id);
-															showTaskSelector = false;
-														}}
-														aria-pressed={task === option.id}
-														>{@render taskIcon(option.id)}{$i18n.t(option.label)}</button
-													>
-												{/each}
-											</div>
-										</Dropdown>
-									</div>
-
-									<!-- 桌面端：按钮标签 -->
-									<div
-										class="pointer-events-auto hidden flex-wrap gap-1 sm:flex sm:flex-nowrap sm:justify-end"
-										role="tablist"
-										tabindex="-1"
-										aria-label={$i18n.t('Video mode')}
-									>
-										{#each taskOptions as option}
-											<button
-												type="button"
-												role="tab"
-												aria-selected={task === option.id}
-												class="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition {task ===
-												option.id
-													? 'bg-gray-900 text-white shadow-sm dark:bg-gray-100 dark:text-gray-900'
-													: 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-												on:click={() => changeTask(option.id)}
-												>{@render taskIcon(option.id, 'size-3.5 shrink-0')}{$i18n.t(
-													option.label
-												)}</button
-											>
-										{/each}
-									</div>
-								</div>
-
-								<form
-									class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 p-4 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
-									on:submit|preventDefault={generate}
-								>
-									{#if selectedModel?.asset_inputs?.length}
-										<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
-											{#each selectedModel.asset_inputs as capability}
-												<label
-													class="flex h-14 min-w-36 cursor-pointer items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 px-3 text-xs text-gray-600 transition hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850"
-												>
-													<span
-														class="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-lg text-gray-500 shadow-sm dark:bg-gray-800"
-														>+</span
-													>
-													<span class="truncate"
-														>{$i18n.t(assetLabels[capability.role])}{capability.required
-															? ' *'
-															: ''}</span
-													>
-													<span class="ml-2 text-gray-400"
-														>{assets[capability.role]?.length ?? 0}/{capability.max_count}</span
-													>
-													<input
-														class="sr-only"
-														type="file"
-														accept={capability.mime_types.join(',')}
-														multiple={capability.multiple}
-														on:change={(event) =>
-															uploadAsset(capability, event.currentTarget.files)}
-													/>
-												</label>
-											{/each}
-										</div>
-										{#if Object.values(assets).some((items) => items?.length)}
-											<div class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-hidden">
-												{#each Object.entries(assets) as [role, items]}
-													{#each items ?? [] as item (item.id)}
-														<div
-															class="group relative flex w-44 shrink-0 items-center gap-2 overflow-hidden rounded-xl border border-gray-100 bg-gray-50 p-1.5 text-[11px] dark:border-gray-800 dark:bg-gray-900"
-														>
-															<div
-																class="flex aspect-video w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-200 text-gray-500 dark:bg-gray-800"
-															>
-																{#if item.mime_type.startsWith('image/')}<img
-																		class="size-full object-cover"
-																		src={item.url}
-																		alt={item.name}
-																	/>{:else if item.mime_type.startsWith('video/')}<video
-																		class="size-full object-cover"
-																		src={item.url}
-																		muted
-																		playsinline
-																		preload="metadata"
-																	></video>{:else}<span aria-hidden="true">♪</span>{/if}
-															</div>
-															<div class="min-w-0 flex-1">
-																<div class="truncate font-medium text-gray-700 dark:text-gray-200">
-																	{$i18n.t(assetLabels[role as VideoAssetRole])}
-																</div>
-																<div class="mt-0.5 truncate text-gray-400" title={item.name}>
-																	{item.name}
-																</div>
-															</div>
-															<button
-																type="button"
-																class="absolute right-1 top-1 flex size-11 items-center justify-center rounded-full bg-white/90 text-sm text-gray-600 shadow-sm transition hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-8 dark:bg-gray-800/90 dark:text-gray-300 dark:hover:text-white"
-																aria-label={$i18n.t('Remove')}
-																on:click={() => removeAsset(role as VideoAssetRole, item.id)}
-																>×</button
-															>
-														</div>
-													{/each}
-												{/each}
-											</div>
-										{/if}
-									{/if}
-
-									<textarea
-										bind:value={prompt}
-										class="min-h-20 max-h-44 w-full resize-none bg-transparent py-2 text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
-										placeholder={$i18n.t(taskOptions.find((item) => item.id === task)?.hint ?? '')}
-									></textarea>
-
-									<div class="mt-2 flex min-w-0 items-center justify-between gap-2">
-										<Dropdown
-											bind:show={showVideoOptions}
-											side="top"
-											align="start"
-											maxHeight="min(calc(100dvh - 5rem), 42rem)"
-											contentClass="z-50 w-[min(27rem,calc(100vw-4rem))] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:p-4 dark:border-gray-800 dark:bg-gray-900"
-										>
-											<button
-												type="button"
-												class="inline-flex h-8 max-w-[min(70vw,32rem)] items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-											>
-												<svg
-													class="size-4 shrink-0"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="1.8"
-													aria-hidden="true"
-													><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" /></svg
-												>
-												<span class="truncate">{videoOptionsLabel}</span>
-											</button>
-
-											<div slot="content" class="min-w-0">
-												{#if durationChoices.length}
-													<section>
-														<div class="flex items-center justify-between gap-3 px-1 pb-2">
-															<h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">
-																{$i18n.t('Duration')}
-															</h3>
-															<output
-																class="rounded-lg bg-gray-100 px-2 py-1 text-xs font-medium tabular-nums dark:bg-gray-800"
-																>{durationLabel(durationChoices[durationIndex])}</output
-															>
-														</div>
-														<div class="px-1">
-															<input
-																type="range"
-																class="h-8 w-full cursor-pointer accent-gray-900 dark:accent-gray-100"
-																min="0"
-																max={durationChoices.length - 1}
-																step="1"
-																value={durationIndex}
-																on:input={(event) =>
-																	(params = {
-																		...params,
-																		duration: durationChoices[Number(event.currentTarget.value)]
-																	})}
-																aria-label={$i18n.t('Duration')}
-															/>
-															<div class="flex justify-between text-[10px] text-gray-400">
-																<span>{durationLabel(durationChoices[0])}</span>
-																<span
-																	>{durationLabel(
-																		durationChoices[durationChoices.length - 1]
-																	)}</span
-																>
-															</div>
-														</div>
-													</section>
-												{/if}
-												{#if selectedModel?.aspect_ratios}
-													<section class="mt-5">
-														<h3
-															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-														>
-															{$i18n.t('Ratio')}
-														</h3>
-														<div class="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5">
-															{#each selectedModel.aspect_ratios as value}<button
-																	type="button"
-																	class="flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition {params.aspect_ratio ===
-																	value
-																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																	on:click={() => (params = { ...params, aspect_ratio: value })}
-																	aria-pressed={params.aspect_ratio === value}
-																	><span class="flex size-6 items-center justify-center"
-																		><span
-																			class="border border-current/60 {aspectRatioPreviewClass(
-																				value
-																			)}"
-																			style={aspectRatioPreviewStyle(value)}
-																		></span></span
-																	><span class="min-w-0 truncate">{value}</span></button
-																>{/each}
-														</div>
-													</section>
-												{/if}
-												{#if selectedModel?.resolutions}<section class="mt-5">
-														<h3
-															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-														>
-															{$i18n.t('Resolution')}
-														</h3>
-														<div class="grid grid-cols-3 gap-1.5">
-															{#each selectedModel.resolutions as value}<button
-																	type="button"
-																	class="h-9 rounded-xl border text-sm transition {params.resolution ===
-																	value
-																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																	on:click={() => (params = { ...params, resolution: value })}
-																	aria-pressed={params.resolution === value}>{value}</button
-																>{/each}
-														</div>
-													</section>{/if}
-												{#if selectedModel?.audio_options}<section class="mt-5">
-														<h3
-															class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-														>
-															{$i18n.t('Audio')}
-														</h3>
-														<div class="grid grid-cols-2 gap-1.5">
-															{#each selectedModel.audio_options as value}<button
-																	type="button"
-																	class="h-9 rounded-xl border px-2 text-sm transition {params.audio_mode ===
-																	value.mode
-																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																	on:click={() => (params = { ...params, audio_mode: value.mode })}
-																	aria-pressed={params.audio_mode === value.mode}
-																	>{$i18n.t(audioLabels[value.mode] ?? value.mode)}</button
-																>{/each}
-														</div>
-													</section>{/if}
-												{#if advancedFields.length}
-													<section class="mt-5 border-t border-gray-100 pt-3 dark:border-gray-800">
-														<button
-															type="button"
-															class="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-medium text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:text-gray-100"
-															aria-expanded={showAdvanced}
-															aria-controls="video-advanced-settings"
-															on:click={() => (showAdvanced = !showAdvanced)}
-															><span>{$i18n.t('Advanced')}</span><span
-																class="text-gray-400"
-																aria-hidden="true">{showAdvanced ? '−' : '+'}</span
-															></button
-														>
-														{#if showAdvanced}<div
-																id="video-advanced-settings"
-																class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"
-															>
-																{#each advancedFields as field}<div
-																		class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300 {field.kind ===
-																		'text'
-																			? 'sm:col-span-2'
-																			: ''}"
-																	>
-																		<span class="flex justify-between gap-2"
-																			><span>{$i18n.t(advancedFieldLabels[field.key])}</span
-																			>{#if field.kind === 'integer' || field.kind === 'number'}<span
-																					class="font-normal text-gray-400"
-																					>{advancedRangeLabel(field)}</span
-																				>{/if}</span
-																		>
-																		{#if advancedFieldDescriptions[field.key]}<p
-																				class="mt-1 text-[11px] font-normal leading-4 text-gray-400"
-																			>
-																				{$i18n.t(advancedFieldDescriptions[field.key] ?? '')}
-																			</p>{/if}
-																		{#if field.kind === 'text'}<textarea
-																				id="video-advanced-{field.key}"
-																				class="mt-1 min-h-24 w-full resize-y rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm font-normal text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																				rows="3"
-																				maxlength={field.max_length ?? undefined}
-																				value={String(fieldValue(field, params))}
-																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
-																				on:input={(event) =>
-																					setAdvancedParam(field, event.currentTarget.value)}
-
-																			></textarea>{:else if field.kind === 'option' && field.options}<div
-																				class="mt-1 grid grid-cols-2 gap-1.5"
-																				role="group"
-																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
-																			>
-																				{#each field.options as option}<button
-																						type="button"
-																						class="min-h-11 rounded-xl border px-3 py-2 text-xs transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 {fieldValue(
-																							field,
-																							params
-																						) === option
-																							? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																							: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																						on:click={() => setAdvancedParam(field, option)}
-																						aria-pressed={fieldValue(field, params) === option}
-																						>{$i18n.t(
-																							advancedOptionLabels[option] ?? option
-																						)}</button
-																					>{/each}
-																			</div>{:else if field.kind === 'boolean'}<button
-																				id="video-advanced-{field.key}"
-																				type="button"
-																				class="mt-1 flex min-h-11 w-full items-center justify-between rounded-xl border border-gray-200 bg-transparent px-3 py-2 font-normal text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:border-gray-700 dark:text-gray-100"
-																				role="switch"
-																				aria-checked={Boolean(fieldValue(field, params))}
-																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
-																				on:click={() =>
-																					setAdvancedParam(
-																						field,
-																						!Boolean(fieldValue(field, params))
-																					)}
-																				><span
-																					>{Boolean(fieldValue(field, params))
-																						? $i18n.t('On')
-																						: $i18n.t('Off')}</span
-																				><span
-																					class="h-5 w-9 rounded-full p-0.5 transition {Boolean(
-																						fieldValue(field, params)
-																					)
-																						? 'bg-gray-900 dark:bg-gray-100'
-																						: 'bg-gray-300 dark:bg-gray-600'}"
-																					><span
-																						class="block size-4 rounded-full bg-white transition {Boolean(
-																							fieldValue(field, params)
-																						)
-																							? 'translate-x-4 dark:bg-gray-900'
-																							: ''}"
-																					></span></span
-																				></button
-																			>{:else}<input
-																				id="video-advanced-{field.key}"
-																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm font-normal tabular-nums text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																				type="text"
-																				inputmode={field.kind === 'integer' ? 'numeric' : 'decimal'}
-																				value={fieldValue(field, params)}
-																				placeholder={$i18n.t('Model default')}
-																				aria-label={$i18n.t(advancedFieldLabels[field.key])}
-																				aria-invalid={Boolean(advancedErrorLabel(field))}
-																				aria-describedby={advancedErrorLabel(field)
-																					? `video-advanced-error-${field.key}`
-																					: undefined}
-																				on:input={(event) => updateAdvancedInput(field, event)}
-																			/>{/if}
-																		{#if advancedErrorLabel(field)}<p
-																				id="video-advanced-error-{field.key}"
-																				class="mt-1 text-[11px] font-normal text-red-600 dark:text-red-400"
-																				aria-live="polite"
-																			>
-																				{advancedErrorLabel(field)}
-																			</p>{/if}
-																	</div>{/each}
-															</div>{/if}
-													</section>
-												{/if}
-											</div>
-										</Dropdown>
-
-										<div class="flex shrink-0 items-center gap-2">
-											<ImageCreditQuoteBadge {quoteState} />
-											<GenerationSubmitButton
-												loading={submitting}
-												disabled={submitting ||
-													!selectedModel ||
-													selectedModel.enabled === false ||
-													Boolean(advancedError) ||
-													!isImageQuoteSubmittable(quoteState)}
-												label={$i18n.t('Generate video')}
-											/>
-										</div>
-									</div>
-								</form>
-							</div>
-						</section>
+								<VideoPromptForm
+									bind:task
+									bind:modelId
+									bind:selectedVendor
+									bind:prompt
+									bind:params
+									bind:assets
+									bind:showAdvanced
+									bind:showModelSelector
+									bind:showVideoOptions
+									{selectedModel}
+									{modelVendors}
+									{vendorModels}
+									{advancedFields}
+									{durationChoices}
+									{quoteState}
+									{submitting}
+									{advancedError}
+									onTaskChange={changeTask}
+									onModelChange={changeModel}
+									onUploadAsset={uploadAsset}
+									onRemoveAsset={removeAsset}
+									onPromptTagInsert={handlePromptTagInsert}
+									onSubmit={generate}
+								/>
 					</div>
 				</main>
 			</div>

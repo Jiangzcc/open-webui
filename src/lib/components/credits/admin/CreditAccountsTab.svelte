@@ -6,6 +6,7 @@
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import AdjustCreditsModal from './AdjustCreditsModal.svelte';
+	import RepairAccountModal from './RepairAccountModal.svelte';
 
 	const i18n = getContext('i18n');
 	const pageSize = 25;
@@ -18,6 +19,7 @@
 	let error = '';
 	let selectedAccount: CreditAccount | null = null;
 	let showAdjustment = false;
+	let showRepair = false;
 	let searchTimer: ReturnType<typeof setTimeout>;
 	let mounted = false;
 
@@ -57,6 +59,11 @@
 		showAdjustment = true;
 	};
 
+	const openRepair = (account: CreditAccount) => {
+		selectedAccount = account;
+		showRepair = true;
+	};
+
 	$: if (mounted && page > 0) {
 		loadAccounts();
 	}
@@ -71,6 +78,14 @@
 	bind:show={showAdjustment}
 	account={selectedAccount}
 	onAdjusted={() => {
+		loadAccounts();
+	}}
+/>
+
+<RepairAccountModal
+	bind:show={showRepair}
+	account={selectedAccount}
+	onRepaired={() => {
 		loadAccounts();
 	}}
 />
@@ -137,13 +152,22 @@
 								>{account.balance}</td
 							>
 							<td class="px-4 py-3 text-right">
-								<button
-									class="rounded-3xl bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
-									on:click={() => openAdjustment(account)}
-									type="button"
-								>
-									{$i18n.t('credits.admin.adjust')}
-								</button>
+								<div class="flex flex-wrap justify-end gap-2">
+									<button
+										class="rounded-3xl bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"
+										on:click={() => openAdjustment(account)}
+										type="button"
+									>
+										{$i18n.t('credits.admin.adjust')}
+									</button>
+									<button
+										class="rounded-3xl border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+										on:click={() => openRepair(account)}
+										type="button"
+									>
+										{$i18n.t('credits.admin.repair.button')}
+									</button>
+								</div>
 							</td>
 						</tr>
 					{/each}

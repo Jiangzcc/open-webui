@@ -502,6 +502,7 @@ async def adjust_balance(
     async with session.begin():
         current_target = await _current_user_snapshot(session, target.id)
         account = await get_or_create_account(session, current_target, now=created_at)
+        account = await _lock_and_verify_account_matches_ledger(session, account.id)
         balance = await update_account_balance(session, account, signed_amount, now=created_at)
         if balance is None:
             if signed_amount > 0:

@@ -5,15 +5,13 @@ import logging
 from uuid import uuid4
 
 import anyio
-from alembic.migration import MigrationContext
-from alembic.script import ScriptDirectory
 from fastapi import FastAPI
-from open_webui.env import DATABASE_SCHEMA, UVICORN_WORKERS
+from open_webui.env import UVICORN_WORKERS
+from open_webui.extensions.migration_kit import SchemaGuard, validate_schema
 from open_webui.utils.redis import get_redis_client
-from sqlalchemy import inspect
 
-from .db import engine, provider_ops_session
-from .migrations.runner import _migration_config, run_provider_ops_migrations
+from .db import provider_ops_session
+from .migrations.runner import SPEC, run_provider_ops_migrations
 
 log = logging.getLogger(__name__)
 
@@ -144,10 +142,10 @@ async def initialize_provider_ops_extension(app: FastAPI) -> None:
         )
 
 
-def _validate_provider_ops_schema() -> None:
-    with engine.connect() as connection:
-        inspector = inspect(connection)
-        required_tables = {
+_SCHEMA_GUARD = SchemaGuard(
+    spec=SPEC,
+    required_tables=frozenset(
+        {
             'ext_provider_invocation',
             'ext_provider_price_snapshot',
             'ext_provider_billing_event',
@@ -156,23 +154,12 @@ def _validate_provider_ops_schema() -> None:
             'ext_provider_analytics_bucket',
             'ext_provider_sync_run',
         }
-        missing = required_tables - set(inspector.get_table_names(schema=DATABASE_SCHEMA))
-        if missing:
-            raise RuntimeError(f'provider ops migration validation failed: missing tables {sorted(missing)}')
-        expected = set(ScriptDirectory.from_config(_migration_config(DATABASE_SCHEMA)).get_heads())
-        current = set(
-            MigrationContext.configure(
-                connection,
-                opts={
-                    'version_table': 'ext_provider_ops_schema_version',
-                    'version_table_schema': DATABASE_SCHEMA,
-                },
-            ).get_current_heads()
-        )
-        if current != expected:
-            raise RuntimeError(
-                f'provider ops migration validation failed: expected {sorted(expected)}, got {sorted(current)}'
-            )
+    ),
+)
+
+
+def _validate_provider_ops_schema() -> None:
+    validate_schema(_SCHEMA_GUARD)
 
 
 async def shutdown_provider_ops_extension(app: FastAPI) -> None:

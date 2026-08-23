@@ -1,26 +1,47 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { getContext, tick } from 'svelte';
 	import CreditAccountsTab from '$lib/components/credits/admin/CreditAccountsTab.svelte';
 	import CreditLedgerTab from '$lib/components/credits/admin/CreditLedgerTab.svelte';
 	import CreditPricingTab from '$lib/components/credits/admin/CreditPricingTab.svelte';
 	import CreditDimensionsTab from '$lib/components/credits/admin/CreditDimensionsTab.svelte';
 	import CreditReconciliationTab from '$lib/components/credits/admin/CreditReconciliationTab.svelte';
+	import CreditRedemptionTab from '$lib/components/credits/admin/CreditRedemptionTab.svelte';
 	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
 
 	const i18n = getContext('i18n');
 	registerCreditTranslations(i18n);
 
-	type CreditTab = 'accounts' | 'ledger' | 'reconciliation' | 'pricing' | 'dimensions';
+	type CreditTab =
+		| 'accounts'
+		| 'ledger'
+		| 'reconciliation'
+		| 'redemption'
+		| 'pricing'
+		| 'dimensions';
 
 	const tabs: Array<{ id: CreditTab; label: string }> = [
 		{ id: 'accounts', label: 'credits.admin.accounts' },
 		{ id: 'ledger', label: 'credits.ledger' },
 		{ id: 'reconciliation', label: 'credits.admin.reconciliation' },
+		{ id: 'redemption', label: 'credits.admin.redeemCodes' },
 		{ id: 'pricing', label: 'credits.prices' },
 		{ id: 'dimensions', label: 'credits.dimensions' }
 	];
 
 	let selectedTab: CreditTab = 'accounts';
+
+	const handleTabKeydown = async (event: KeyboardEvent, index: number) => {
+		let nextIndex: number | null = null;
+		if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+		if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+		if (event.key === 'Home') nextIndex = 0;
+		if (event.key === 'End') nextIndex = tabs.length - 1;
+		if (nextIndex === null) return;
+		event.preventDefault();
+		selectedTab = tabs[nextIndex].id;
+		await tick();
+		document.getElementById(`credit-tab-${selectedTab}`)?.focus();
+	};
 </script>
 
 <svelte:head>
@@ -35,8 +56,12 @@
 		</p>
 	</div>
 
-	<div class="flex gap-1 overflow-x-auto border-b border-gray-100 dark:border-gray-800">
-		{#each tabs as tab (tab.id)}
+	<div
+		class="flex gap-1 overflow-x-auto border-b border-gray-100 dark:border-gray-800"
+		role="tablist"
+		aria-label={$i18n.t('credits.admin.management')}
+	>
+		{#each tabs as tab, index (tab.id)}
 			<button
 				class="whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition {selectedTab ===
 				tab.id
@@ -46,19 +71,32 @@
 					selectedTab = tab.id;
 				}}
 				type="button"
+				role="tab"
+				aria-selected={selectedTab === tab.id}
+				aria-controls={`credit-tab-panel-${tab.id}`}
+				id={`credit-tab-${tab.id}`}
+				tabindex={selectedTab === tab.id ? 0 : -1}
+				on:keydown={(event) => handleTabKeydown(event, index)}
 			>
 				{$i18n.t(tab.label)}
 			</button>
 		{/each}
 	</div>
 
-	<div class="min-h-0 flex-1 overflow-y-auto pb-4">
+	<div
+		class="min-h-0 flex-1 overflow-y-auto pb-4"
+		role="tabpanel"
+		id={`credit-tab-panel-${selectedTab}`}
+		aria-labelledby={`credit-tab-${selectedTab}`}
+	>
 		{#if selectedTab === 'accounts'}
 			<CreditAccountsTab />
 		{:else if selectedTab === 'ledger'}
 			<CreditLedgerTab />
 		{:else if selectedTab === 'reconciliation'}
 			<CreditReconciliationTab />
+		{:else if selectedTab === 'redemption'}
+			<CreditRedemptionTab />
 		{:else if selectedTab === 'pricing'}
 			<CreditPricingTab />
 		{:else if selectedTab === 'dimensions'}

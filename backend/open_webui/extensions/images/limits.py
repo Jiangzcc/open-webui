@@ -1,45 +1,21 @@
 from __future__ import annotations
 
-import asyncio
-
-from open_webui.extensions.credits.errors import CreditError
-from open_webui.utils.rate_limit import RateLimiter
-from open_webui.utils.redis import get_redis_client
+from open_webui.extensions.generation_gate import GenerationGate
 
 IMAGE_GENERATION_RATE_LIMIT = 10
 IMAGE_GENERATION_RATE_WINDOW_SECONDS = 60
 IMAGE_GENERATION_MAX_CONCURRENT_PER_USER = 3
 
-_request_limiter = RateLimiter(
-    get_redis_client(async_mode=False),
+_gate = GenerationGate(
+    bucket_prefix='images:generation',
     limit=IMAGE_GENERATION_RATE_LIMIT,
-    window=IMAGE_GENERATION_RATE_WINDOW_SECONDS,
-    bucket_size=10,
+    window_seconds=IMAGE_GENERATION_RATE_WINDOW_SECONDS,
+    max_concurrent_per_user=IMAGE_GENERATION_MAX_CONCURRENT_PER_USER,
 )
-_active_by_user: dict[str, int] = {}
-_active_lock = asyncio.Lock()
 
-
-def enforce_image_generation_rate(user_id: str) -> None:
-    if _request_limiter.is_limited(f'images:generation:{user_id}'):
-        raise CreditError(code='rate_limited', context={'reason': 'request_rate'})
-
-
-async def acquire_image_generation_slot(user_id: str) -> None:
-    async with _active_lock:
-        active = _active_by_user.get(user_id, 0)
-        if active >= IMAGE_GENERATION_MAX_CONCURRENT_PER_USER:
-            raise CreditError(code='rate_limited', context={'reason': 'concurrency'})
-        _active_by_user[user_id] = active + 1
-
-
-async def release_image_generation_slot(user_id: str) -> None:
-    async with _active_lock:
-        active = _active_by_user.get(user_id, 0)
-        if active <= 1:
-            _active_by_user.pop(user_id, None)
-        else:
-            _active_by_user[user_id] = active - 1
+enforce_image_generation_rate = _gate.enforce_rate
+acquire_image_generation_slot = _gate.acquire_slot
+release_image_generation_slot = _gate.release_slot
 
 
 __all__ = [

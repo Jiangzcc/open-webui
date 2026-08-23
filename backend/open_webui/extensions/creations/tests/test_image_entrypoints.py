@@ -63,8 +63,21 @@ def images_funcs(images_tree):
 def test_image_generations_and_edits_require_authorization_scope(images_funcs) -> None:
     gen_params = [a.arg for a in images_funcs['image_generations'].args.args]
     edit_params = [a.arg for a in images_funcs['image_edits'].args.args]
-    assert gen_params == ['request', 'form_data', 'authorization_scope', 'metadata', 'user']
-    assert edit_params == ['request', 'form_data', 'authorization_scope', 'metadata', 'user']
+    # metadata/user：二开新增 —— 由 creations 调度链传入（任务捕获等）。
+    assert gen_params == [
+        'request',
+        'form_data',
+        'authorization_scope',
+        'metadata',
+        'user',
+    ]
+    assert edit_params == [
+        'request',
+        'form_data',
+        'authorization_scope',
+        'metadata',
+        'user',
+    ]
     for name in ('image_generations', 'image_edits'):
         args = images_funcs[name].args
         scope_arg = next(a for a in args.args if a.arg == 'authorization_scope')
@@ -104,7 +117,10 @@ def test_invoke_edit_creations_factory_orders_reference_snapshots_after_results(
     assert '_invoke_image_edits(' in body
     assert 'decode_prepared_references(prepared)' in body
     assert 'capture_reference_snapshots(' in body
-    assert 'ImageTerminalPreparationError' in body
+    # 复盘 #10：编辑成功后快照上传失败必须降级为无快照交付（references = ()），
+    # 不能整体失败丢弃已生成的付费结果；ImageTerminalPreparationError 通道已移除。
+    assert 'ImageTerminalPreparationError' not in body
+    assert 'references = ()' in body
     assert 'CapturedImageBatch(' in body
     # reference upload must happen before the batch is constructed
     assert body.index('_invoke_image_edits(') < body.index('capture_reference_snapshots(')
@@ -148,10 +164,10 @@ def test_invoke_image_edits_branches_return_captured_batch(images_funcs) -> None
     assert _returns_constructor_named(invoke, 'CapturedImageBatch')
 
 
-def test_fal_generation_mock_uses_provider_shaped_urls_and_uploads_results(images_funcs) -> None:
+def test_fal_generation_gates_mock_by_admin_toggle_and_uploads_results(images_funcs) -> None:
     body = ast.unparse(images_funcs['_invoke_image_generations'])
-    assert 'mock_res = get_mock_fal_image_result(fal_model, form_data)' in body
-    assert 'res = mock_res' in body
+    assert 'if image_config.FAL_MOCK_ENABLED:' in body
+    assert 'res = get_mock_fal_image_result(fal_model, form_data)' in body
     assert 'res = await run_fal_queue(' in body
     assert 'extract_fal_image_urls(res)' in body
     assert 'get_image_data(image_url)' in body
@@ -160,10 +176,10 @@ def test_fal_generation_mock_uses_provider_shaped_urls_and_uploads_results(image
     assert 'ReusedImageResult(' not in body
 
 
-def test_fal_edit_mock_uses_provider_shaped_urls_and_uploads_results(images_funcs) -> None:
+def test_fal_edit_gates_mock_by_admin_toggle_and_uploads_results(images_funcs) -> None:
     body = ast.unparse(images_funcs['_invoke_image_edits'])
-    assert 'mock_res = get_mock_fal_image_result(edit_model, form_data)' in body
-    assert 'res = mock_res' in body
+    assert 'if image_config.FAL_MOCK_ENABLED:' in body
+    assert 'res = get_mock_fal_image_result(edit_model, form_data)' in body
     assert 'res = await run_fal_queue(' in body
     assert 'extract_fal_image_urls(res)' in body
     assert 'get_image_data(image_url)' in body

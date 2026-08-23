@@ -6,6 +6,7 @@ from .router_test_support import AuthenticatedUser
 
 def test_me_returns_the_verified_users_balance(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
@@ -94,6 +95,7 @@ def test_credit_errors_use_the_public_envelope(monkeypatch) -> None:
 
 def test_unexpected_errors_are_logged_with_a_correlation_id_and_use_the_public_envelope(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_support
 
     app = FastAPI()
     app.include_router(credits_router.router)
@@ -107,7 +109,8 @@ def test_unexpected_errors_are_logged_with_a_correlation_id_and_use_the_public_e
         raise RuntimeError('database connection details must not reach the client')
 
     monkeypatch.setattr(credits_router, 'get_balance', unavailable)
-    monkeypatch.setattr(credits_router.log, 'error', lambda _message, **kwargs: errors.append(kwargs))
+    # 错误信封助手拆分后位于 router_support，日志由其模块的 log 记录。
+    monkeypatch.setattr(router_support.log, 'error', lambda _message, **kwargs: errors.append(kwargs))
 
     response = TestClient(app, raise_server_exceptions=False).get('/api/v1/credits/me')
 
@@ -119,10 +122,11 @@ def test_unexpected_errors_are_logged_with_a_correlation_id_and_use_the_public_e
 
 def test_admin_ledger_uses_admin_dependency(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -131,7 +135,7 @@ def test_admin_ledger_uses_admin_dependency(monkeypatch) -> None:
         assert query.limit == 3
         return type('Page', (), {'model_dump': lambda self: {'items': [], 'next_cursor': None}})()
 
-    monkeypatch.setattr(credits_router, 'list_admin_ledger', ledger)
+    monkeypatch.setattr(router_admin, 'list_admin_ledger', ledger)
 
     response = TestClient(app).get('/api/v1/credits/admin/ledger?limit=3')
 
@@ -141,10 +145,11 @@ def test_admin_ledger_uses_admin_dependency(monkeypatch) -> None:
 
 def test_admin_ledger_returns_a_public_error_for_an_unexpected_failure(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -152,7 +157,7 @@ def test_admin_ledger_returns_a_public_error_for_an_unexpected_failure(monkeypat
     async def unavailable(_session, _query):
         raise RuntimeError('sensitive database failure')
 
-    monkeypatch.setattr(credits_router, 'list_admin_ledger', unavailable)
+    monkeypatch.setattr(router_admin, 'list_admin_ledger', unavailable)
 
     response = TestClient(app, raise_server_exceptions=False).get('/api/v1/credits/admin/ledger')
 
@@ -162,10 +167,11 @@ def test_admin_ledger_returns_a_public_error_for_an_unexpected_failure(monkeypat
 
 def test_admin_adjustment_returns_a_public_error_for_an_unexpected_failure(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -173,7 +179,7 @@ def test_admin_adjustment_returns_a_public_error_for_an_unexpected_failure(monke
     async def unavailable(*_args):
         raise RuntimeError('sensitive database failure')
 
-    monkeypatch.setattr(credits_router, 'adjust_balance', unavailable)
+    monkeypatch.setattr(router_admin, 'adjust_balance', unavailable)
 
     response = TestClient(app, raise_server_exceptions=False).post(
         '/api/v1/credits/admin/accounts/user-2/adjustments',
@@ -184,10 +190,11 @@ def test_admin_adjustment_returns_a_public_error_for_an_unexpected_failure(monke
     assert response.json()['code'] == 'credit_service_unavailable'
 
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -199,7 +206,7 @@ def test_admin_adjustment_returns_a_public_error_for_an_unexpected_failure(monke
         assert audit.source == 'internal_admin'
         return type('Ledger', (), {'id': 'ledger-1', 'request_source': audit.source, 'request_id': audit.request_id})()
 
-    monkeypatch.setattr(credits_router, 'adjust_balance', adjustment)
+    monkeypatch.setattr(router_admin, 'adjust_balance', adjustment)
 
     response = TestClient(app).post(
         '/api/v1/credits/admin/accounts/user-2/adjustments',
@@ -231,10 +238,11 @@ def test_audit_context_generates_a_unique_request_id_without_a_header() -> None:
 
 def test_adjustment_rejects_a_client_supplied_audit_source(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -301,9 +309,9 @@ def test_rate_limiter_uses_synchronous_redis_operations() -> None:
 
 
 def test_disabled_credit_rate_limiter_does_not_count_requests() -> None:
-    from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_support
 
-    limiter = credits_router.CreditRateLimiter(None, limit=1, window=60, enabled=False)
+    limiter = router_support.CreditRateLimiter(None, limit=1, window=60, enabled=False)
     limiter._memory_store.clear()
 
     assert limiter.is_limited('credits:quote:user-1') is False
@@ -311,7 +319,9 @@ def test_disabled_credit_rate_limiter_does_not_count_requests() -> None:
 
 
 def test_credit_rate_limiter_records_a_metric_when_redis_falls_back(monkeypatch) -> None:
-    from open_webui.extensions.credits import router as credits_router
+    # limiter 与降级计数器都在 router_support；计数器在 _record_rate_limit_fallback
+    # 内部按模块全局解析，patch 必须落在定义模块上才生效。
+    from open_webui.extensions.credits import router_support
 
     class FailingRedis:
         def incr(self, _key):
@@ -319,11 +329,11 @@ def test_credit_rate_limiter_records_a_metric_when_redis_falls_back(monkeypatch)
 
     metrics = []
     monkeypatch.setattr(
-        credits_router,
+        router_support,
         '_rate_limit_fallback_counter',
         type('Counter', (), {'add': lambda _self, value, attributes: metrics.append((value, attributes))})(),
     )
-    limiter = credits_router.CreditRateLimiter(FailingRedis(), limit=2, window=60)
+    limiter = router_support.CreditRateLimiter(FailingRedis(), limit=2, window=60)
     limiter._memory_store.clear()
 
     assert limiter.is_limited('credits:quote:user-1') is False
@@ -332,6 +342,7 @@ def test_credit_rate_limiter_records_a_metric_when_redis_falls_back(monkeypatch)
 
 def test_ledger_and_adjustment_share_operation_limiters(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     class Limiter:
         def __init__(self):
@@ -343,14 +354,14 @@ def test_ledger_and_adjustment_share_operation_limiters(monkeypatch) -> None:
 
     limiter = Limiter()
     monkeypatch.setattr(credits_router, '_ledger_limiter', limiter)
-    monkeypatch.setattr(credits_router, '_adjustment_limiter', limiter)
+    monkeypatch.setattr(router_admin, '_adjustment_limiter', limiter)
 
     app = FastAPI()
     app.include_router(credits_router.router)
     app.dependency_overrides[credits_router.get_verified_user] = lambda: AuthenticatedUser(
         id='user-1', name='User One', email='user-1@example.test'
     )
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -362,7 +373,7 @@ def test_ledger_and_adjustment_share_operation_limiters(monkeypatch) -> None:
         return type('Ledger', (), {'id': 'ledger-1', 'request_source': audit.source, 'request_id': audit.request_id})()
 
     monkeypatch.setattr(credits_router, 'list_user_ledger', user_ledger)
-    monkeypatch.setattr(credits_router, 'adjust_balance', adjust)
+    monkeypatch.setattr(router_admin, 'adjust_balance', adjust)
 
     client = TestClient(app)
     assert client.get('/api/v1/credits/me/ledger').status_code == 200

@@ -26,6 +26,7 @@ from open_webui.extensions.creations.discovery_service import (
     withdraw_creation,
 )
 from open_webui.extensions.creations.generation_tasks import (
+    IdempotencyPayloadConflictError,
     create_generation_task,
     delete_generation_task,
     get_generation_task,
@@ -129,6 +130,11 @@ async def create_image_generation_task(
             kind=submission.kind,
             payload=form.model_dump(exclude_none=True),
         )
+    except IdempotencyPayloadConflictError:
+        # 幂等键命中但载荷不一致：拒绝而不是静默复用旧任务丢弃新载荷
+        #（与视频端 idempotency_key_conflict 契约一致）。
+        await release_image_generation_slot(user.id)
+        return JSONResponse(status_code=409, content={'detail': 'idempotency_key_conflict'})
     except Exception:
         await release_image_generation_slot(user.id)
         raise

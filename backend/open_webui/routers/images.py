@@ -38,9 +38,10 @@ from open_webui.extensions.creations.schemas import (
 )
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.http import public_credit_error_response
-from open_webui.extensions.credits.image_billing import ImageTerminalPreparationError, bill_image_call
+from open_webui.extensions.credits.image_billing import bill_image_call
 from open_webui.extensions.credits.pricing import attach_model_base_prices
 from open_webui.extensions.credits.repository import get_enabled_prices
+
 # EXT: 二开新增 —— 并发槽位控制、操作韧性重试、provider 调用追踪
 from open_webui.extensions.images.limits import (
     acquire_image_generation_slot,
@@ -65,7 +66,7 @@ from open_webui.utils.images.comfyui import (
     comfyui_edit_image,
     comfyui_upload_image,
 )
-from open_webui.utils.images.fal import (
+from open_webui.extensions.fal_images.client import (
     FAL_DEFAULT_IMAGE_MODEL,
     # EXT: 二开新增 —— 自定义尺寸校验
     FalImageSizeError,
@@ -79,8 +80,9 @@ from open_webui.utils.images.fal import (
     # EXT: 二开新增 —— 自定义尺寸校验入口
     validate_fal_image_size,
 )
+
 # EXT: 二开新增 —— 暴露高级参数字段给管理端模型列表
-from open_webui.utils.images.fal_models import public_fal_image_advanced_fields, public_fal_image_models
+from open_webui.extensions.fal_images.models import public_fal_image_advanced_fields, public_fal_image_models
 from open_webui.utils.session_pool import get_session
 from PIL import Image, ImageOps
 from pydantic import BaseModel
@@ -126,6 +128,7 @@ IMAGE_CONFIG_KEYS = {
     'IMAGES_GEMINI_ENDPOINT_METHOD': 'image_generation.gemini.endpoint_method',
     'FAL_API_BASE_URL': 'image_generation.fal.api_base_url',
     'FAL_API_KEY': 'image_generation.fal.api_key',
+    'FAL_MOCK_ENABLED': 'image_generation.fal.mock_enabled',
     'ENABLE_IMAGE_EDIT': 'images.edit.enable',
     'IMAGE_EDIT_ENGINE': 'images.edit.engine',
     'IMAGE_EDIT_MODEL': 'images.edit.model',
@@ -299,6 +302,7 @@ class ImagesConfig(BaseModel):
 
     FAL_API_BASE_URL: str
     FAL_API_KEY: str
+    FAL_MOCK_ENABLED: bool
 
     ENABLE_IMAGE_EDIT: bool
     IMAGE_EDIT_ENGINE: str
@@ -715,10 +719,11 @@ def finalize_image_creations_factory(request: Request, form_data, metadata, user
 def invoke_edit_creations_factory(request: Request, metadata, user):
     """Wrap the edit provider call so reference snapshots upload after results.
 
+    EXT: 二开修改 —— 快照上传失败降级而不是整体失败：编辑结果已生成且
+    供应商已收费，快照只是审计捕获，不能让它把已付费结果一起丢弃。
     The provider runs first via _invoke_image_edits, then we decode the prepared
     references and upload one ordered immutable snapshot set before handing the
-    batch back. A reference-upload failure therefore propagates before the
-    terminal DB transaction, leaving usage `invoking`.
+    batch back.
     """
 
     async def invoke_edit_creations(prepared, provider_form):
@@ -734,8 +739,10 @@ def invoke_edit_creations_factory(request: Request, metadata, user):
                 decode_prepared_references(prepared),
                 user,
             )
-        except Exception as error:
-            raise ImageTerminalPreparationError() from error
+        except Exception:
+            # 快照是审计捕获而非用户付费产物：失败时以无快照降级交付。
+            log.exception('Could not capture reference snapshots for image edit')
+            references = ()
         return CapturedImageBatch(images=tuple(internal_result.images), references=references)
 
     return invoke_edit_creations
@@ -956,11 +963,11 @@ async def _invoke_image_generations(
         elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
             fal_model = get_fal_generation_model(form_data.model or model)
             data = build_fal_image_payload(form_data, fal_model)
-            mock_res = get_mock_fal_image_result(fal_model, form_data)
 
-            if mock_res is not None:
+            # EXT: 二开新增 —— mock 仅在管理端开关显式开启时生效，默认走真实 FAL 队列。
+            if image_config.FAL_MOCK_ENABLED:
                 log.info(f'Using mocked fal.ai image result for {fal_model}')
-                res = mock_res
+                res = get_mock_fal_image_result(fal_model, form_data)
             else:
                 # EXT: 二开新增 —— 启动 provider 调用追踪观察者
                 observer = await try_start_provider_invocation(
@@ -1453,11 +1460,11 @@ async def _invoke_image_edits(
             edit_model = get_fal_edit_model(model)
             image_urls = form_data.image if isinstance(form_data.image, list) else [form_data.image]
             data = build_fal_image_payload(form_data, edit_model, image_urls)
-            mock_res = get_mock_fal_image_result(edit_model, form_data)
 
-            if mock_res is not None:
+            # EXT: 二开新增 —— mock 仅在管理端开关显式开启时生效，默认走真实 FAL 队列。
+            if image_config.FAL_MOCK_ENABLED:
                 log.info(f'Using mocked fal.ai image result for {edit_model}')
-                res = mock_res
+                res = get_mock_fal_image_result(edit_model, form_data)
             else:
                 # EXT: 二开新增 —— 启动 provider 调用追踪观察者
                 observer = await try_start_provider_invocation(

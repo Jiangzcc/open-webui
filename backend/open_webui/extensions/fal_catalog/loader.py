@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -164,10 +165,54 @@ def load_video_catalog(catalog_dir: Path | None = None) -> FalVideoCatalog:
     )
 
 
+def _video_catalog_signature(root: Path) -> tuple[tuple[str, int, int], ...]:
+    """Fingerprint every JSON file in the video catalog directory.
+
+    Compared on each ``load_video_catalog_cached`` call: two ``stat`` syscalls
+    per file instead of a full parse. Any hot edit (content or file list)
+    changes the signature and triggers exactly one re-parse.
+    """
+    signature: list[tuple[str, int, int]] = []
+    for path in sorted(root.glob('*.json')):
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            # glob 与 stat 之间文件被删除/原子替换（目录热更新）时跳过：
+            # 签名随之变化触发一次重解析，而不是把竞态抛成未处理异常。
+            continue
+        signature.append((path.name, stat.st_mtime_ns, stat.st_size))
+    return tuple(signature)
+
+
+_VIDEO_CATALOG_CACHE_LOCK = threading.Lock()
+_VIDEO_CATALOG_CACHE: dict[Path, tuple[tuple[tuple[str, int, int], ...], FalVideoCatalog]] = {}
+
+
+def load_video_catalog_cached(catalog_dir: Path | None = None) -> FalVideoCatalog:
+    """Load the video catalog once per directory version and reuse the result.
+
+    Unlike ``load_video_catalog`` this never re-parses unchanged files, so
+    lookups keyed on arbitrary client input cannot trigger repeated full-disk
+    parses. Hot updates to the catalog JSON files are picked up on the next
+    call via the stat signature above.
+    """
+    root = (catalog_dir or _DEFAULT_VIDEO_CATALOG_DIR).resolve()
+    signature = _video_catalog_signature(root)
+    with _VIDEO_CATALOG_CACHE_LOCK:
+        cached = _VIDEO_CATALOG_CACHE.get(root)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+    catalog = load_video_catalog(root)
+    with _VIDEO_CATALOG_CACHE_LOCK:
+        _VIDEO_CATALOG_CACHE[root] = (signature, catalog)
+    return catalog
+
+
 __all__ = [
     'FalCatalog',
     'FalCatalogError',
     'FalVideoCatalog',
     'load_image_catalog',
     'load_video_catalog',
+    'load_video_catalog_cached',
 ]

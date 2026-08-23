@@ -20,6 +20,7 @@ from open_webui.extensions.credits.constants import (
     MAX_PRICE_DECIMAL_PLACES,
     MAX_PRICE_DIGITS,
     MAX_PRICE_VALUE,
+    MAX_REDEEM_BATCH_SIZE,
     MAX_REQUEST_ID_LENGTH,
     MAX_RULE_DIMENSIONS,
     MAX_USER_EMAIL_LENGTH,
@@ -326,6 +327,94 @@ class CompensationRequest(StrictModel):
     @classmethod
     def normalize_compensation_note(cls, note: str | None) -> str | None:
         return note.strip() or None if note is not None else None
+
+
+class RedeemCodeResult(StrictModel):
+    ledger_id: str
+    credited: int = Field(gt=0)
+    balance: int = Field(ge=0)
+    redeemed_at: int = Field(ge=0)
+
+
+class RedeemBatchCreate(StrictModel):
+    name: str = Field(min_length=1, max_length=128)
+    face_value: int = Field(gt=0, le=MAX_ADJUSTMENT)
+    quantity: int = Field(ge=1, le=MAX_REDEEM_BATCH_SIZE)
+    expires_at: int | None = Field(default=None, ge=0)
+    per_user_limit: int | None = Field(default=None, ge=1)
+
+    @field_validator('name')
+    @classmethod
+    def normalize_name(cls, name: str) -> str:
+        normalized = ' '.join(name.split())
+        if not normalized:
+            raise ValueError('batch name must not be blank')
+        return normalized
+
+    @model_validator(mode='after')
+    def validate_limit(self) -> 'RedeemBatchCreate':
+        if self.per_user_limit is not None and self.per_user_limit > self.quantity:
+            raise ValueError('per_user_limit must not exceed quantity')
+        return self
+
+
+class RedeemBatchItem(StrictModel):
+    id: str
+    name: str
+    face_value: int = Field(gt=0)
+    code_count: int = Field(gt=0)
+    redeemed_count: int = Field(ge=0)
+    voided_count: int = Field(ge=0)
+    unused_count: int = Field(ge=0)
+    available_count: int = Field(ge=0)
+    expires_at: int | None = Field(default=None, ge=0)
+    per_user_limit: int | None = Field(default=None, ge=1)
+    voided_at: int | None = Field(default=None, ge=0)
+    created_by_id: str
+    created_by_name_snapshot: str | None
+    created_at: int = Field(ge=0)
+
+
+class RedeemBatchPage(StrictModel):
+    items: tuple[RedeemBatchItem, ...]
+    total: int = Field(ge=0)
+
+
+class RedeemBatchCreated(RedeemBatchItem):
+    codes: tuple[str, ...]
+
+
+class RedeemCodeAdminItem(StrictModel):
+    id: str
+    code: str
+    hint: str
+    status: Literal['available', 'redeemed', 'voided', 'expired']
+    redeemed_by_user_id: str | None
+    redeemed_by_name_snapshot: str | None
+    redeemed_at: int | None = Field(default=None, ge=0)
+    voided_at: int | None = Field(default=None, ge=0)
+
+
+class RedeemCodeAdminPage(StrictModel):
+    items: tuple[RedeemCodeAdminItem, ...]
+    total: int = Field(ge=0)
+
+
+class RedeemAuditItem(StrictModel):
+    id: str
+    action: Literal['generate', 'redeem', 'void_batch', 'void_code']
+    code_id: str | None
+    actor_id: str
+    actor_name_snapshot: str | None
+    request_source: AuditSource
+    request_id: str
+    metadata: dict[str, object] | None
+    created_at: int = Field(ge=0)
+
+
+class RedeemAuditPage(StrictModel):
+    items: tuple[RedeemAuditItem, ...]
+    total: int = Field(ge=0)
 
 
 T = TypeVar('T')

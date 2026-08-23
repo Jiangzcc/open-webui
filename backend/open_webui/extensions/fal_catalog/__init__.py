@@ -6,6 +6,7 @@ from open_webui.extensions.fal_catalog.loader import (
     FalVideoCatalog,
     load_image_catalog,
     load_video_catalog,
+    load_video_catalog_cached,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     'FalVideoCatalog',
     'load_image_catalog',
     'load_video_catalog',
+    'load_video_catalog_cached',
 ]

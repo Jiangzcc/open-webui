@@ -15,7 +15,7 @@ import sys
 import types
 
 import pytest
-from open_webui.extensions.videos import pexels_mock, service
+from open_webui.extensions.videos import delivery, pexels_mock, service
 from open_webui.extensions.videos.pexels_mock import PexelsMockClip
 from open_webui.extensions.videos.schemas import VideoTaskResponse
 
@@ -284,7 +284,7 @@ def _install_fake_upload(monkeypatch, captured: list[tuple[str, str, int]]) -> N
         captured.append((file.filename, content_type, len(payload)))
         return _FakeFile(payload, file.filename, content_type)
 
-    monkeypatch.setattr(service, 'upload_file_handler', fake_upload_file_handler)
+    monkeypatch.setattr(delivery, 'upload_file_handler', fake_upload_file_handler)
 
 
 @pytest.mark.asyncio
@@ -299,7 +299,7 @@ async def test_finalize_dispatches_to_pexels_clip(monkeypatch) -> None:
         duration_seconds=42,
     )
     monkeypatch.setattr(
-        service, 'fetch_pexels_mock_clip', lambda: _async_return(clip))
+        delivery, 'fetch_pexels_mock_clip', lambda: _async_return(clip))
 
     session = _RecordingSession()
     result = await service._finalize_mock_video(_FakeRequest(), types.SimpleNamespace(id='u1'), _task(), session)
@@ -330,7 +330,7 @@ async def test_finalize_synthesizes_poster_when_pexels_has_none(monkeypatch) -> 
         poster_content_type='image/jpeg',
         duration_seconds=11,
     )
-    monkeypatch.setattr(service, 'fetch_pexels_mock_clip', lambda: _async_return(clip))
+    monkeypatch.setattr(delivery, 'fetch_pexels_mock_clip', lambda: _async_return(clip))
 
     session = _RecordingSession()
     result = await service._finalize_mock_video(_FakeRequest(), types.SimpleNamespace(id='u1'), _task(), session)
@@ -346,7 +346,7 @@ async def test_finalize_falls_back_to_static_assets_when_pexels_unavailable(monk
     captured: list[tuple[str, str, int]] = []
     _install_fake_upload(monkeypatch, captured)
 
-    monkeypatch.setattr(service, 'fetch_pexels_mock_clip', lambda: _async_return(None))
+    monkeypatch.setattr(delivery, 'fetch_pexels_mock_clip', lambda: _async_return(None))
 
     session = _RecordingSession()
     result = await service._finalize_mock_video(_FakeRequest(), types.SimpleNamespace(id='u1'), _task(), session)
@@ -374,7 +374,7 @@ async def test_finalize_clip_uses_real_duration_and_pexels_poster(monkeypatch) -
         duration_seconds=33,
     )
     session = _RecordingSession()
-    result = await service._finalize_clip_mock_video(
+    result = await delivery._finalize_clip_mock_video(
         _FakeRequest(), types.SimpleNamespace(id='u1'), _task(), session, clip
     )
     assert result['duration_seconds'] == 33

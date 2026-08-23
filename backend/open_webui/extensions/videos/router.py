@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 from uuid import uuid4
 
@@ -27,18 +28,22 @@ from open_webui.extensions.videos.schemas import (
     VideoTaskResponse,
     VideoTaskSubmitForm,
 )
-from open_webui.extensions.videos.service import (
+from open_webui.extensions.videos.queries import (
+    DELETABLE_STATUSES,
     create_video_task,
     delete_video_task,
     get_video_task,
     get_video_task_by_idempotency_key,
     list_video_tasks,
-    schedule_video_task,
+    video_task_exists,
     video_task_matches_submission,
 )
+from open_webui.extensions.videos.service import schedule_video_task
 from open_webui.internal.db import get_async_session
 from open_webui.utils.auth import get_verified_user
 from sqlalchemy.ext.asyncio import AsyncSession
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/v1/videos', tags=['videos'])
 
@@ -74,7 +79,7 @@ async def submit_video_task(  # noqa: C901 - admission, idempotency, and slot cl
             return JSONResponse(status_code=409, content={'detail': 'idempotency_key_conflict'})
         return existing
     try:
-        executor = resolve_video_executor(request)
+        executor = await resolve_video_executor()
     except VideoExecutionError as error:
         return JSONResponse(status_code=503, content={'detail': error.code})
     # 提交速率限流：在落库前拦截刷量请求，避免无效任务占据 DB 行 + 调度槽。
@@ -167,5 +172,16 @@ async def remove_video_task(
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
+    task = await get_video_task(session, user.id, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail='video task not found')
+    if task.status not in DELETABLE_STATUSES:
+        # 进行中/待恢复任务删除后 worker 照常扣费并产生孤儿媒体记录
+        #（与图片端 delete 守卫一致）。
+        raise HTTPException(status_code=409, detail='active video task cannot be deleted')
     if not await delete_video_task(session, user.id, task_id):
+        # 终态谓词同时写在 DELETE 里：校验与删除之间任务被恢复循环重新置为
+        # running（TOCTOU 竞态）时影响 0 行，按进行中任务拒绝。
+        if await video_task_exists(session, user.id, task_id):
+            raise HTTPException(status_code=409, detail='active video task cannot be deleted')
         raise HTTPException(status_code=404, detail='video task not found')

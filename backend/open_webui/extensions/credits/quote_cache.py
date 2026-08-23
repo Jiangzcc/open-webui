@@ -1,44 +1,23 @@
 from __future__ import annotations
 
-import json
-import logging
-from hashlib import sha256
 from threading import Lock
 
 from open_webui.extensions.credits.constants import (
     CREDIT_QUOTE_CACHE_MAX_ENTRIES,
     CREDIT_QUOTE_CACHE_TTL_SECONDS,
 )
-from open_webui.utils.redis import get_redis_client
 
-log = logging.getLogger(__name__)
-
-# 报价缓存的跨进程实现：原 _quote_cache 是模块级 dict，多 worker 部署时各进程
-# 各一份缓存，价格更新后最多 TTL（5s）后才一致。改为 Redis 存储缓存值，
-# Redis 不可用时降级到进程内 dict 并告警（对齐 CreditRateLimiter 的 fallback 模式）。
+# 报价缓存（进程内 TTL+LRU）。当前部署形态为单 worker：进程内缓存即全局
+# 缓存。复盘 #12 移除了为多 worker 准备的 Redis 双路径——该部署模式不存在，
+# 双路径只增加降级分支和"配置了 Redis 但不可用"的告警噪音。
 #
-# 缓存键与原 dict 键一致：(user_id, price_id, action:request_hash, price.updated_at)。
-# price.updated_at 已编码进键，因此价格变更后旧键自然失效，无需显式失效逻辑。
-# TTL 由 Redis EXPIRE 保证，避免进程内 dict 的手动过期清理。
+# 缓存键：(user_id, price_id, action:request_hash, price.updated_at)。
+# price.updated_at 已编码进键，价格变更后旧键自然失效，无需显式失效逻辑。
 
-_async_redis = get_redis_client(async_mode=True)
-
-# 进程内 fallback 缓存：仅在 Redis 不可用时使用。
 _memory_cache: dict[tuple[str, str, str, int], tuple[float, dict[str, object]]] = {}
-# 保护 _write_memory_fallback 中 LRU 驱逐的 check-then-act 操作，
-# 避免并发协程在检查长度 → pop → 写入之间交错导致缓存超限或驱逐错误条目。
+# 保护 LRU 驱逐的 check-then-act 操作，避免并发协程在检查长度 → pop → 写入
+# 之间交错导致缓存超限或驱逐错误条目。
 _memory_lock = Lock()
-
-
-def _redis_available() -> bool:
-    return _async_redis is not None
-
-
-def _redis_key(cache_key: tuple[str, str, str, int]) -> str:
-    # 对完整元组做规范化编码并哈希，避免 user/action 等字段未来放宽字符集后
-    # 与分隔符产生歧义。缓存 TTL 很短，无需保留人类可读的原始键段。
-    encoded = json.dumps(cache_key, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
-    return f'webui:credits:quote:{sha256(encoded).hexdigest()}'
 
 
 async def get_cached_quote(
@@ -47,28 +26,6 @@ async def get_cached_quote(
     now: float,
 ) -> dict[str, object] | None:
     """读缓存。命中时复用缓存的报价，但用当前余额覆写 balance/sufficient。"""
-    if _redis_available():
-        try:
-            raw = await _async_redis.get(_redis_key(cache_key))
-        except Exception:
-            log.warning('Quote cache Redis read failed, using process memory fallback')
-        else:
-            if raw is None:
-                # Redis 正常响应但没有该键时，以共享缓存为准。不能读取某个 worker
-                # 残留的本地值，否则多进程会对同一请求返回不一致报价。
-                return None
-            try:
-                cached = json.loads(raw)
-            except (ValueError, TypeError):
-                log.debug('corrupt quote cache entry, ignoring')
-                cached = None
-            if cached is not None:
-                response = dict(cached)
-                response['balance'] = balance
-                response['sufficient'] = balance >= response.get('charged_credits', 0)
-                return response
-            return None
-    # Redis 未配置或读取异常时才走进程内降级。
     with _memory_lock:
         cached = _memory_cache.get(cache_key)
         if cached is not None and cached[0] <= now:
@@ -78,28 +35,12 @@ async def get_cached_quote(
     if cached_value is not None:
         cached_value['balance'] = balance
         cached_value['sufficient'] = balance >= cached_value.get('charged_credits', 0)
-        return cached_value
-    return None
+    return cached_value
 
 
 async def cache_quote(cache_key: tuple[str, str, str, int], response: dict[str, object], now: float) -> None:
-    """写缓存。Redis 用 SETEX 带 TTL；内存降级用原 LRU 策略。"""
-    # 存储前剥离 balance/sufficient（这俩随余额实时变，不该缓存）。
+    """写缓存。balance/sufficient 随余额实时变化，存储前剥离。"""
     storable = {k: v for k, v in response.items() if k not in ('balance', 'sufficient')}
-    # 始终写入进程内 fallback，保证 Redis 不可用时的读路径能命中。
-    _write_memory_fallback(cache_key, storable, now)
-    if _redis_available():
-        try:
-            await _async_redis.setex(
-                _redis_key(cache_key),
-                CREDIT_QUOTE_CACHE_TTL_SECONDS,
-                json.dumps(storable, default=str),
-            )
-        except Exception:
-            log.warning('Quote cache Redis write failed, using process memory fallback')
-
-
-def _write_memory_fallback(cache_key: tuple[str, str, str, int], storable: dict[str, object], now: float) -> None:
     with _memory_lock:
         if len(_memory_cache) >= CREDIT_QUOTE_CACHE_MAX_ENTRIES:
             oldest_key = min(_memory_cache, key=lambda key: _memory_cache[key][0])
@@ -107,20 +48,14 @@ def _write_memory_fallback(cache_key: tuple[str, str, str, int], storable: dict[
         _memory_cache[cache_key] = (now + CREDIT_QUOTE_CACHE_TTL_SECONDS, dict(storable))
 
 
-def clear_quote_cache_for_test() -> None:
-    """测试辅助：清空进程内 fallback 缓存，避免跨用例泄漏。"""
-    with _memory_lock:
-        _memory_cache.clear()
-
-
-def memory_cache_for_legacy_tests() -> dict[tuple[str, str, str, int], tuple[float, dict[str, object]]]:
-    """Expose the single fallback cache to older router tests without duplicating runtime state."""
+def memory_cache() -> dict[tuple[str, str, str, int], tuple[float, dict[str, object]]]:
+    """进程内缓存本体。router._quote_cache 测试桩别名指向它（旧测试直接
+    clear/注入缓存）；生产读写请使用 get_cached_quote / cache_quote。"""
     return _memory_cache
 
 
 __all__ = [
     'cache_quote',
-    'clear_quote_cache_for_test',
     'get_cached_quote',
-    'memory_cache_for_legacy_tests',
+    'memory_cache',
 ]

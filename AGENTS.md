@@ -15,8 +15,8 @@
 - 不得直接在 `main` 分支开发或提交二开功能；`main` 仅用于保留和跟踪 Open WebUI 上游代码，二开改动通常在 `test` 分支完成。
 - 新功能优先复用现有公开接口和组件，其次使用独立扩展模块，再通过最小薄桥接点接入上游调用链；不得为局部需求复制、替换或大规模重写上游核心模块。
 - 二开后端能力优先放入 `backend/open_webui/extensions/`。新增表、索引和迁移对象使用明确的 `ext_` 命名空间和独立迁移链；除非经过明确确认，不得修改上游已有表结构或迁移历史。
-- UI 响应式要求适用于所有新增区域和本次修改直接影响的既有布局。完成前至少检查一个移动端窄屏和一个桌面端视口；不得仅凭存在响应式 CSS class 就声称移动端可用。
-- 关键操作不得仅依赖 hover，必须支持触屏，并提供合理的键盘操作、语义化标签、焦点状态和必要的 ARIA 关系。还应检查深浅色主题、国际化文案长度和横向溢出。
+- UI 响应式要求适用于所有新增区域和本次修改直接影响的既有布局。完成前至少检查一个移动端窄屏和一个桌面端视口；不得仅凭存在响应式 CSS class 就声称移动端可用；管理员页面例外。
+- 关键操作不得仅依赖 hover，必须支持触屏，并提供合理的键盘操作、语义化标签、焦点状态和必要的 ARIA 关系。还应检查深浅色主题、国际化文案长度和横向溢出；管理员页面例外。
 - 用户可见文案使用现有 i18n 机制，并补齐简体中文翻译。
 - 未经用户明确要求，不得 commit、push、创建 PR、合并或变基；不得覆盖、还原或删除无法确认归属的工作区改动。
 - 只修改当前需求所必需的文件和行为，不顺便格式化、重命名或重构无关代码。新增或升级依赖前必须说明必要性和影响。
@@ -24,7 +24,7 @@
 - 不得把真实密码、API key、Authorization token、Cookie 或其他秘密写入代码、测试、日志或文档。
 - 不得擅自删除或覆盖无法确认归属的本地 mock、调试开关和开发环境配置；开发 mock 必须与默认生产路径明确隔离。
 
-## 开发环境信息
+## 开发环境信息（仅本地环境，无安全隐患）
 
 - 管理员账号：292591116@qq.com 密码：jiangzhichao
 - 普通用户账号：292591117@qq.com 密码：jiangzhichao
@@ -40,3 +40,13 @@
 - This is a SvelteKit 2 / Svelte 5 / Vite / TypeScript frontend with a FastAPI / SQLAlchemy / Alembic backend.
 - Use npm for the frontend; the repo has `package-lock.json` and `.npmrc` sets `engine-strict=true`.
 - The preferred local development flow is frontend `npm run dev` plus a separately run backend. Do not invent a backend start command; confirm it or read the current docs/scripts first.
+
+## 代码质量约束
+- 单文件 ≤800 行，单函数 ≤50 行，圈复杂度 ≤10，嵌套 ≤3 层，不满足要求时必须注明合理的原因
+- 禁止魔法值：状态码/类型码/阈值必须定义为常量或枚举
+- 关注点分离：页面只展示，逻辑下沉 Service，请求统一走 API 层
+- 修 bug 先定位根因，禁止补丁式修复（if 特判、try-catch 吞异常、setTimeout 赌时序）
+- 改代码时禁止动与本需求无关的代码，diff 出现无关改动必须说明原因
+- 禁止伪造实现：接口字段不存在就说不存在，禁止臆造方法签名，mock 数据必须标注
+- 需求有歧义时停下来问，禁止自行二选一
+- 重构禁止改变外部行为、禁止顺手优化，一次只拆一个职责

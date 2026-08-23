@@ -1,24 +1,17 @@
 <script lang="ts">
 	import { getContext, onDestroy, onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { v4 as uuidv4 } from 'uuid';
 
 	import { quoteImageCredits, type ImageQuoteInput } from '$lib/apis/credits';
 	import type { CreationScope } from '$lib/utils/creations-library';
 	import { getImageGenerationErrorCode } from '$lib/apis/images/generation';
 	import {
-		GENERATION_EVENT_RECONNECT_INITIAL_MS,
+		ImageTaskRequestError,
 		createImageGenerationTask,
 		deleteImageGenerationTask,
 		getImageGenerationTask,
-		iterateGenerationEvents,
-		listImageGenerationTasks,
-		nextGenerationEventReconnectDelay,
-		subscribeToGenerationEvents
+		listImageGenerationTasks
 	} from '$lib/apis/creations/generation-tasks';
-	import ImageCreditQuoteBadge from '$lib/components/credits/ImageCreditQuoteBadge.svelte';
-	import GenerationModelSelector from '$lib/components/common/GenerationModelSelector.svelte';
-	import GenerationSubmitButton from '$lib/components/common/GenerationSubmitButton.svelte';
 	import {
 		createImageQuoteState,
 		isImageQuoteSubmittable,
@@ -27,6 +20,8 @@
 
 	import { getImageGenerationModels } from '$lib/apis/images';
 	import { config, mobile, showSidebar, user, WEBUI_NAME } from '$lib/stores';
+	import { createGenerationEventStream } from '$lib/utils/generation-events';
+	import { createSubmissionIdempotency } from '$lib/utils/submission-idempotency';
 	import {
 		buildImageEditPayload,
 		buildImageGenerationPayload,
@@ -47,31 +42,37 @@
 	import {
 		buildCreationDraft,
 		consumePendingCreationDraft,
-		generationElapsedSeconds,
 		isGenerationTaskTerminal,
 		mergeGenerationTask,
 		type ImageCreationDraft,
 		type ImageGenerationBatch
 	} from '$lib/utils/image-generation-batches';
 
-	import { groupByVendor, isProxyModel, stripVendorFromName } from '$lib/utils/images-dropdown';
+	import { groupByVendor } from '$lib/utils/images-dropdown';
 	import { blobExtension, downloadBlob, zipAndDownload } from '$lib/utils/download';
 
-	import Image from '$lib/components/common/Image.svelte';
 	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
 	import Loader from '$lib/components/common/Loader.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
 	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
-	import Photo from '$lib/components/icons/Photo.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
-	import Plus from '$lib/components/icons/Plus.svelte';
-	import XMark from '$lib/components/icons/XMark.svelte';
 	import CreationsLibrary from '$lib/components/images/CreationsLibrary.svelte';
+	import ImageBatchCard from '$lib/components/images/ImageBatchCard.svelte';
+	import ImagePromptForm from '$lib/components/images/ImagePromptForm.svelte';
+	import {
+		imageAspectRatioLabelKey,
+		imageQualityLabelKey,
+		imageResolutionLabelKey
+	} from '$lib/components/images/imageLabels';
+	import { appendPromptText } from '$lib/components/prompt-tags/tagToggle';
 
 	const i18n = getContext('i18n');
+
+	// 幂等键复用（与视频端共享实现）：网络失败后的重试复用同一载荷指纹的键，
+	// 服务端幂等重放返回既有任务而不是二次扣费；收到确定性响应后清除。
+	const imageSubmissionIdempotency = createSubmissionIdempotency('pending-image-submission');
 
 	const MAX_REFERENCE_IMAGES = 4;
 	const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -108,6 +109,19 @@
 	let selectedOutputFormat = '';
 	let imageCount = 1;
 	let negativePrompt = '';
+	// 表单组件实例：applyCreationDraft 复用草稿后调用其 focusPromptEditor 聚焦。
+	let promptFormElement: { focusPromptEditor: () => void } | null = null;
+
+	// 标签是快捷提示词片段：点击即把 insert_text 追加进对应的输入框，
+	// 提交的就是输入框里所见即所得的纯文本。
+	const handlePromptTagInsert = (event: CustomEvent<{ text: string; isNegative: boolean }>) => {
+		const { text, isNegative } = event.detail;
+		if (isNegative) {
+			negativePrompt = appendPromptText(negativePrompt, text);
+		} else {
+			prompt = appendPromptText(prompt, text);
+		}
+	};
 	let stepsInput = '';
 	let seedInput = '';
 	let guidanceScaleInput = '';
@@ -139,19 +153,12 @@
 	let batchToDelete: ImageGenerationBatch | null = null;
 	let elapsedNow = Date.now();
 	let taskPollTimer: ReturnType<typeof setInterval> | null = null;
-	let generationEventReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	let generationEventController: AbortController | null = null;
-	let generationEventsDestroyed = false;
-	let generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 	let pollingTasks = false;
 	let showImagePreview = false;
 	let previewImageUrl = '';
 	let previewImageAlt = '';
 
-	let promptTextareaElement: HTMLTextAreaElement;
-	let fileInputElement: HTMLInputElement;
-	let imageOptionsElement: HTMLDivElement;
 	let generationPanelElement: HTMLDivElement;
 
 	$: modeLabel = referenceImages.length > 0 ? $i18n.t('Image to Image') : $i18n.t('Text to Image');
@@ -283,7 +290,9 @@
 		selectedOutputFormat = '';
 	}
 	$: if (loaded && !seedField && seedInput) seedInput = '';
-	$: if (loaded && !negativePromptField && negativePrompt) negativePrompt = '';
+	$: if (loaded && !negativePromptField && negativePrompt) {
+		negativePrompt = '';
+	}
 	$: if (loaded && !stepsField && stepsInput) stepsInput = '';
 	$: if (loaded && !guidanceScaleField && guidanceScaleInput) guidanceScaleInput = '';
 	$: if (loaded && !strengthField && strengthInput) strengthInput = '';
@@ -406,38 +415,13 @@
 		}
 	};
 
-	const generationErrorMessage = (batch: ImageGenerationBatch) => {
-		if (batch.errorCode === 'generation_cancelled') return $i18n.t('Cancelled');
-		if (batch.errorCode === 'invalid_image_size') return $i18n.t('Image size is invalid');
-		if (batch.errorCode === 'rate_limited') return $i18n.t('Too many image generation requests');
-		return batch.errorCode;
-	};
-
 	const modelBasePrice = (model: ImageGenerationModel) =>
 		referenceImages.length > 0 ? resolveImageEditModel(model, models)?.basePrice : model.basePrice;
 
-	const getAspectRatioLabel = (ratio: ImageAspectRatio) => {
-		return ratio === DEFAULT_IMAGE_ASPECT_RATIO ? $i18n.t('Auto') : ratio;
-	};
-
-	const getResolutionLabel = (resolution: string) => {
-		return resolution === 'auto' ? $i18n.t('Auto') : resolution;
-	};
-
-	const getQualityLabel = (quality: string) => {
-		switch (quality) {
-			case 'auto':
-				return $i18n.t('Auto');
-			case 'low':
-				return $i18n.t('Low');
-			case 'medium':
-				return $i18n.t('Medium');
-			case 'high':
-				return $i18n.t('High');
-			default:
-				return quality;
-		}
-	};
+	// label 显示名映射在 imageLabels.ts（与 ImageBatchCard 共享），这里包一层 $i18n.t。
+	const getAspectRatioLabel = (ratio: ImageAspectRatio) => $i18n.t(imageAspectRatioLabelKey(ratio));
+	const getResolutionLabel = (resolution: string) => $i18n.t(imageResolutionLabelKey(resolution));
+	const getQualityLabel = (quality: string) => $i18n.t(imageQualityLabelKey(quality));
 
 	const parseAdvancedNumber = (
 		value: string,
@@ -473,128 +457,10 @@
 		return `≤ ${field.max}`;
 	};
 
-	const getAspectRatioPreviewClass = (ratio: ImageAspectRatio) => {
-		return ratio === DEFAULT_IMAGE_ASPECT_RATIO ? 'size-5 rounded-full' : 'rounded-[3px]';
-	};
-
-	const getAspectRatioPreviewStyle = (ratio: ImageAspectRatio) => {
-		if (ratio === DEFAULT_IMAGE_ASPECT_RATIO) {
-			return '';
-		}
-
-		const [width, height] = ratio.split(':').map(Number);
-		if (!width || !height) {
-			return '';
-		}
-
-		const previewSize = 20;
-		const minimumPreviewSize = 12;
-		if (width >= height) {
-			return `width: ${previewSize}px; height: ${Math.max(minimumPreviewSize, (previewSize * height) / width)}px;`;
-		}
-
-		return `width: ${Math.max(minimumPreviewSize, (previewSize * width) / height)}px; height: ${previewSize}px;`;
-	};
-
 	// ===== 结果块（heytop 式聊天消息卡片）展示范式 =====
 	// 每个 batch 是一条「消息记录」：消息头(模型短名+时间) → 全展开 prompt
 	// → pill 参数行 → 图网格(正方形) → 操作行(重新编辑 i2i / 重新生成 t2i)。
-	// 块最大宽与输入框同宽对齐；图片一律 aspect-square 占满格，统一网格高度。
-	// 桌面端最多 4 列；移动端固定 2 列，避免横向溢出。
-	// 用 flex flex-col gap-3 统一行间距，避免 space-y 的 margin 被 m-0 等覆盖导致行间塌陷。
-	const BATCH_ARTICLE_CLASS =
-		'rounded-2xl bg-gray-50/60 p-3 dark:bg-gray-900/30 sm:p-4 mx-auto w-full max-w-5xl flex flex-col gap-3';
-
-	// 完成态图网格：固定列数，单张图尺寸不随数量变化。
-	// 宽屏 lg 一行最多 4 张，窄屏 2 张；图卡 aspect-square 占满格，高度随列宽固定。
-	const getCompletedBatchGridClass = () => 'grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4';
-
-	// 生成中骨架网格：与完成态同构无缝替换。
-	const getPendingBatchGridClass = () => 'grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4';
-
-	// 单张图卡：group hover 下载浮层用。
-	const getGeneratedImageCardClass = () => 'group relative min-w-0';
-
-	// 图框：1px 浅边 + 圆角 8px；aspect-square 占满格，高度统一。
-	const getGeneratedImageFrameClass = () =>
-		'relative flex items-center justify-center overflow-hidden rounded-lg border border-gray-200/80 bg-stone-50 aspect-square w-full dark:border-gray-800/80 dark:bg-gray-900/40';
-
-	const getGeneratedImageClass = () => 'block h-full w-full object-cover';
-
-	// 生成中骨架保持正方形；失败状态使用紧凑提示卡，避免占据大面积空白。
-	const batchSquareStyle = () => 'aspect-ratio: 1 / 1; width: 100%;';
-
-	// 长 prompt 不再折叠：heytop 式全展开，让块自然变高。
-	const generationStatusLabel = (batch: ImageGenerationBatch) => {
-		if (batch.status === 'queued') return $i18n.t('Queued');
-		if (batch.status === 'running') return $i18n.t('Generating');
-		if (batch.status === 'failed' && batch.errorCode === 'generation_cancelled') {
-			return $i18n.t('Cancelled');
-		}
-		if (batch.status === 'failed') return $i18n.t('Generation failed');
-		return $i18n.t('Completed');
-	};
-
-	// 消息头模型短名：剥厂商前缀，回退到默认模型。
-	// 注意：必须把 primaryModels 作为参数显式传入并在模板里写出，
-	// 否则 Svelte 4 不会把 primaryModels 当作响应式依赖 —— models 异步加载
-	// 完成后已渲染的 batch 消息头不会刷新，会一直停在「默认模型」回退态，
-	// 直到 generationBatches 因新生成而重渲染才“突然”显示真名。
-	// 按 batch.modelId 在当前模型列表里查回 model 对象（含 provider），供消息头厂商图标使用。
-	// 同样需把 modelList 作为参数显式传入，保证 Svelte 响应式追踪。
-	const getBatchModel = (batch: ImageGenerationBatch, modelList: ImageGenerationModel[]) =>
-		modelList.find((m) => m.id === batch.modelId) ?? null;
-
-	const getBatchModelLabel = (batch: ImageGenerationBatch, modelList: ImageGenerationModel[]) => {
-		const model = getBatchModel(batch, modelList);
-		return model ? stripVendorFromName(model) : $i18n.t('Default Model');
-	};
-
-	// pill 参数：基础尺寸参数后追加用户实际提交的高级参数，便于复现。
-	// 同样需显式传 modelList，让模板引用 primaryModels 触发响应式。
-	const getBatchMetaPills = (batch: ImageGenerationBatch, modelList: ImageGenerationModel[]) => {
-		const pills = [getBatchModelLabel(batch, modelList), getAspectRatioLabel(batch.aspectRatio)];
-		if (batch.resolution) pills.push(getResolutionLabel(batch.resolution));
-		pills.push(String(batch.expectedCount));
-		const q = batch.quality?.trim();
-		if (q) pills.push(getQualityLabel(q));
-		const outputFormat = batch.params.output_format;
-		if (typeof outputFormat === 'string' && outputFormat.trim()) {
-			pills.push(outputFormat.trim().toUpperCase());
-		}
-		for (const [key, label] of [
-			['steps', $i18n.t('Steps')],
-			['guidance_scale', $i18n.t('Guidance scale')],
-			['strength', $i18n.t('Strength')],
-			['seed', $i18n.t('Seed')]
-		] as const) {
-			const value = batch.params[key];
-			if (typeof value === 'number' && Number.isFinite(value)) pills.push(`${label} ${value}`);
-		}
-		return pills;
-	};
-
-	// 时间：完成用 completedAt，否则 startedAt/createdAt（秒级时间戳）。
-	// 今天只显示 HH:MM；今年其它天补 M月D日；跨年带年份，避免只看时分无法区分批次日期。
-	const formatBatchTime = (ts: number | null) => {
-		if (!ts) return '';
-		const date = new Date(ts * 1000);
-		if (Number.isNaN(date.getTime())) return '';
-		const now = new Date();
-		const hh = String(date.getHours()).padStart(2, '0');
-		const mm = String(date.getMinutes()).padStart(2, '0');
-		const time = `${hh}:${mm}`;
-		const sameDay =
-			date.getFullYear() === now.getFullYear() &&
-			date.getMonth() === now.getMonth() &&
-			date.getDate() === now.getDate();
-		if (sameDay) return time;
-		const md = `${date.getMonth() + 1}/${date.getDate()}`;
-		if (date.getFullYear() === now.getFullYear()) return `${md} ${time}`;
-		return `${date.getFullYear()}/${md} ${time}`;
-	};
-	const getBatchTime = (batch: ImageGenerationBatch) =>
-		formatBatchTime(batch.completedAt ?? batch.startedAt ?? batch.createdAt);
+	// 展示细节在 ImageBatchCard.svelte（拆分自本文件）。
 
 	// 重新生成(t2i)：用原 prompt/参数，不带参考图。
 	const reuseBatchGenerate = (batch: ImageGenerationBatch) =>
@@ -649,13 +515,6 @@
 		const separatorIndex = name.indexOf(' / ');
 
 		return separatorIndex === -1 ? name : name.slice(separatorIndex + 3);
-	};
-
-	const resizePromptTextarea = () => {
-		if (promptTextareaElement) {
-			promptTextareaElement.style.height = '';
-			promptTextareaElement.style.height = Math.min(promptTextareaElement.scrollHeight, 180) + 'px';
-		}
 	};
 
 	const loadModels = async () => {
@@ -902,14 +761,6 @@
 		}
 	};
 
-	const handleWindowPointerDown = (event: PointerEvent) => {
-		const target = event.target as Node;
-
-		if (showAspectRatioPicker && imageOptionsElement && !imageOptionsElement.contains(target)) {
-			showAspectRatioPicker = false;
-		}
-	};
-
 	const selectSelection = async (next: 'generate' | 'mine' | 'all') => {
 		selection = next;
 		await tick();
@@ -985,11 +836,11 @@
 			strengthField && draft.strength !== null && draft.strength !== undefined
 				? String(draft.strength)
 				: '';
-		prompt = draft.prompt;
+		prompt = draft.prompt ?? '';
 		await selectSelection('generate');
 		await tick();
-		resizePromptTextarea();
-		promptTextareaElement?.focus();
+		// 复用草稿后把焦点还给提示词输入框，恢复旧版 textarea 的交互。
+		promptFormElement?.focusPromptEditor();
 		toast.success($i18n.t('Creation settings loaded'));
 	};
 
@@ -1064,41 +915,12 @@
 		}
 	};
 
-	const consumeGenerationEvents = async () => {
-		generationEventController?.abort();
-		const controller = new AbortController();
-		generationEventController = controller;
-		try {
-			for await (const event of iterateGenerationEvents(
-				subscribeToGenerationEvents(localStorage.token, controller.signal)
-			)) {
-				generationEventReconnectDelay = GENERATION_EVENT_RECONNECT_INITIAL_MS;
-				if (event.kind === 'image' && event.task_id) {
-					await refreshGenerationTask(event.task_id).catch(() => undefined);
-				}
-			}
-		} catch (error) {
-			if (!(error instanceof DOMException && error.name === 'AbortError')) {
-				await pollGenerationTasks();
-			}
-		} finally {
-			// 仅当此调用的 controller 仍为活跃 controller 时才设重连定时器。
-			// 如果已被新调用替换（abort），旧调用的 finally 不应再调度重连，
-			// 否则定时器会周期性 abort 新连接，造成 SSE 连接振荡。
-			const wasActive = generationEventController === controller;
-			if (wasActive) generationEventController = null;
-			if (wasActive && !generationEventsDestroyed) {
-				const reconnectAfter = generationEventReconnectDelay;
-				generationEventReconnectDelay = nextGenerationEventReconnectDelay(
-					generationEventReconnectDelay
-				);
-				generationEventReconnectTimer = setTimeout(
-					() => void consumeGenerationEvents(),
-					reconnectAfter
-				);
-			}
-		}
-	};
+	// SSE 事件流（含指数退避重连与断流兜底轮询）与视频页共享同一实现。
+	const generationEventStream = createGenerationEventStream(
+		'image',
+		refreshGenerationTask,
+		pollGenerationTasks
+	);
 
 	const submitHandler = async () => {
 		const validation = validateImagePrompt(prompt);
@@ -1145,16 +967,27 @@
 				localStorage.token,
 				referenceImages.length > 0 ? 'image-to-image' : 'text-to-image',
 				payload,
-				uuidv4()
+				await imageSubmissionIdempotency.idempotencyKeyFor(payload)
 			);
+			imageSubmissionIdempotency.clearPendingSubmission();
 			generationBatches = mergeGenerationTask(generationBatches, task);
 			referenceImages = [];
 			prompt = '';
 			await tick();
 			// 新生成结果插入到列表最上面，提交后自动滚到顶，让用户立刻看到新 batch 的进度。
 			generationPanelElement?.scrollTo({ top: 0, behavior: 'smooth' });
-			resizePromptTextarea();
 		} catch (error) {
+			// A structured HTTP response is definitive. A network failure is not:
+			// retain the same key so a retry cannot create a second paid request.
+			if (
+				error instanceof ImageTaskRequestError &&
+				error.status !== undefined &&
+				error.status >= 400 &&
+				error.status < 500 &&
+				![408, 429].includes(error.status)
+			) {
+				imageSubmissionIdempotency.clearPendingSubmission();
+			}
 			if (!(error instanceof DOMException && error.name === 'AbortError')) {
 				toast.error(imageGenerationErrorMessage(error));
 			}
@@ -1176,7 +1009,7 @@
 			);
 			if (linkedTask) generationBatches = mergeGenerationTask(generationBatches, linkedTask);
 		}
-		void consumeGenerationEvents();
+		void generationEventStream.start();
 		// SSE 断线、代理不支持流式响应或事件落在其他 worker 时，用低频轮询补偿。
 		taskPollTimer = setInterval(() => void pollGenerationTasks(), 10_000);
 		elapsedTimer = setInterval(() => (elapsedNow = Date.now()), 1_000);
@@ -1187,20 +1020,15 @@
 				block: 'start'
 			});
 		}
-		resizePromptTextarea();
 	});
 
 	onDestroy(() => {
-		generationEventsDestroyed = true;
-		generationEventController?.abort();
-		if (generationEventReconnectTimer) clearTimeout(generationEventReconnectTimer);
+		generationEventStream.stop();
 		imageQuoteStateMachine.dispose();
 		if (taskPollTimer) clearInterval(taskPollTimer);
 		if (elapsedTimer) clearInterval(elapsedTimer);
 	});
 </script>
-
-<svelte:window on:pointerdown={handleWindowPointerDown} />
 
 <svelte:head>
 	<title>{$i18n.t('Images')} • {$WEBUI_NAME}</title>
@@ -1293,7 +1121,9 @@
 						</button>
 					</Tooltip>
 				</div>
-				<div class="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center justify-center">
+				<div
+					class="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center justify-center"
+				>
 					{@render imageTabs()}
 				</div>
 			</nav>
@@ -1338,284 +1168,23 @@
 						<!-- 连续流：每批一块极淡背景卡片。块内消息头→prompt→pill→图网格→操作行，space-y-3 统一间距。 -->
 						<section class="space-y-4 pb-6 pt-4 sm:pt-18" aria-live="polite">
 							{#each generationBatches as batch (batch.id)}
-								{@const batchModel = getBatchModel(batch, primaryModels)}
-								<article id={`image-task-${batch.id}`} class={BATCH_ARTICLE_CLASS}>
-									<!-- 消息头：厂商图标 + 模型短名 + 时间 -->
-									<div class="flex items-center gap-2">
-										{#if batchModel?.provider}
-											<VendorLogo
-												provider={batchModel.provider}
-												className="size-5 shrink-0 rounded-full object-cover"
-											/>
-										{:else}
-											<span
-												class="size-5 shrink-0 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700"
-											></span>
-										{/if}
-										<span
-											class="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100"
-											>{getBatchModelLabel(batch, primaryModels)}</span
-										>
-										<span class="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500"
-											>{getBatchTime(batch)}</span
-										>
-									</div>
-
-									<!-- prompt：全展开，不折叠 -->
-									<p
-										class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200"
-									>
-										{batch.prompt}
-									</p>
-
-									<!-- pill 参数行：基础参数与已提交的高级参数；生成中附状态 -->
-									<div class="flex flex-wrap items-center gap-1.5">
-										{#each getBatchMetaPills(batch, primaryModels) as pill, index (`${index}-${pill}`)}
-											<span
-												class="inline-flex min-h-6 items-center rounded-md bg-gray-100 px-2 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-												>{pill}</span
-											>
-										{/each}
-										{#if !isGenerationTaskTerminal(batch.status)}
-											<span
-												class="inline-flex min-h-6 items-center gap-1 rounded-md bg-amber-50 px-2 text-[11px] text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-											>
-												<Spinner className="size-3" />
-												{generationStatusLabel(batch)} · {generationElapsedSeconds(
-													batch,
-													elapsedNow
-												)}s
-											</span>
-										{/if}
-									</div>
-
-									<div class="min-w-0">
-										{#if batch.status === 'succeeded' && batch.images.length > 0}
-											<!-- 图网格：宽屏一行 4 张，窄屏 2 张；图卡 aspect-square 固定尺寸 -->
-											<div class={getCompletedBatchGridClass()}>
-												{#each batch.images as image, index (`${image.url}-${index}`)}
-													<div class={getGeneratedImageCardClass()}>
-														<button
-															type="button"
-															class={getGeneratedImageFrameClass()}
-															on:click={() => openImagePreview(image)}
-															aria-label={$i18n.t('Preview generated image')}
-														>
-															<img
-																src={image.url}
-																alt={image.prompt ?? $i18n.t('Generated image')}
-																class={getGeneratedImageClass()}
-																loading="lazy"
-																decoding="async"
-															/>
-														</button>
-														<!-- 单张快捷操作浮层：触屏常驻可见，桌面端 hover 显现 -->
-														<!-- 下载 + 用作参考图；基于此图 prompt 重新生成按钮见下方 -->
-														<div
-															class="pointer-events-none absolute right-1.5 top-1.5 flex gap-1 transition {canHover
-																? 'opacity-0 group-hover:opacity-100'
-																: 'opacity-100'}"
-														>
-															<button
-																type="button"
-																class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
-																on:click|stopPropagation={() => downloadImage(image, index)}
-																aria-label={$i18n.t('Download')}
-															>
-																<svg
-																	class="size-3.5"
-																	viewBox="0 0 24 24"
-																	fill="none"
-																	stroke="currentColor"
-																	stroke-width="2"
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	aria-hidden="true"
-																	><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
-																>
-															</button>
-															{#if selectedModelSupportsEditing}
-																<button
-																	type="button"
-																	class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
-																	on:click|stopPropagation={() =>
-																		reuseImageAsReference(batch, image)}
-																	aria-label={$i18n.t('Use as reference')}
-																>
-																	<svg
-																		class="size-3.5"
-																		viewBox="0 0 24 24"
-																		fill="none"
-																		stroke="currentColor"
-																		stroke-width="2"
-																		stroke-linecap="round"
-																		stroke-linejoin="round"
-																		aria-hidden="true"
-																		><rect x="3" y="3" width="18" height="18" rx="2" /><circle
-																			cx="8.5"
-																			cy="9"
-																			r="1.5"
-																		/><path d="M21 15l-5-5L5 21" /></svg
-																	>
-																</button>
-															{/if}
-														</div>
-														<!-- 基于此图 prompt 重新生成：触屏常驻可见，桌面端 hover 显现 -->
-														{#if image.prompt}
-															<button
-																type="button"
-																class="pointer-events-auto absolute bottom-1.5 left-1.5 inline-flex h-6 items-center gap-1 rounded-full bg-black/60 px-2 text-[10px] font-medium text-white backdrop-blur transition hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white {canHover
-																	? 'opacity-0 group-hover:opacity-100'
-																	: 'opacity-100'}"
-																on:click|stopPropagation={() => reuseImageGenerate(batch, image)}
-																aria-label={$i18n.t('Generate from this prompt')}
-															>
-																<svg
-																	class="size-3"
-																	viewBox="0 0 24 24"
-																	fill="none"
-																	stroke="currentColor"
-																	stroke-width="2"
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	aria-hidden="true"
-																	><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
-																>
-																{$i18n.t('Remix')}
-															</button>
-														{/if}
-													</div>
-												{/each}
-											</div>
-										{:else if batch.status === 'failed'}
-											<div
-												class="flex w-full flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/40 px-4 py-5 text-center dark:border-red-900/60 dark:bg-red-950/20 sm:px-5 sm:py-6"
-											>
-												<p class="text-sm font-medium text-red-600 dark:text-red-300">
-													{generationStatusLabel(batch)}
-												</p>
-												{#if batch.errorCode && batch.errorCode !== 'generation_cancelled'}<p
-														class="mt-1 text-xs text-red-500/80"
-													>
-														{generationErrorMessage(batch)}
-													</p>{/if}
-											</div>
-										{:else}
-											<!-- 生成中：正方形骨架占位 + 居中 Spinner -->
-											<div class={getPendingBatchGridClass()}>
-												{#each Array(batch.expectedCount) as _, index (index)}
-													<div
-														class="relative overflow-hidden rounded-lg bg-stone-100 dark:bg-gray-900/40"
-														style={batchSquareStyle()}
-													>
-														<div
-															class="absolute inset-0 animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
-														></div>
-														<div
-															class="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-xs text-gray-400 dark:text-gray-600"
-														>
-															<Spinner className="size-5" />
-															<span
-																>{$i18n.t('Creating image {{index}}', { index: index + 1 })}</span
-															>
-														</div>
-													</div>
-												{/each}
-											</div>
-										{/if}
-									</div>
-
-									<!-- 操作行：再次编辑(i2i) + 重新生成(t2i) + 下载本批(ZIP)，紧凑次级按钮 -->
-									<div class="flex flex-wrap items-center gap-1.5">
-										{#if isGenerationTaskTerminal(batch.status)}
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => reuseBatchEdit(batch)}
-												disabled={batch.images.length === 0}
-											>
-												<svg
-													class="size-3.5"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"
-													><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg
-												>
-												{$i18n.t('Edit again')}
-											</button>
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => reuseBatchGenerate(batch)}
-											>
-												<svg
-													class="size-3.5"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="2"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
-												>
-												{$i18n.t('Regenerate')}
-											</button>
-											{#if batch.images.length > 1}
-												<!-- 本批批量下载：打包成 ZIP，复用 $lib/utils/download 的共享方案 -->
-												<button
-													type="button"
-													class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-													on:click={() => downloadBatchImages(batch)}
-													disabled={batchDownloadingIds.has(batch.id)}
-												>
-													{#if batchDownloadingIds.has(batch.id)}
-														<Spinner className="size-3.5" />
-													{:else}
-														<svg
-															class="size-3.5"
-															viewBox="0 0 24 24"
-															fill="none"
-															stroke="currentColor"
-															stroke-width="2"
-															stroke-linecap="round"
-															stroke-linejoin="round"
-															aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
-														>
-													{/if}
-													{$i18n.t('Download all ({{count}})', { count: batch.images.length })}
-												</button>
-											{/if}
-											<button
-												type="button"
-												class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-												on:click={() => requestDeleteBatch(batch)}
-												disabled={batchDeletingIds.has(batch.id)}
-												aria-label={$i18n.t('Remove record')}
-											>
-												{#if batchDeletingIds.has(batch.id)}
-													<Spinner className="size-3.5" />
-												{:else}
-													<svg
-														class="size-3.5"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="2"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-														aria-hidden="true"
-														><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
-													>
-												{/if}
-												{$i18n.t('Remove')}
-											</button>
-										{/if}
-									</div>
-								</article>
+								<ImageBatchCard
+									{batch}
+									models={primaryModels}
+									{canHover}
+									supportsEditing={selectedModelSupportsEditing}
+									{elapsedNow}
+									downloading={batchDownloadingIds.has(batch.id)}
+									deleting={batchDeletingIds.has(batch.id)}
+									onPreview={openImagePreview}
+									onDownloadImage={downloadImage}
+									onReuseAsReference={reuseImageAsReference}
+									onRemix={reuseImageGenerate}
+									onEditAgain={reuseBatchEdit}
+									onRegenerate={reuseBatchGenerate}
+									onDownloadBatch={downloadBatchImages}
+									onRemove={requestDeleteBatch}
+								/>
 							{/each}
 
 							{#if recentTasksCursor}
@@ -1643,569 +1212,68 @@
 					{/if}
 				</div>
 
-				<div
-					class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
-				>
-					<div class="mx-auto w-full max-w-5xl sm:px-2">
-						<!-- 模型选择器：放在表单上方（正常文档流），避免绝对定位与结果图片重叠 -->
-						<div class="mb-2 flex flex-row items-center gap-2">
-							<div class="inline-flex min-w-0 max-w-[12rem] shrink">
-								<GenerationModelSelector
-									bind:show={showModelSelector}
-									label={selectedModelLabel}
-									provider={selectedModelConfig?.provider}
-									vendors={vendorList}
-									bind:selectedVendor
-									models={vendorModels.map((model) => ({
-										id: model.id,
-										name: stripVendorFromName(model),
-										provider: model.provider,
-										recommended: model.recommended,
-										tags: model.tags,
-										maintenance: model.maintenanceMessage,
-										enabled: model.enabled,
-										raw: model
-									}))}
-									selectedId={selectedModel}
-									onSelectVendor={(vendor) => (selectedVendor = vendor)}
-									onSelectModel={(model) => selectModelIfEnabled(model.raw as ImageGenerationModel)}
-									listboxLabel={$i18n.t('Select image model')}
-								>
-									<svelte:fragment slot="extras" let:model>
-										{#if supportsImageEditing(model.raw as ImageGenerationModel, models)}
-											<Tooltip content={$i18n.t('Supports reference images')}>
-												<span
-													class="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300"
-													aria-label={$i18n.t('Supports reference images')}
-												>
-													<Photo className="size-3.5" strokeWidth="2" />
-												</span>
-											</Tooltip>
-										{/if}
-										{#if modelBasePrice(model.raw as ImageGenerationModel)}
-											<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-												{modelBasePrice(model.raw as ImageGenerationModel)}
-												{$i18n.t('credits.common.unit')}
-											</span>
-										{:else}
-											<span class="shrink-0 text-xs text-gray-400 dark:text-gray-500"
-												>{$i18n.t('credits.unconfigured')}</span
-											>
-										{/if}
-										{#if isProxyModel(model.raw as ImageGenerationModel)}
-											<span class="shrink-0 text-xs text-amber-600 dark:text-amber-400">
-												{$i18n.t('First image may be slower')}
-											</span>
-										{/if}
-									</svelte:fragment>
-								</GenerationModelSelector>
-							</div>
-						</div>
-						<form
-							class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
-							on:submit|preventDefault={submitHandler}
-							on:dragover={(event) => {
-								event.preventDefault();
-								draggedOver =
-									selectedModelSupportsEditing &&
-									(event.dataTransfer?.types?.includes('Files') ?? false);
-							}}
-							on:dragleave={() => {
-								draggedOver = false;
-							}}
-							on:drop={handleDrop}
-						>
-							{#if draggedOver}
-								<div
-									class="absolute inset-2 z-20 rounded-[1.25rem] border-2 border-dashed border-gray-400 bg-white/85 text-sm font-medium text-gray-700 dark:border-gray-500 dark:bg-gray-950/85 dark:text-gray-200 flex items-center justify-center"
-								>
-									{$i18n.t('Drop reference images here')}
-								</div>
-							{/if}
-
-							<input
-								bind:this={fileInputElement}
-								type="file"
-								accept="image/*"
-								multiple
-								class="hidden"
-								on:change={handleFileUpload}
-							/>
-
-							<div class="p-4">
-								{#if referenceImages.length > 0}
-									<div class="mb-3 flex gap-2 overflow-x-auto scrollbar-hidden pb-1">
-										{#each referenceImages as image, index (`${image.url}-${index}`)}
-											<div class="relative shrink-0 group">
-												<Image
-													src={image.url}
-													alt={image.name}
-													className="size-14"
-													imageClassName="size-14 rounded-2xl object-cover border border-gray-100 dark:border-gray-800"
-												/>
-												<button
-													type="button"
-													class="absolute -right-2 -top-2 inline-flex size-11 items-center justify-center rounded-full border border-gray-100 bg-white text-gray-900 opacity-100 shadow transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 md:-right-1.5 md:-top-1.5 md:size-6 md:opacity-0 md:group-hover:opacity-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-													on:click={() => removeImage(index)}
-													aria-label={$i18n.t('Remove image')}
-												>
-													<XMark className="size-4" strokeWidth="2" />
-												</button>
-											</div>
-										{/each}
-									</div>
-								{/if}
-
-								<div class="flex min-w-0 gap-4">
-									{#if selectedModelSupportsEditing}
-										<button
-											type="button"
-											class="mt-2 flex h-[3.8rem] w-[3.125rem] shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-gray-50 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850 dark:hover:text-gray-100"
-											on:click={() => fileInputElement?.click()}
-											aria-label={$i18n.t('Upload reference image')}
-										>
-											<Plus className="size-6" strokeWidth="1.8" />
-										</button>
-									{/if}
-
-									<textarea
-										bind:this={promptTextareaElement}
-										bind:value={prompt}
-										class="min-h-20 max-h-44 flex-1 resize-none bg-transparent py-2 text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
-										placeholder={$i18n.t(
-											'Upload a reference image, then describe the image you want to create.'
-										)}
-										on:input={resizePromptTextarea}
-										aria-label={$i18n.t('Image prompt')}
-									></textarea>
-								</div>
-
-								<div class="mt-2 flex min-w-0 items-center justify-between gap-2">
-									<div class="flex min-w-0 items-center gap-2">
-										<div class="relative" bind:this={imageOptionsElement}>
-											<button
-												type="button"
-												class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 sm:gap-4 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-												on:click={toggleAspectRatioPicker}
-												aria-expanded={showAspectRatioPicker}
-											>
-												<svg
-													class="size-4 shrink-0"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													stroke-width="1.8"
-													aria-hidden="true"
-													><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" /></svg
-												>
-												<span class="truncate">{selectedImageSizeLabel}</span>
-												{#if aspectRatioOptions.length > 0 && selectedResolution}
-													<span class="hidden truncate min-[360px]:inline">
-														{getResolutionLabel(selectedResolution)}
-													</span>
-												{/if}
-												{#if qualityOptions.length > 0 && selectedQuality}
-													<span class="hidden truncate min-[360px]:inline">
-														{getQualityLabel(selectedQuality)}
-													</span>
-												{/if}
-												{#if imageCountOptions.length > 1}
-													<span class="inline-flex items-center gap-1">
-														<Photo className="size-4" strokeWidth="2" />
-														{imageCount}
-													</span>
-												{/if}
-											</button>
-
-											{#if showAspectRatioPicker}
-												<div
-													class="fixed inset-x-3 bottom-14 z-50 max-h-[calc(100dvh-5rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:w-[27rem] sm:max-w-[calc(100vw-2rem)] sm:p-4 dark:border-gray-800 dark:bg-gray-900"
-												>
-													{#if aspectRatioOptions.length > 0}
-														<section>
-															<h3
-																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-															>
-																{$i18n.t('Ratio')}
-															</h3>
-															<div class="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5">
-																{#each aspectRatioOptions as ratio}
-																	<button
-																		type="button"
-																		class="flex h-14 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition {selectedAspectRatio ===
-																		ratio
-																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																		on:click={() => selectAspectRatio(ratio)}
-																		aria-pressed={selectedAspectRatio === ratio}
-																	>
-																		<span class="flex size-6 items-center justify-center">
-																			<span
-																				class="border border-current/60 {getAspectRatioPreviewClass(
-																					ratio
-																				)}"
-																				style={getAspectRatioPreviewStyle(ratio)}
-																			></span>
-																		</span>
-																		<span class="min-w-0 truncate"
-																			>{getAspectRatioLabel(ratio)}</span
-																		>
-																	</button>
-																{/each}
-															</div>
-														</section>
-													{/if}
-
-													{#if resolutionOptions.length > 0}
-														<section class="mt-5">
-															<h3
-																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-															>
-																{$i18n.t('Resolution')}
-															</h3>
-															<div class="grid grid-cols-3 gap-1.5">
-																{#each resolutionOptions as resolution}
-																	<button
-																		type="button"
-																		class="h-9 rounded-xl border text-sm transition {selectedResolution ===
-																		resolution
-																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																		on:click={() => selectResolution(resolution)}
-																		aria-pressed={selectedResolution === resolution}
-																	>
-																		{getResolutionLabel(resolution)}
-																	</button>
-																{/each}
-															</div>
-														</section>
-													{/if}
-
-													{#if supportsCustomSize}
-														<section class="mt-5">
-															<div class="flex items-center justify-between px-1 pb-2">
-																<h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">
-																	{$i18n.t('Custom Size')}
-																</h3>
-																<label
-																	class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-																>
-																	<input
-																		type="checkbox"
-																		class="size-3.5 rounded border-gray-300 dark:border-gray-600"
-																		bind:checked={useCustomSize}
-																	/>
-																	{$i18n.t('Enable')}
-																</label>
-															</div>
-															{#if useCustomSize}
-																<div class="flex items-center gap-2">
-																	<input
-																		type="number"
-																		inputmode="numeric"
-																		min="1"
-																		bind:value={customWidth}
-																		placeholder="1024"
-																		aria-label={$i18n.t('Width')}
-																		class="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100"
-																	/>
-																	<span class="text-sm text-gray-400">×</span>
-																	<input
-																		type="number"
-																		inputmode="numeric"
-																		min="1"
-																		bind:value={customHeight}
-																		placeholder="1024"
-																		aria-label={$i18n.t('Height')}
-																		class="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100"
-																	/>
-																</div>
-																{#if customSizeError}
-																	<p class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">
-																		{$i18n.t(
-																			customSizeError.message,
-																			customSizeError.messageParams
-																		)}
-																	</p>
-																{:else if customWidth && customHeight}
-																	<p class="mt-2 px-1 text-xs text-gray-400 dark:text-gray-500">
-																		{customWidthNum * customHeightNum >= 0
-																			? (customWidthNum * customHeightNum).toLocaleString()
-																			: ''} px · {customWidthNum || 0}:{customHeightNum || 0}
-																	</p>
-																{/if}
-															{/if}
-														</section>
-													{/if}
-
-													{#if qualityOptions.length > 0}
-														<section class={hasImageSizingOptions ? 'mt-5' : ''}>
-															<h3
-																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-															>
-																{$i18n.t('Quality')}
-															</h3>
-															<div class="grid grid-cols-4 gap-1.5">
-																{#each qualityOptions as quality}
-																	<button
-																		type="button"
-																		class="h-9 rounded-xl border text-sm capitalize transition {selectedQuality ===
-																		quality
-																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																		on:click={() => {
-																			selectedQuality = quality;
-																		}}
-																		aria-pressed={selectedQuality === quality}
-																	>
-																		{getQualityLabel(quality)}
-																	</button>
-																{/each}
-															</div>
-														</section>
-													{/if}
-
-													{#if imageCountOptions.length > 1}
-														<section class={hasImageSizingOptions ? 'mt-5' : ''}>
-															<h3
-																class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100"
-															>
-																{$i18n.t('Quantity')}
-															</h3>
-															<div class="grid grid-cols-4 gap-1.5">
-																{#each imageCountOptions as count}
-																	<button
-																		type="button"
-																		class="h-9 rounded-xl border text-sm transition {Number(
-																			imageCount
-																		) === count
-																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																		on:click={() => {
-																			imageCount = count;
-																		}}
-																		aria-pressed={Number(imageCount) === count}
-																	>
-																		{count}
-																	</button>
-																{/each}
-															</div>
-														</section>
-													{/if}
-
-													{#if hasAdvancedSettings}
-														<section
-															class="mt-5 border-t border-gray-100 pt-3 dark:border-gray-800"
-														>
-															<button
-																type="button"
-																class="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-medium text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:text-gray-100"
-																on:click={() => (showAdvancedSettings = !showAdvancedSettings)}
-																aria-expanded={showAdvancedSettings}
-																aria-controls="image-advanced-settings"
-															>
-																<span>{$i18n.t('Advanced')}</span>
-																<span class="text-gray-400" aria-hidden="true"
-																	>{showAdvancedSettings ? '−' : '+'}</span
-																>
-															</button>
-
-															{#if showAdvancedSettings}
-																<div
-																	id="image-advanced-settings"
-																	class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"
-																>
-																	{#if outputFormatOptions.length > 0}
-																		<div class="min-w-0 sm:col-span-2">
-																			<div
-																				class="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-300"
-																			>
-																				{$i18n.t('Output Format')}
-																			</div>
-																			<div class="grid grid-cols-3 gap-1.5">
-																				{#each outputFormatOptions as format}
-																					<button
-																						type="button"
-																						class="min-h-11 rounded-xl border text-sm uppercase transition {selectedOutputFormat ===
-																						format
-																							? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																							: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																						on:click={() => (selectedOutputFormat = format)}
-																						aria-pressed={selectedOutputFormat === format}
-																					>
-																						{format}
-																					</button>
-																				{/each}
-																			</div>
-																		</div>
-																	{/if}
-
-																	{#if seedField}
-																		<label
-																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-																		>
-																			<span class="flex justify-between gap-2"
-																				><span>{$i18n.t('Seed')}</span><span
-																					class="font-normal text-gray-400"
-																					>{advancedRangeLabel(seedField)}</span
-																				></span
-																			>
-																			<input
-																				type="text"
-																				inputmode="numeric"
-																				value={seedInput}
-																				on:input={(event) =>
-																					(seedInput = event.currentTarget.value)}
-																				placeholder={$i18n.t('Model default')}
-																				aria-invalid={Boolean(
-																					getAdvancedNumberError(seedInput, seedField)
-																				)}
-																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																			/>
-																			{#if getAdvancedNumberError(seedInput, seedField)}<span
-																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																					>{getAdvancedNumberError(seedInput, seedField)}</span
-																				>{/if}
-																		</label>
-																	{/if}
-
-																	{#if stepsField}
-																		<label
-																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-																		>
-																			<span class="flex justify-between gap-2"
-																				><span>{$i18n.t('Steps')}</span><span
-																					class="font-normal text-gray-400"
-																					>{advancedRangeLabel(stepsField)}</span
-																				></span
-																			>
-																			<input
-																				type="text"
-																				inputmode="numeric"
-																				value={stepsInput}
-																				on:input={(event) =>
-																					(stepsInput = event.currentTarget.value)}
-																				placeholder={$i18n.t('Model default')}
-																				aria-invalid={Boolean(
-																					getAdvancedNumberError(stepsInput, stepsField)
-																				)}
-																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																			/>
-																			{#if getAdvancedNumberError(stepsInput, stepsField)}<span
-																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																					>{getAdvancedNumberError(stepsInput, stepsField)}</span
-																				>{/if}
-																		</label>
-																	{/if}
-
-																	{#if guidanceScaleField}
-																		<label
-																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-																		>
-																			<span class="flex justify-between gap-2"
-																				><span>{$i18n.t('Guidance scale')}</span><span
-																					class="font-normal text-gray-400"
-																					>{advancedRangeLabel(guidanceScaleField)}</span
-																				></span
-																			>
-																			<input
-																				type="text"
-																				inputmode="decimal"
-																				value={guidanceScaleInput}
-																				on:input={(event) =>
-																					(guidanceScaleInput = event.currentTarget.value)}
-																				placeholder={$i18n.t('Model default')}
-																				aria-invalid={Boolean(
-																					getAdvancedNumberError(
-																						guidanceScaleInput,
-																						guidanceScaleField
-																					)
-																				)}
-																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																			/>
-																			{#if getAdvancedNumberError(guidanceScaleInput, guidanceScaleField)}<span
-																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																					>{getAdvancedNumberError(
-																						guidanceScaleInput,
-																						guidanceScaleField
-																					)}</span
-																				>{/if}
-																		</label>
-																	{/if}
-
-																	{#if strengthField}
-																		<label
-																			class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-																		>
-																			<span class="flex justify-between gap-2"
-																				><span>{$i18n.t('Strength')}</span><span
-																					class="font-normal text-gray-400"
-																					>{advancedRangeLabel(strengthField)}</span
-																				></span
-																			>
-																			<input
-																				type="text"
-																				inputmode="decimal"
-																				value={strengthInput}
-																				on:input={(event) =>
-																					(strengthInput = event.currentTarget.value)}
-																				placeholder={$i18n.t('Model default')}
-																				aria-invalid={Boolean(
-																					getAdvancedNumberError(strengthInput, strengthField)
-																				)}
-																				class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																			/>
-																			{#if getAdvancedNumberError(strengthInput, strengthField)}<span
-																					class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																					>{getAdvancedNumberError(
-																						strengthInput,
-																						strengthField
-																					)}</span
-																				>{/if}
-																		</label>
-																	{/if}
-
-																	{#if negativePromptField}
-																		<label
-																			class="min-w-0 text-xs font-medium text-gray-600 sm:col-span-2 dark:text-gray-300"
-																		>
-																			<span>{$i18n.t('Negative Prompt')}</span>
-																			<textarea
-																				bind:value={negativePrompt}
-																				rows="3"
-																				placeholder={$i18n.t('Describe what should not appear')}
-																				class="mt-1 w-full resize-y rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm font-normal text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																			></textarea>
-																		</label>
-																	{/if}
-																</div>
-															{/if}
-														</section>
-													{/if}
-												</div>
-											{/if}
-										</div>
-									</div>
-
-									<div class="flex min-w-0 items-center justify-between gap-2 sm:justify-end">
-										<ImageCreditQuoteBadge quoteState={imageQuoteState} />
-										<GenerationSubmitButton
-											{loading}
-											disabled={!prompt.trim() ||
-												!isImageQuoteSubmittable(imageQuoteState) ||
-												(useCustomSize && Boolean(customSizeError)) ||
-												advancedSettingsInvalid ||
-												loading}
-											label={referenceImages.length > 0
-												? $i18n.t('Edit Image')
-												: $i18n.t('Generate')}
-										/>
-									</div>
-								</div>
-							</div>
-						</form>
-					</div>
-				</div>
+					<ImagePromptForm
+						bind:selectedVendor
+						bind:prompt
+						bind:selectedQuality
+						bind:imageCount
+						bind:useCustomSize
+						bind:customWidth
+						bind:customHeight
+						bind:selectedOutputFormat
+						bind:seedInput
+						bind:stepsInput
+						bind:guidanceScaleInput
+						bind:strengthInput
+						bind:negativePrompt
+						bind:showModelSelector
+						bind:showAspectRatioPicker
+						bind:showAdvancedSettings
+						bind:draggedOver
+						bind:this={promptFormElement}
+						{selectedModelLabel}
+						{selectedModelConfig}
+						{vendorList}
+						{vendorModels}
+						{selectedModel}
+						{models}
+						{selectedModelSupportsEditing}
+						{selectedAspectRatio}
+						{selectedResolution}
+						{referenceImages}
+						{aspectRatioOptions}
+						{resolutionOptions}
+						{qualityOptions}
+						{imageCountOptions}
+						{outputFormatOptions}
+						{supportsCustomSize}
+						{hasImageSizingOptions}
+						{hasAdvancedSettings}
+						{seedField}
+						{stepsField}
+						{guidanceScaleField}
+						{strengthField}
+						{negativePromptField}
+						{customSizeError}
+						{customWidthNum}
+						{customHeightNum}
+						{selectedImageSizeLabel}
+						{imageQuoteState}
+						{loading}
+						{advancedSettingsInvalid}
+						{modelBasePrice}
+						{getAdvancedNumberError}
+						{advancedRangeLabel}
+						{selectModelIfEnabled}
+						{selectAspectRatio}
+						{selectResolution}
+						{toggleAspectRatioPicker}
+						{handleFileUpload}
+						{handleDrop}
+						{removeImage}
+						{handlePromptTagInsert}
+						{submitHandler}
+					/>
 			</div>
 		</div>
 

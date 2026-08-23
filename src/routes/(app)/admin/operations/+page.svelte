@@ -4,15 +4,19 @@
 	import type { SvelteComponent } from 'svelte';
 
 	import Loader from '$lib/components/common/Loader.svelte';
+	import { page } from '$app/stores';
 
 	const i18n = getContext('i18n');
-	type OperationsTab = 'discovery' | 'categories' | 'models' | 'providers';
+	type OperationsTab = 'discovery' | 'categories' | 'models' | 'providers' | 'promptTags';
 	const tabs: Array<{ id: OperationsTab; label: string }> = [
 		{ id: 'discovery', label: 'Discovery operations' },
 		{ id: 'categories', label: 'Creation categories' },
 		{ id: 'models', label: 'Model operations' },
-		{ id: 'providers', label: 'Provider operations' }
+		{ id: 'providers', label: 'Provider operations' },
+		{ id: 'promptTags', label: 'promptTags.admin.management' }
 	];
+	const isOperationsTab = (value: string): value is OperationsTab =>
+		tabs.some((tab) => tab.id === value);
 	let active: OperationsTab = 'discovery';
 
 	const selectTab = (tab: OperationsTab, target: EventTarget | null) => {
@@ -45,18 +49,21 @@
 	let categoriesState: LazyState = { component: null, loading: false, error: false };
 	let modelsState: LazyState = { component: null, loading: false, error: false };
 	let providersState: LazyState = { component: null, loading: false, error: false };
+	let promptTagsState: LazyState = { component: null, loading: false, error: false };
 
 	const loaders: Record<OperationsTab, () => Promise<{ default: SvelteComponentAny }>> = {
 		discovery: () => import('$lib/components/discovery/admin/DiscoveryOperations.svelte'),
 		categories: () => import('$lib/components/discovery/admin/DiscoveryCategories.svelte'),
 		models: () => import('$lib/components/model-ops/admin/ImageModelOperations.svelte'),
-		providers: () => import('$lib/components/provider-ops/admin/ProviderOperations.svelte')
+		providers: () => import('$lib/components/provider-ops/admin/ProviderOperations.svelte'),
+		promptTags: () => import('$lib/components/prompt-tags/admin/PromptTagAdmin.svelte')
 	};
 
 	const stateFor = (tab: OperationsTab): LazyState => {
 		if (tab === 'discovery') return discoveryState;
 		if (tab === 'categories') return categoriesState;
 		if (tab === 'models') return modelsState;
+		if (tab === 'promptTags') return promptTagsState;
 		return providersState;
 	};
 
@@ -64,6 +71,7 @@
 		if (tab === 'discovery') discoveryState = state;
 		else if (tab === 'categories') categoriesState = state;
 		else if (tab === 'models') modelsState = state;
+		else if (tab === 'promptTags') promptTagsState = state;
 		else providersState = state;
 	};
 
@@ -85,8 +93,11 @@
 	};
 
 	onMount(() => {
+		// 支持通过 ?tab= 指定初始 tab（例如从 /admin/prompt-tags 重定向进入）。
+		const requested = $page.url.searchParams.get('tab');
+		if (requested && isOperationsTab(requested)) active = requested;
 		// 默认 tab 预加载，保证首屏可见内容立即可用。
-		ensureLoaded('discovery');
+		ensureLoaded(active);
 	});
 
 	$: if (active) ensureLoaded(active);
@@ -210,6 +221,28 @@
 						type="button"
 						class="min-h-11 rounded-xl bg-gray-100 px-4 py-2 text-sm font-medium hover:bg-gray-200 focus:outline-hidden focus:ring-2 focus:ring-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700"
 						on:click={() => ensureLoaded('providers')}>{$i18n.t('Retry')}</button
+					>
+				</div>
+			{:else}
+				<div class="flex h-32 items-center justify-center text-sm text-gray-400 dark:text-gray-500">
+					<Loader />
+				</div>
+			{/if}
+		{:else if active === 'promptTags'}
+			{#if promptTagsState.component}
+				<svelte:component this={promptTagsState.component} />
+			{:else if promptTagsState.error}
+				<div
+					class="flex h-40 flex-col items-center justify-center gap-3 px-4 text-center"
+					role="alert"
+				>
+					<p class="text-sm text-gray-500 dark:text-gray-400">
+						{$i18n.t('Failed to load operations section')}
+					</p>
+					<button
+						type="button"
+						class="min-h-11 rounded-xl bg-gray-100 px-4 py-2 text-sm font-medium hover:bg-gray-200 focus:outline-hidden focus:ring-2 focus:ring-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700"
+						on:click={() => ensureLoaded('promptTags')}>{$i18n.t('Retry')}</button
 					>
 				</div>
 			{:else}

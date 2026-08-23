@@ -18,6 +18,24 @@ export async function computeFileHash(file: File): Promise<string> {
 	return sha256Fallback(new Uint8Array(buffer));
 }
 
+/**
+ * Compute the lowercase hex SHA-256 digest of a UTF-8 string.
+ *
+ * Same availability contract as computeFileHash: crypto.subtle when present,
+ * pure-JS fallback for plain HTTP deployments. Used by submission idempotency
+ * fingerprints which must keep working outside secure contexts.
+ */
+export async function sha256Hex(text: string): Promise<string> {
+	const bytes = new TextEncoder().encode(text);
+
+	if (globalThis.crypto?.subtle) {
+		const digest = await crypto.subtle.digest('SHA-256', bytes);
+		return hexEncode(new Uint8Array(digest));
+	}
+
+	return sha256Fallback(bytes);
+}
+
 function hexEncode(bytes: Uint8Array): string {
 	const hex: string[] = new Array(bytes.length);
 	for (let i = 0; i < bytes.length; i++) {

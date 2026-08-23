@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 
 import aiofiles
 from fastapi import Request
-from open_webui.config import FAL_API_KEY
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
 from open_webui.extensions.fal_catalog.video_schemas import FalVideoModelDefinition
 from open_webui.extensions.provider_ops.service import (
@@ -22,9 +21,10 @@ from open_webui.extensions.provider_ops.service import (
 )
 from open_webui.extensions.videos.pexels_mock import probe_video_duration
 from open_webui.extensions.videos.schemas import VideoTaskResponse
+from open_webui.models.config import Config
 from open_webui.models.files import Files
 from open_webui.storage.provider import Storage
-from open_webui.utils.images.fal import FalImageError, resume_fal_queue, run_fal_queue
+from open_webui.extensions.fal_images.client import FalImageError, resume_fal_queue, run_fal_queue
 from open_webui.utils.session_pool import get_session
 
 log = logging.getLogger(__name__)
@@ -38,6 +38,10 @@ _DEFAULT_DELIVERY_MAX_ATTEMPTS = 3
 _DEFAULT_RETRY_BASE_DELAY_SECONDS = 1
 _DEFAULT_TEMP_MAX_AGE_SECONDS = 24 * 60 * 60
 _TEMP_FILE_PREFIX = 'open-webui-fal-video-'
+# 运营中心管理端持久化配置键（Config 表）
+_VIDEO_FAL_MOCK_ENABLED_KEY = 'video_generation.fal.mock_enabled'
+_VIDEO_FAL_API_KEY_KEY = 'video_generation.fal.api_key'
+_IMAGE_FAL_API_KEY_KEY = 'image_generation.fal.api_key'
 _MOCK_SCENARIOS = frozenset(
     {
         'success',
@@ -94,6 +98,10 @@ class _VideoProviderObserver:
     async def submitted(self, payload: dict[str, object]) -> None:
         # Persist Provider Ops first so request_id still has an authoritative
         # diagnostic record if the task-specific recovery write fails.
+        # 注意：run_fal_queue 对 observer 回调按 best-effort 吞异常
+        # （extensions/fal_images/client.py _notify_provider），提交状态写入
+        # 失败不会中断生成。恢复路径的兜底是 video_recovery_state_missing 时
+        # 按"供应商受理未确认"退款（service.recover_video_task）。
         await self._base_call('submitted', payload)
         if self._on_submitted is not None:
             await self._on_submitted(payload)
@@ -372,25 +380,33 @@ def _positive_int_env(name: str, default: int) -> int:
     return parsed
 
 
-def _fal_api_key(request: Request) -> str:
-    override = os.getenv('VIDEO_GENERATION_FAL_API_KEY', '').strip()
-    if override:
-        return override
-    app_config = getattr(getattr(request.app, 'state', None), 'config', None)
-    configured = getattr(app_config, 'FAL_API_KEY', '')
-    return configured.strip() if isinstance(configured, str) and configured.strip() else FAL_API_KEY.strip()
+async def get_video_fal_settings() -> tuple[bool, str]:
+    """运营中心管理端 FAL 配置：返回 (mock 开关, 视频 API key)。
+
+    视频侧 key 为空时回落到图片生成侧 key，方便单一 key 的部署。
+    """
+    values = await Config.get_many(
+        _VIDEO_FAL_MOCK_ENABLED_KEY,
+        _VIDEO_FAL_API_KEY_KEY,
+        _IMAGE_FAL_API_KEY_KEY,
+    )
+    mock_enabled = bool(values.get(_VIDEO_FAL_MOCK_ENABLED_KEY, False))
+    video_key = values.get(_VIDEO_FAL_API_KEY_KEY)
+    image_key = values.get(_IMAGE_FAL_API_KEY_KEY)
+    api_key = video_key.strip() if isinstance(video_key, str) else ''
+    if not api_key and isinstance(image_key, str):
+        api_key = image_key.strip()
+    return mock_enabled, api_key
 
 
-def resolve_video_executor(request: Request) -> MockVideoExecutor | FalVideoExecutor:
-    engine = os.getenv('VIDEO_GENERATION_ENGINE', 'mock').strip().lower()
-    if engine == 'mock':
+async def resolve_video_executor() -> MockVideoExecutor | FalVideoExecutor:
+    """按管理端配置解析视频执行器：mock 开关开启时返回 Mock，否则走真实 FAL。"""
+    mock_enabled, api_key = await get_video_fal_settings()
+    if mock_enabled:
         scenario = os.getenv('VIDEO_GENERATION_MOCK_SCENARIO', 'success').strip().lower()
         if scenario not in _MOCK_SCENARIOS:
             raise VideoExecutionError('video_mock_scenario_invalid')
         return MockVideoExecutor()
-    if engine != 'fal':
-        raise VideoExecutionError('video_engine_not_configured', f'unsupported video engine: {engine}')
-    api_key = _fal_api_key(request)
     if not api_key:
         raise VideoExecutionError('video_fal_not_configured')
     return FalVideoExecutor(
@@ -427,22 +443,17 @@ def enforce_fal_video_policy(*, model_id: str, charged_credits: int) -> None:
         raise VideoExecutionError('video_fal_cost_limit_exceeded')
 
 
-def video_runtime_diagnostics(request: Request) -> dict[str, object]:
-    raw_engine = os.getenv('VIDEO_GENERATION_ENGINE', 'mock').strip().lower()
-    engine = raw_engine if raw_engine in {'mock', 'fal'} else 'invalid'
+async def video_runtime_diagnostics(request: Request) -> dict[str, object]:
+    mock_enabled, api_key = await get_video_fal_settings()
     raw_allowlist = os.getenv('VIDEO_GENERATION_FAL_ALLOWED_MODELS', '').strip()
     allowed_models = sorted({item.strip() for item in raw_allowlist.split(',') if item.strip()})
     raw_limit = os.getenv('VIDEO_GENERATION_FAL_MAX_CREDITS_PER_REQUEST', '').strip()
     max_credits: int | None = None
     configuration_error: str | None = None
-    if engine == 'invalid':
-        configuration_error = 'video_engine_not_configured'
-    elif (
-        engine == 'mock'
-        and os.getenv('VIDEO_GENERATION_MOCK_SCENARIO', 'success').strip().lower() not in _MOCK_SCENARIOS
-    ):
-        configuration_error = 'video_mock_scenario_invalid'
-    elif engine == 'fal' and not _fal_api_key(request):
+    if mock_enabled:
+        if os.getenv('VIDEO_GENERATION_MOCK_SCENARIO', 'success').strip().lower() not in _MOCK_SCENARIOS:
+            configuration_error = 'video_mock_scenario_invalid'
+    elif not api_key:
         configuration_error = 'video_fal_not_configured'
     if raw_limit:
         try:
@@ -454,8 +465,8 @@ def video_runtime_diagnostics(request: Request) -> dict[str, object]:
             configuration_error = configuration_error or 'video_fal_policy_invalid'
     running = getattr(request.app.state, 'video_generation_tasks', {})
     return {
-        'engine': engine,
-        'fal_api_key_configured': bool(_fal_api_key(request)),
+        'mock_enabled': mock_enabled,
+        'fal_api_key_configured': bool(api_key),
         'allowed_models': allowed_models,
         'max_credits_per_request': max_credits,
         'delivery_max_attempts': _positive_int_env(
@@ -731,6 +742,7 @@ __all__ = [
     'download_fal_video_with_retry',
     'enforce_fal_video_policy',
     'extract_fal_video_url',
+    'get_video_fal_settings',
     'inject_fal_asset_urls',
     'resolve_video_executor',
     'upload_file_to_fal',

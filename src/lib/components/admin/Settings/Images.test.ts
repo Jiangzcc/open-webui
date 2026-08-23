@@ -25,15 +25,14 @@ describe('fal.ai image settings', () => {
 		expect(editFalBranch).toBeGreaterThan(editEngineChain);
 	});
 
-	test('binds both fal.ai endpoint and credential pairs', () => {
-		for (const field of [
-			'config.FAL_API_BASE_URL',
-			'config.FAL_API_KEY',
-			'config.IMAGES_EDIT_FAL_API_BASE_URL',
-			'config.IMAGES_EDIT_FAL_API_KEY'
-		]) {
-			expect(source).toContain(`bind:value={${field}}`);
-		}
-		expect(source.match(/fal\.ai API Key is required\./g).length).toBeGreaterThanOrEqual(2);
+	test('points fal.ai credential management to the operations center', () => {
+		// FAL 的 Key/Base URL/mock 开关已迁移至运营中心（provider-ops）的 FAL 配置区，
+		// Images 设置页只保留引擎选择并给出指引。
+		expect(
+			source.match(/FAL API settings are managed in the operations center\./g)
+		).toHaveLength(2);
+		expect(source).not.toContain('bind:value={config.FAL_API_KEY}');
+		expect(source).not.toContain('bind:value={config.IMAGES_EDIT_FAL_API_KEY}');
+		expect(source).not.toContain('fal.ai API Key is required.');
 	});
 });

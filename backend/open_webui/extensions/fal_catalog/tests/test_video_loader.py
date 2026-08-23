@@ -5,7 +5,11 @@ import re
 from pathlib import Path
 
 import pytest
-from open_webui.extensions.fal_catalog.loader import FalCatalogError, load_video_catalog
+from open_webui.extensions.fal_catalog.loader import (
+    FalCatalogError,
+    load_video_catalog,
+    load_video_catalog_cached,
+)
 
 EXPECTED_PACKAGED_PROVIDERS = {
     'alibaba',
@@ -226,3 +230,66 @@ def test_rejects_unknown_video_model_fields(tmp_path: Path) -> None:
 
     with pytest.raises(FalCatalogError, match='provider_template'):
         load_video_catalog(_write_catalog(tmp_path, models))
+
+
+def test_cached_loader_reuses_unchanged_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """审查发现 #2：缓存命中时不得再次解析目录文件，任意 model_id 的 miss
+    不能放大成全量磁盘解析。"""
+    catalog_dir = _write_catalog(tmp_path, _example_models())
+
+    parse_calls = 0
+    real_loader = load_video_catalog
+
+    def counting_loader(path: Path | None = None):  # type: ignore[no-untyped-def]
+        nonlocal parse_calls
+        parse_calls += 1
+        return real_loader(path)
+
+    monkeypatch.setattr('open_webui.extensions.fal_catalog.loader.load_video_catalog', counting_loader)
+
+    first = load_video_catalog_cached(catalog_dir)
+    second = load_video_catalog_cached(catalog_dir)
+
+    assert first is second
+    assert parse_calls == 1
+
+
+def test_cached_loader_picks_up_hot_updates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """目录文件热更新后，下一次调用必须返回重载后的目录。"""
+    catalog_dir = _write_catalog(tmp_path, _example_models())
+
+    monkeypatch.setattr('open_webui.extensions.fal_catalog.loader.load_video_catalog', load_video_catalog)
+
+    before = load_video_catalog_cached(catalog_dir)
+
+    models = _example_models()
+    models[0]['public_id'] = 'vendor-text-renamed'
+    (catalog_dir / 'models.json').write_text(json.dumps(models), encoding='utf-8')
+
+    after = load_video_catalog_cached(catalog_dir)
+
+    assert after is not before
+    assert after.public_to_internal['vendor-text-renamed'] == 'vendor/text-to-video'
+
+
+def test_cached_loader_tolerates_file_removed_between_glob_and_stat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """回归（对抗性审查）：目录热更新（删除/原子替换文件）与请求并发时，
+    glob 已列出、stat 时已消失的文件不能让签名计算抛 FileNotFoundError
+    （未处理异常 → 500）；跳过该文件即可，未变化的目录仍复用缓存。"""
+    catalog_dir = _write_catalog(tmp_path, _example_models())
+    before = load_video_catalog_cached(catalog_dir)
+
+    real_glob = Path.glob
+
+    def glob_with_vanishing_file(path: Path, pattern: str):  # type: ignore[no-untyped-def]
+        yield from real_glob(path, pattern)
+        if pattern == '*.json':
+            yield path / 'vanishing.json'
+
+    monkeypatch.setattr(Path, 'glob', glob_with_vanishing_file)
+
+    after = load_video_catalog_cached(catalog_dir)
+
+    assert after is before

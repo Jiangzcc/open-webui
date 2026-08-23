@@ -3,16 +3,12 @@ from __future__ import annotations
 import logging
 
 import anyio
-from alembic.migration import MigrationContext
-from alembic.script import ScriptDirectory
 from fastapi import FastAPI
-from open_webui.env import DATABASE_SCHEMA
-from sqlalchemy import inspect
+from open_webui.extensions.migration_kit import SchemaGuard, validate_schema
 
-from .db import engine
 from .events import init_generation_event_bus
 from .generation_tasks import fail_incomplete_generation_tasks, shutdown_generation_tasks
-from .migrations.runner import _migration_config, run_creation_migrations
+from .migrations.runner import SPEC, run_creation_migrations
 from .models import CreationBase
 
 log = logging.getLogger(__name__)
@@ -96,62 +92,19 @@ _REQUIRED_INDEXES = {
     'ext_creation_category': frozenset({'ix_ext_creation_category_enabled_order'}),
 }
 
-
-def _schema_tables(inspector) -> set[str]:
-    return set(inspector.get_table_names(schema=DATABASE_SCHEMA))
-
-
-def _validate_named_objects(inspector, required_by_table, inspector_method: str, label: str) -> None:
-    getter = getattr(inspector, inspector_method)
-    for table_name, required in required_by_table.items():
-        existing = {item['name'] for item in getter(table_name, schema=DATABASE_SCHEMA)}
-        missing = required - existing
-        if missing:
-            raise RuntimeError(f'creation migration validation failed: {table_name} missing {label} {sorted(missing)}')
+# 创建链的全部表禁止外键（关联关系由应用层维护）。
+_SCHEMA_GUARD = SchemaGuard(
+    spec=SPEC,
+    required_tables=_REQUIRED_TABLES,
+    required_unique=_REQUIRED_UNIQUE,
+    required_checks=_REQUIRED_CHECKS,
+    required_indexes=_REQUIRED_INDEXES,
+    expected_foreign_keys={},
+)
 
 
 def _validate_creation_schema() -> None:
-    with engine.connect() as connection:
-        inspector = inspect(connection)
-        missing_tables = _REQUIRED_TABLES - _schema_tables(inspector)
-        if missing_tables:
-            raise RuntimeError(f'creation migration validation failed: missing tables {sorted(missing_tables)}')
-
-        config = _migration_config(DATABASE_SCHEMA)
-        expected_heads = set(ScriptDirectory.from_config(config).get_heads())
-        current_heads = set(
-            MigrationContext.configure(
-                connection,
-                opts={
-                    'version_table': 'ext_creation_schema_version',
-                    'version_table_schema': DATABASE_SCHEMA,
-                },
-            ).get_current_heads()
-        )
-        if current_heads != expected_heads:
-            raise RuntimeError(
-                'creation migration validation failed: '
-                f'expected version {sorted(expected_heads)}, got {sorted(current_heads)}'
-            )
-
-        _validate_named_objects(
-            inspector,
-            _REQUIRED_UNIQUE,
-            'get_unique_constraints',
-            'unique constraints',
-        )
-        _validate_named_objects(
-            inspector,
-            _REQUIRED_CHECKS,
-            'get_check_constraints',
-            'check constraints',
-        )
-        _validate_named_objects(inspector, _REQUIRED_INDEXES, 'get_indexes', 'indexes')
-
-        for table_name in _REQUIRED_TABLES:
-            foreign_keys = inspector.get_foreign_keys(table_name, schema=DATABASE_SCHEMA)
-            if foreign_keys:
-                raise RuntimeError(f'creation migration validation failed: {table_name} must not declare foreign keys')
+    validate_schema(_SCHEMA_GUARD)
 
 
 async def initialize_creations_extension(app: FastAPI) -> None:

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from open_webui.extensions.credits import router_admin
 
 from .router_test_support import AuthenticatedUser
 
@@ -7,7 +8,7 @@ from .router_test_support import AuthenticatedUser
 def _admin_app(credits_router, session):
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: session
@@ -16,6 +17,7 @@ def _admin_app(credits_router, session):
 
 def test_adjustment_rejects_oversized_target_id_before_database_access() -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     response = TestClient(_admin_app(credits_router, object()), raise_server_exceptions=False).post(
         f'/api/v1/credits/admin/accounts/{"u" * 129}/adjustments',

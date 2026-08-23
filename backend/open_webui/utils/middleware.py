@@ -1654,6 +1654,26 @@ def build_tool_credit_metadata(metadata: object, tool_call_id: object) -> dict[s
     return credit_metadata
 
 
+def _chat_image_error_message(error: Exception) -> str:
+    """提取 chat 内图片生成失败的用户可见原因。
+
+    EXT: 二开新增 —— 计费拒绝（积分不足/未配置价格等）以 CreditError 抛出，
+    只认 HTTPException 会把原因置空，用户在 chat 里只能看到空错误。
+    """
+    try:
+        from open_webui.extensions.credits.errors import CreditError
+
+        if isinstance(error, CreditError):
+            return str(error.to_envelope().get('message') or error.code)
+    except ImportError:
+        pass
+    if isinstance(error, HTTPException):
+        if error.detail and isinstance(error.detail, dict):
+            return str(error.detail.get('message', error.detail))
+        return str(error.detail)
+    return ''
+
+
 async def chat_image_generation_handler(request: Request, form_data: dict, extra_params: dict, user):
     metadata = extra_params.get('__metadata__', {})
     chat_id = metadata.get('chat_id', None)
@@ -1736,12 +1756,7 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
         except Exception as e:
             log.debug(e)
 
-            error_message = ''
-            if isinstance(e, HTTPException):
-                if e.detail and isinstance(e.detail, dict):
-                    error_message = e.detail.get('message', str(e.detail))
-                else:
-                    error_message = str(e.detail)
+            error_message = _chat_image_error_message(e)
 
             await __event_emitter__(
                 {
@@ -1837,12 +1852,7 @@ async def chat_image_generation_handler(request: Request, form_data: dict, extra
         except Exception as e:
             log.debug(e)
 
-            error_message = ''
-            if isinstance(e, HTTPException):
-                if e.detail and isinstance(e.detail, dict):
-                    error_message = e.detail.get('message', str(e.detail))
-                else:
-                    error_message = str(e.detail)
+            error_message = _chat_image_error_message(e)
 
             await __event_emitter__(
                 {

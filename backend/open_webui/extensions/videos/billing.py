@@ -20,7 +20,7 @@ from open_webui.extensions.credits.service import (
     mark_usage_succeeded_in_session,
     touch_usage_invoking,
 )
-from open_webui.extensions.fal_catalog import load_video_catalog
+from open_webui.extensions.fal_catalog import load_video_catalog_cached
 from open_webui.extensions.videos.schemas import VideoTaskResponse, VideoTaskSubmitForm
 
 _USAGE_FAILURE_MAX_ATTEMPTS = 3
@@ -66,7 +66,7 @@ def video_quote_dimensions(task: VideoTaskSubmitForm | VideoTaskResponse) -> dic
 
 
 def _resolve_internal_model_id(public_model_id: str) -> str:
-    catalog = load_video_catalog()
+    catalog = load_video_catalog_cached()
     internal_id = catalog.public_to_internal.get(public_model_id)
     if internal_id is None:
         raise CreditError(code='price_rule_incomplete', context={'reason': 'invalid_video_model'})

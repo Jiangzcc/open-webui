@@ -10,7 +10,7 @@ from .router_test_support import AuthenticatedUser
 
 
 def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_routes() -> None:
-    from open_webui.utils.images import fal_models
+    from open_webui.extensions.fal_images import models as fal_models
 
     public = fal_models.public_fal_image_models('fal-ai/z-image/turbo')
 
@@ -51,7 +51,7 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
 
 
 def test_public_fal_catalog_exposes_openai_quality_without_leaking_option_fields() -> None:
-    from open_webui.utils.images import fal_models
+    from open_webui.extensions.fal_images import models as fal_models
 
     public = fal_models.public_fal_image_models('fal-ai/z-image/turbo')
     by_id = {item['id']: item for item in public}
@@ -75,7 +75,7 @@ def test_public_fal_catalog_exposes_openai_quality_without_leaking_option_fields
 
 
 def test_public_fal_catalog_exposes_only_curated_advanced_image_fields() -> None:
-    from open_webui.utils.images import fal_models
+    from open_webui.extensions.fal_images import models as fal_models
 
     public = fal_models.public_fal_image_models('fal-ai/z-image/turbo')
     by_id = {item['id']: item for item in public}
@@ -98,7 +98,7 @@ def test_public_fal_catalog_exposes_only_curated_advanced_image_fields() -> None
 
 
 def test_public_fal_model_mapping_is_bidirectional_and_fail_closed() -> None:
-    from open_webui.utils.images import fal_models
+    from open_webui.extensions.fal_images import models as fal_models
 
     assert fal_models.internal_fal_image_model_id('z-image-turbo') == 'fal-ai/z-image/turbo'
     assert fal_models.internal_fal_image_model_id('nano-banana/edit') == 'fal-ai/nano-banana/edit'
@@ -109,7 +109,7 @@ def test_public_fal_model_mapping_is_bidirectional_and_fail_closed() -> None:
 
 
 def test_fal_model_resolution_maps_public_ids_to_provider_ids() -> None:
-    from open_webui.utils.images import fal
+    from open_webui.extensions.fal_images import client as fal
 
     assert fal.get_fal_generation_model('z-image-turbo') == 'fal-ai/z-image/turbo'
     assert fal.get_fal_edit_model('z-image-turbo') == 'fal-ai/z-image/turbo/image-to-image'
@@ -324,7 +324,7 @@ def test_user_credit_errors_do_not_echo_internal_resource_context(monkeypatch) -
 
 
 def test_public_fal_image_models_include_hosting_for_alibaba():
-    from open_webui.utils.images.fal_models import public_fal_image_models
+    from open_webui.extensions.fal_images.models import public_fal_image_models
 
     models = public_fal_image_models(default_model='fal-ai/z-image/turbo')
     by_id = {m['id']: m for m in models}
@@ -337,7 +337,7 @@ def test_public_fal_image_models_include_hosting_for_alibaba():
 
 
 def test_legacy_models_keep_hosting_absent_or_filled():
-    from open_webui.utils.images.fal_models import public_fal_image_models
+    from open_webui.extensions.fal_images.models import public_fal_image_models
 
     models = public_fal_image_models(default_model='fal-ai/z-image/turbo')
     by_id = {m['id']: m for m in models}

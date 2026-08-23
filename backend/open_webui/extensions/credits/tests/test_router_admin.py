@@ -10,7 +10,7 @@ from .router_test_support import AuthenticatedUser
 
 
 def test_price_requests_reject_invalid_base_prices() -> None:
-    from open_webui.extensions.credits.router import PriceRequest
+    from open_webui.extensions.credits.router_admin import PriceRequest
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
@@ -26,7 +26,7 @@ def test_price_requests_reject_invalid_base_prices() -> None:
 
 
 def test_price_requests_reject_unknown_or_invalid_rules() -> None:
-    from open_webui.extensions.credits.router import PriceRequest
+    from open_webui.extensions.credits.router_admin import PriceRequest
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
@@ -43,10 +43,11 @@ def test_price_requests_reject_unknown_or_invalid_rules() -> None:
 
 def test_accounts_reject_invalid_pagination() -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -60,10 +61,11 @@ def test_accounts_reject_invalid_pagination() -> None:
 
 def test_accounts_return_a_public_error_for_an_unexpected_failure(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -71,7 +73,7 @@ def test_accounts_return_a_public_error_for_an_unexpected_failure(monkeypatch) -
     async def unavailable(*_args, **_kwargs):
         raise RuntimeError('sensitive database failure')
 
-    monkeypatch.setattr(credits_router, 'get_credit_users', unavailable)
+    monkeypatch.setattr(router_admin, 'get_credit_users', unavailable)
 
     response = TestClient(app, raise_server_exceptions=False).get('/api/v1/credits/admin/accounts')
 
@@ -79,6 +81,7 @@ def test_accounts_return_a_public_error_for_an_unexpected_failure(monkeypatch) -
     assert response.json()['code'] == 'credit_service_unavailable'
 
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     class User:
         def __init__(self, user_id, name, email):
@@ -100,10 +103,10 @@ def test_accounts_return_a_public_error_for_an_unexpected_failure(monkeypatch) -
             'total': 2,
         }
 
-    monkeypatch.setattr(credits_router, 'get_credit_users', users)
+    monkeypatch.setattr(router_admin, 'get_credit_users', users)
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: Session()
@@ -122,6 +125,7 @@ def test_accounts_return_a_public_error_for_an_unexpected_failure(monkeypatch) -
 
 def test_price_create_persists_before_publishing_a_desensitized_event(router_database, monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     events = []
 
@@ -134,11 +138,11 @@ def test_price_create_persists_before_publishing_a_desensitized_event(router_dat
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = database_session
-    monkeypatch.setattr(credits_router, 'publish_credit_price_event', publish)
+    monkeypatch.setattr(router_admin, 'publish_credit_price_event', publish)
 
     response = TestClient(app, raise_server_exceptions=False).post(
         '/api/v1/credits/admin/prices',
@@ -158,7 +162,7 @@ def test_price_create_persists_before_publishing_a_desensitized_event(router_dat
         (
             events[0][0],
             'created',
-            app.dependency_overrides[credits_router.get_admin_user](),
+            app.dependency_overrides[router_admin.get_admin_user](),
             price_id,
             {
                 'price_id': price_id,
@@ -183,6 +187,7 @@ def test_price_create_persists_before_publishing_a_desensitized_event(router_dat
 
 def test_price_delete_persists_before_publishing_a_desensitized_event(router_database, monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     async def seed() -> None:
         async with router_database() as session, session.begin():
@@ -212,11 +217,11 @@ def test_price_delete_persists_before_publishing_a_desensitized_event(router_dat
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = database_session
-    monkeypatch.setattr(credits_router, 'publish_credit_price_event', publish)
+    monkeypatch.setattr(router_admin, 'publish_credit_price_event', publish)
 
     response = TestClient(app, raise_server_exceptions=False).delete(
         '/api/v1/credits/admin/prices/price-delete-1', headers={'X-Request-ID': 'price-delete-1'}
@@ -244,6 +249,7 @@ def test_price_delete_persists_before_publishing_a_desensitized_event(router_dat
 
 def test_price_update_returns_not_found_when_the_price_does_not_exist(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     class Transaction:
         async def __aenter__(self):
@@ -261,7 +267,7 @@ def test_price_update_returns_not_found_when_the_price_does_not_exist(monkeypatc
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: Session()
@@ -274,6 +280,7 @@ def test_price_update_returns_not_found_when_the_price_does_not_exist(monkeypatc
 
 def test_price_delete_returns_not_found_when_the_price_does_not_exist() -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     class Transaction:
         async def __aenter__(self):
@@ -291,7 +298,7 @@ def test_price_delete_returns_not_found_when_the_price_does_not_exist() -> None:
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: Session()
@@ -304,10 +311,11 @@ def test_price_delete_returns_not_found_when_the_price_does_not_exist() -> None:
 
 def test_price_update_rejects_an_empty_change_set(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -320,6 +328,7 @@ def test_price_update_rejects_an_empty_change_set(monkeypatch) -> None:
 
 def test_price_update_commits_before_publishing_event(router_database, monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     async def seed() -> None:
         async with router_database() as session, session.begin():
@@ -349,11 +358,11 @@ def test_price_update_commits_before_publishing_event(router_database, monkeypat
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = database_session
-    monkeypatch.setattr(credits_router, 'publish_credit_price_event', publish)
+    monkeypatch.setattr(router_admin, 'publish_credit_price_event', publish)
 
     response = TestClient(app, raise_server_exceptions=False).put(
         '/api/v1/credits/admin/prices/price-1', json={'enabled': False}
@@ -376,10 +385,11 @@ async def test_get_balance_if_exists_does_not_create_account(router_database) ->
 
 def test_admin_price_errors_use_the_public_envelope_and_correlation_id(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     errors = []
@@ -389,7 +399,10 @@ def test_admin_price_errors_use_the_public_envelope_and_correlation_id(monkeypat
             raise RuntimeError('database connection details must not reach the client')
 
     app.dependency_overrides[credits_router.get_async_session] = lambda: Session()
-    monkeypatch.setattr(credits_router.log, 'error', lambda _message, **kwargs: errors.append(kwargs))
+    # 错误信封助手在 router_support 中记日志，patch 其模块的 log 才能捕获。
+    from open_webui.extensions.credits import router_support
+
+    monkeypatch.setattr(router_support.log, 'error', lambda _message, **kwargs: errors.append(kwargs))
 
     response = TestClient(app, raise_server_exceptions=False).get('/api/v1/credits/admin/prices')
 
@@ -400,10 +413,11 @@ def test_admin_price_errors_use_the_public_envelope_and_correlation_id(monkeypat
 
 def test_price_events_use_the_compatibility_boundary(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
     app.dependency_overrides[credits_router.get_async_session] = lambda: object()
@@ -421,7 +435,7 @@ def test_price_events_use_the_compatibility_boundary(monkeypatch) -> None:
     async def publish(*args, **kwargs):
         calls.append((args, kwargs))
 
-    monkeypatch.setattr(credits_router, 'publish_credit_price_event', publish)
+    monkeypatch.setattr(router_admin, 'publish_credit_price_event', publish)
 
     response = TestClient(app).get('/api/v1/credits/admin/prices')
 
@@ -433,10 +447,11 @@ def test_price_events_use_the_compatibility_boundary(monkeypatch) -> None:
 
 def test_credit_dimensions_return_only_the_registered_image_dimensions() -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
 
@@ -468,8 +483,9 @@ def test_credit_dimensions_return_only_the_registered_image_dimensions() -> None
 
 def test_credit_dimensions_include_video_generation_rules() -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
-    response = asyncio.run(credits_router.get_credit_dimensions('video', object()))
+    response = asyncio.run(router_admin.get_credit_dimensions('video', object()))
 
     assert set(response['dimensions']) == {
         'text-to-video',
@@ -484,10 +500,11 @@ def test_credit_dimensions_include_video_generation_rules() -> None:
 
 def test_unknown_credit_dimensions_return_not_found() -> None:
     from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)
-    app.dependency_overrides[credits_router.get_admin_user] = lambda: AuthenticatedUser(
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
 
@@ -516,14 +533,92 @@ def test_router_exposes_exactly_the_documented_credit_routes() -> None:
         ('/api/v1/credits/quotes/image', 'POST'),
         # 新增的视频报价路由
         ('/api/v1/credits/quotes/video', 'POST'),
+        ('/api/v1/credits/redeem', 'POST'),
         ('/api/v1/credits/admin/accounts', 'GET'),
         ('/api/v1/credits/admin/accounts/{user_id}/adjustments', 'POST'),
+        ('/api/v1/credits/admin/accounts/{user_id}/repair', 'POST'),
         ('/api/v1/credits/admin/ledger', 'GET'),
         ('/api/v1/credits/admin/reconciliation', 'GET'),
         ('/api/v1/credits/admin/reconciliation/{usage_id}/compensate', 'POST'),
+        ('/api/v1/credits/admin/redeem-batches', 'GET'),
+        ('/api/v1/credits/admin/redeem-batches', 'POST'),
+        ('/api/v1/credits/admin/redeem-batches/{batch_id}/codes', 'GET'),
+        ('/api/v1/credits/admin/redeem-batches/{batch_id}/audit', 'GET'),
+        ('/api/v1/credits/admin/redeem-batches/{batch_id}/void', 'POST'),
+        ('/api/v1/credits/admin/redeem-batches/{batch_id}/codes/{code_id}/void', 'POST'),
         ('/api/v1/credits/admin/prices', 'GET'),
         ('/api/v1/credits/admin/prices', 'POST'),
         ('/api/v1/credits/admin/prices/{price_id}', 'PUT'),
         ('/api/v1/credits/admin/prices/{price_id}', 'DELETE'),
         ('/api/v1/credits/admin/dimensions/{service_type}', 'GET'),
+    }
+
+
+def test_repair_endpoint_rejects_unconfirmed_backup(monkeypatch) -> None:
+    """审查发现 #9：管理员修复入口要求显式的备份确认。"""
+    from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
+
+    app = FastAPI()
+    app.include_router(credits_router.router)
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
+        id='admin-1', name='Admin', email='admin@example.test', role='admin'
+    )
+    app.dependency_overrides[credits_router.get_async_session] = lambda: object()
+
+    response = TestClient(app).post(
+        '/api/v1/credits/admin/accounts/user-1/repair',
+        json={
+            'incident_id': 'INC-2026-0001',
+            'expected_balance': 5,
+            'note': 'Reconciled after verified database restore.',
+            'backup_confirmed': False,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()['detail']['code'] == 'invalid_repair_request'
+    assert 'backup' in response.json()['detail']['reason']
+
+
+def test_repair_endpoint_returns_calibration_result(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from open_webui.extensions.credits import router as credits_router
+    from open_webui.extensions.credits import router_admin
+
+    async def fake_repair(session, user_id, operator, incident_id, expected_balance, note, *, backup_confirmed):
+        assert backup_confirmed is True
+        return SimpleNamespace(
+            id='ledger-1',
+            balance_before=8,
+            balance_after=5,
+            request_id='repair:INC-2026-0002',
+        )
+
+    monkeypatch.setattr(router_admin, 'repair_account_from_ledger', fake_repair)
+
+    app = FastAPI()
+    app.include_router(credits_router.router)
+    app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
+        id='admin-1', name='Admin', email='admin@example.test', role='admin'
+    )
+    app.dependency_overrides[credits_router.get_async_session] = lambda: object()
+
+    response = TestClient(app).post(
+        '/api/v1/credits/admin/accounts/user-1/repair',
+        json={
+            'incident_id': 'INC-2026-0002',
+            'expected_balance': 5,
+            'note': 'Reconciled after verified database restore.',
+            'backup_confirmed': True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        'ledger_id': 'ledger-1',
+        'balance_before': 8,
+        'balance_after': 5,
+        'request_id': 'repair:INC-2026-0002',
     }

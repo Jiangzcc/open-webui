@@ -7,6 +7,7 @@ import pytest
 import pytest_asyncio
 from open_webui.extensions.credits.compat import ImageBillingContext
 from open_webui.extensions.credits.db import CreditBase
+from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice
 from open_webui.extensions.credits.schemas import AdjustmentRequest, RequestAuditContext, UserSnapshot
 from open_webui.extensions.credits.service import adjust_balance, begin_image_usage
@@ -106,22 +107,31 @@ def image_context() -> ImageBillingContext:
 
 @pytest.mark.asyncio
 async def test_regular_adjustment_preserves_an_existing_account_ledger_difference(repair_database) -> None:
+    """adjust_balance now rejects mismatched accounts (P0 #5 fix).
+
+    Previously it would silently preserve the mismatch; the consistency
+    guard added in the redemption work makes it refuse to write until the
+    account is repaired. This test verifies the guard fires.
+    """
     target = await create_user(repair_database, 'repair-user')
     operator = UserSnapshot(id='admin-1', name='Admin', email='admin@example.test')
     await create_mismatched_account(repair_database, target)
 
     async with repair_database() as session:
-        await adjust_balance(
-            session,
-            target,
-            operator,
-            AdjustmentRequest(direction='increase', amount=2, reason_code='accounting_correction'),
-            RequestAuditContext(source='internal_admin', request_id='ordinary-adjustment', remote_address_hash=None),
-        )
+        with pytest.raises(CreditError) as raised:
+            await adjust_balance(
+                session,
+                target,
+                operator,
+                AdjustmentRequest(direction='increase', amount=2, reason_code='accounting_correction'),
+                RequestAuditContext(source='internal_admin', request_id='ordinary-adjustment', remote_address_hash=None),
+            )
+    assert raised.value.code == 'credit_service_unavailable'
+    assert raised.value.context.get('reason') == 'account_ledger_mismatch'
 
+    # The mismatch is preserved — no writes occurred.
     account_balance, ledger_total = await account_and_ledger_total(repair_database, target.id)
-
-    assert (account_balance, ledger_total) == (10, 7)
+    assert (account_balance, ledger_total) == (8, 5)
     assert account_balance - ledger_total == 3
 
 

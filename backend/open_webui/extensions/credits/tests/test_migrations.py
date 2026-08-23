@@ -4,7 +4,6 @@ import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -13,23 +12,21 @@ from alembic.config import Config
 from open_webui import env as upstream_env
 from open_webui.extensions.credits import db as credit_db
 from open_webui.extensions.credits.db import CreditBase, credit_session
-from open_webui.extensions.credits.migrations.config import migration_context_options
-from open_webui.extensions.credits.migrations.runner import (
-    _LOCK_NAMESPACE,
-    _acquire_postgres_lock,
-    _acquire_sqlite_lock,
-    _postgres_lock_key,
-    _release_postgres_lock,
-    _run_postgres_migration,
-    _validate_upstream_head,
-    run_credit_migrations,
-)
+from open_webui.extensions.credits.migrations.runner import run_credit_migrations
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
 from open_webui.internal import db as upstream_db
 from sqlalchemy import BigInteger, MetaData, Table, create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
-TABLE_NAMES = {'ext_credit_account', 'ext_credit_usage', 'ext_credit_ledger', 'ext_credit_price'}
+TABLE_NAMES = {
+    'ext_credit_account',
+    'ext_credit_usage',
+    'ext_credit_ledger',
+    'ext_credit_price',
+    'ext_credit_redeem_batch',
+    'ext_credit_redeem_code',
+    'ext_credit_redeem_audit',
+}
 EXPECTED_INDEXES = {
     'ext_credit_usage': {
         'ix_ext_credit_usage_status_updated',
@@ -43,6 +40,15 @@ EXPECTED_INDEXES = {
         'ux_ext_credit_ledger_related_refund',
     },
     'ext_credit_price': {'ix_ext_credit_price_enabled_service_action'},
+    'ext_credit_redeem_batch': {'ix_ext_credit_redeem_batch_created'},
+    'ext_credit_redeem_code': {
+        'ux_ext_credit_redeem_code_hash',
+        'ux_ext_credit_redeem_code_ledger',
+        'ix_ext_credit_redeem_code_batch',
+        'ix_ext_credit_redeem_code_batch_user',
+        'ix_ext_credit_redeem_code_batch_state',
+    },
+    'ext_credit_redeem_audit': {'ix_ext_credit_redeem_audit_batch_created'},
 }
 BIGINT_COLUMNS = {
     'ext_credit_account': {'balance', 'created_at', 'updated_at'},
@@ -55,6 +61,9 @@ BIGINT_COLUMNS = {
     },
     'ext_credit_ledger': {'amount', 'balance_before', 'balance_after', 'created_at'},
     'ext_credit_price': {'created_at', 'updated_at'},
+    'ext_credit_redeem_batch': {'face_value', 'expires_at', 'created_at', 'updated_at'},
+    'ext_credit_redeem_code': {'redeemed_at', 'voided_at', 'created_at'},
+    'ext_credit_redeem_audit': {'created_at'},
 }
 
 
@@ -96,7 +105,7 @@ def test_upgrade_preserves_sentinel_and_creates_only_extension_objects(sqlite_da
         assert names == TABLE_NAMES | {'user', 'ext_credit_schema_version'}
         assert 'alembic_version' not in names
         assert connection.execute(text('SELECT version_num FROM ext_credit_schema_version')).scalar_one() == (
-            '0003_add_credit_ledger_account_index'
+            '0001_create_credit_tables'
         )
     assert not Path(f'{database_path}.credit-migrations.lock').exists()
 
@@ -172,6 +181,16 @@ def test_revision_has_columns_bigints_constraints_foreign_keys_and_indexes(sqlit
         'ck_ext_credit_ledger_request_source',
         'ck_ext_credit_ledger_reason_code',
     } <= checks['ext_credit_ledger'].keys()
+    assert {
+        'ck_ext_credit_redeem_batch_face_value',
+        'ck_ext_credit_redeem_batch_code_count',
+        'ck_ext_credit_redeem_batch_user_limit',
+    } <= checks['ext_credit_redeem_batch'].keys()
+    assert {
+        'ck_ext_credit_redeem_code_terminal_state',
+        'ck_ext_credit_redeem_code_redemption_fields',
+    } <= checks['ext_credit_redeem_code'].keys()
+    assert {'ck_ext_credit_redeem_audit_action'} <= checks['ext_credit_redeem_audit'].keys()
 
 
 def test_orm_metadata_matches_every_revision_table(sqlite_database):
@@ -329,156 +348,6 @@ def test_database_controlled_enums_reject_invalid_values(sqlite_database):
             }
             ledger_values[field] = value
             connection.execute(CreditLedger.__table__.insert().values(**ledger_values))
-
-
-def test_upstream_head_missing_and_behind_fail_before_extension_ddl(sqlite_database):
-    engine, _ = sqlite_database
-    for revision in (None, 'not-current-head'):
-        if revision:
-            with engine.begin() as connection:
-                connection.execute(text('CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)'))
-                connection.execute(text('INSERT INTO alembic_version VALUES (:revision)'), {'revision': revision})
-        with engine.connect() as connection, pytest.raises(RuntimeError, match='upstream Alembic'):
-            run_credit_migrations(connection=connection, verify_upstream=True)
-        with engine.connect() as connection:
-            assert 'ext_credit_account' not in inspect(connection).get_table_names()
-        if revision:
-            with engine.begin() as connection:
-                connection.execute(text('DROP TABLE alembic_version'))
-
-
-def test_upstream_head_uses_upstream_version_table_and_schema(monkeypatch):
-    captured = {}
-
-    class FakeMigrationContext:
-        @classmethod
-        def configure(cls, connection, opts):
-            captured.update(opts)
-            return SimpleNamespace(get_current_heads=lambda: ('head',))
-
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner.MigrationContext', FakeMigrationContext)
-    monkeypatch.setattr(
-        'open_webui.extensions.credits.migrations.runner.ScriptDirectory.from_config',
-        lambda config: SimpleNamespace(get_heads=lambda: ['head']),
-    )
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner.DATABASE_SCHEMA', 'tenant')
-
-    _validate_upstream_head(object())
-
-    assert captured == {'version_table': 'alembic_version', 'version_table_schema': 'tenant'}
-
-
-def test_external_transaction_is_rejected_before_lock(sqlite_database):
-    engine, _ = sqlite_database
-    with engine.connect() as connection:
-        transaction = connection.begin()
-        with pytest.raises(RuntimeError, match='active transaction'):
-            run_credit_migrations(connection=connection, verify_upstream=False)
-        transaction.rollback()
-
-
-def test_sqlite_lock_timeout_without_sleeping(monkeypatch, sqlite_database):
-    engine, database_path = sqlite_database
-    lock_path = Path(f'{database_path}.credit-migrations.lock')
-    lock_path.touch()
-    ticks = iter([0.0, 0.0, 20.0])
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner.time.monotonic', lambda: next(ticks))
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner.time.sleep', lambda _: None)
-    try:
-        with engine.connect() as connection, pytest.raises(TimeoutError, match='SQLite migration lock'):
-            _acquire_sqlite_lock(connection)
-    finally:
-        lock_path.unlink()
-
-
-def test_postgres_lock_sql_stable_key_timeout_and_release(monkeypatch):
-    statements = []
-
-    class FakeConnection:
-        def __init__(self, results=None):
-            self.results = iter(results or [True])
-
-        def execute(self, statement, params):
-            statements.append((str(statement), params))
-            return SimpleNamespace(scalar=lambda: next(self.results))
-
-    ticks = iter([0.0, 0.0, 20.0])
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner.time.monotonic', lambda: next(ticks))
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner.time.sleep', lambda _: None)
-    with pytest.raises(TimeoutError, match='PostgreSQL'):
-        _acquire_postgres_lock(FakeConnection([False, False]))
-
-    release_connection = FakeConnection([True])
-    _release_postgres_lock(release_connection, _postgres_lock_key())
-    assert _postgres_lock_key() == int.from_bytes(
-        __import__('hashlib').sha256(_LOCK_NAMESPACE.encode()).digest()[:8], 'big', signed=True
-    )
-    assert 'pg_try_advisory_lock' in statements[0][0]
-    assert 'pg_advisory_unlock' in statements[-1][0]
-
-
-def test_postgres_transaction_order_commits_acquire_upgrade_and_release(monkeypatch):
-    events = []
-
-    class FakeConnection:
-        def __init__(self):
-            self.active = False
-
-        def execute(self, statement, params):
-            sql = str(statement)
-            self.active = True
-            events.append('acquire' if 'try_advisory' in sql else 'release')
-            return SimpleNamespace(scalar=lambda: True)
-
-        def commit(self):
-            events.append('commit')
-            self.active = False
-
-        def in_transaction(self):
-            return self.active
-
-    def upgrade(connection, verify_upstream, schema):
-        events.append('upgrade')
-        connection.active = True
-
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner._upgrade', upgrade)
-    connection = FakeConnection()
-    _run_postgres_migration(connection, verify_upstream=False, schema='tenant')
-
-    assert events == ['acquire', 'commit', 'upgrade', 'commit', 'release', 'commit']
-    assert not connection.in_transaction()
-
-
-def test_migration_error_remains_primary_when_release_also_fails(monkeypatch, sqlite_database):
-    engine, _ = sqlite_database
-    monkeypatch.setattr(
-        'open_webui.extensions.credits.migrations.runner._acquire_database_lock', lambda connection: object()
-    )
-
-    def fail_upgrade(*args, **kwargs):
-        raise ValueError('migration failed')
-
-    def fail_release(*args, **kwargs):
-        raise RuntimeError('release failed')
-
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner._upgrade', fail_upgrade)
-    monkeypatch.setattr('open_webui.extensions.credits.migrations.runner._release_database_lock', fail_release)
-    with engine.connect() as connection, pytest.raises(ValueError, match='migration failed'):
-        run_credit_migrations(connection=connection, verify_upstream=False)
-
-
-def test_dynamic_schema_context_options_are_behavioral():
-    tenant_options = migration_context_options('tenant', CreditBase.metadata)
-    assert tenant_options == {
-        'target_metadata': CreditBase.metadata,
-        'version_table': 'ext_credit_schema_version',
-        'version_table_schema': 'tenant',
-        'include_schemas': True,
-    }
-    default_options = migration_context_options(None, CreditBase.metadata)
-    assert default_options['version_table_schema'] is None
-    assert default_options['include_schemas'] is False
-    assert default_options['target_metadata'] is CreditBase.metadata
 
 
 def _schema_fingerprint(connection, schema: str) -> dict:

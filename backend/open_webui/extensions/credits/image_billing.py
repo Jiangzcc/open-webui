@@ -23,10 +23,6 @@ Action = Literal['text-to-image', 'image-to-image']
 _INTERNAL_IMAGE_URL = re.compile(r'^/api/v1/files/[A-Za-z0-9_-]{1,128}/content$')
 
 
-class ImageTerminalPreparationError(Exception):
-    """Signal that provider output exists but terminal image preparation failed."""
-
-
 @asynccontextmanager
 async def credit_session() -> AsyncIterator[object]:
     from open_webui.extensions.credits.db import credit_session as open_credit_session
@@ -378,8 +374,6 @@ async def bill_image_call(
                 restore_prepaid=True,
             )
         raise
-    except ImageTerminalPreparationError:
-        raise _unavailable(begin.usage.id, reason='terminal_preparation_failed') from None
     except Exception as error:
         await _mark_failed_or_unavailable(begin.usage.id, error)
         raise CreditError(code='provider_failed', context={'usage_id': begin.usage.id}) from None
@@ -401,7 +395,6 @@ async def bill_image_call(
 
 __all__ = [
     'AuthorizationScope',
-    'ImageTerminalPreparationError',
     'bill_image_call',
     'validate_authorization_scope',
 ]

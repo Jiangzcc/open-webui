@@ -17,6 +17,7 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
+	import CreditRedemptionForm from '$lib/components/credits/CreditRedemptionForm.svelte';
 	import {
 		normalizeImageGenerationModels,
 		type ImageGenerationModel
@@ -160,6 +161,13 @@
 				</button>
 			</div>
 
+			<CreditRedemptionForm
+				on:redeemed={() => {
+					resetPagination();
+					void Promise.all([refreshBalance(), loadLedger(1)]);
+				}}
+			/>
+
 			<div class="mt-5 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
 				<Select
 					value={filters.category ?? ''}
@@ -243,10 +251,18 @@
 						<table class="w-full text-left text-sm">
 							<thead class="border-b border-gray-100 text-xs text-gray-500 dark:border-gray-800">
 								<tr>
-									<th class="whitespace-nowrap px-4 py-3 font-medium">{$i18n.t('credits.common.createdAt')}</th>
-									<th class="whitespace-nowrap px-4 py-3 font-medium">{$i18n.t('credits.common.amount')}</th>
-									<th class="whitespace-nowrap px-4 py-3 font-medium">{$i18n.t('credits.common.type')}</th>
-									<th class="whitespace-nowrap px-4 py-3 font-medium">{$i18n.t('credits.common.resource')}</th>
+									<th class="whitespace-nowrap px-4 py-3 font-medium"
+										>{$i18n.t('credits.common.createdAt')}</th
+									>
+									<th class="whitespace-nowrap px-4 py-3 font-medium"
+										>{$i18n.t('credits.common.amount')}</th
+									>
+									<th class="whitespace-nowrap px-4 py-3 font-medium"
+										>{$i18n.t('credits.common.type')}</th
+									>
+									<th class="whitespace-nowrap px-4 py-3 font-medium"
+										>{$i18n.t('credits.common.resource')}</th
+									>
 								</tr>
 							</thead>
 							<tbody>

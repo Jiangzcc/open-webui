@@ -442,7 +442,8 @@ async def test_action_channel_and_reference_bytes_change_hash(monkeypatch) -> No
         ({'image_count': True}, 'invalid_image_count'),
         ({'image_count': 0}, 'invalid_image_count'),
         ({'image_count': 101}, 'invalid_image_count'),
-        ({'extra': {'bad': 1.2}}, 'invalid_extra'),
+        ({'extra': {'bad': float('inf')}}, 'invalid_extra'),
+        ({'extra': {'bad': float('nan')}}, 'invalid_extra'),
         ({'extra': {'huge_int': 9_000_000_000_000_000_001}}, 'invalid_extra'),
         ({'extra': {1: 'bad'}}, 'invalid_extra'),
         ({'extra': {'deep': [[[[[[[[['too deep']]]]]]]]]}}, 'invalid_extra'),
@@ -641,6 +642,90 @@ async def test_prepare_does_not_call_provider_or_automatic_helpers(monkeypatch) 
     prepared = await adapter.prepare_generation_call(request(), image_input(), None, user())
     assert prepared.billing.resource_id == 'checkpoint'
     assert forbidden.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_finite_float_extra_is_accepted_and_hashed_deterministically(monkeypatch) -> None:
+    """复盘 #5①：guidance_scale 等浮点参数原先被 canonical 层一概拒绝
+    （guidance_scale=3.5 直接 409）。有限浮点现在合法且哈希确定性，
+    与视频侧 request_hash 的 json.dumps 行为一致。"""
+    compat, adapter = modules()
+    monkeypatch.setattr(compat, 'get_runtime_image_config', AsyncMock(return_value=config()))
+    first = await adapter.prepare_generation_call(
+        request(), image_input(extra={'guidance_scale': 3.5}), None, user()
+    )
+    second = await adapter.prepare_generation_call(
+        request(), image_input(extra={'guidance_scale': 3.5}), None, user()
+    )
+    assert first.billing.request_hash == second.billing.request_hash
+    assert first.billing.resource_id == 'gpt-image-1'
+
+
+@pytest.mark.asyncio
+async def test_a1111_without_static_model_resolves_dynamic_checkpoint(monkeypatch) -> None:
+    """复盘 #5②：A1111 未静态配置模型时，计费资源取实例当前 checkpoint
+    （对齐上游 get_image_model），而不是整个部署 409。"""
+    compat, adapter = modules()
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='')),
+    )
+    import open_webui.routers.images as images
+
+    # 实例 checkpoint 有进程内 TTL 缓存：清空以强制本次走 mock 的网络解析，
+    # 并在结束后清理，避免污染后续测试。
+    compat._reset_dynamic_model_cache()
+    monkeypatch.setattr(images, 'get_image_model', AsyncMock(return_value='instance-checkpoint'))
+    try:
+        prepared = await adapter.prepare_generation_call(request(), image_input(), None, user())
+        assert prepared.billing.resource_id == 'instance-checkpoint'
+    finally:
+        compat._reset_dynamic_model_cache()
+
+
+@pytest.mark.asyncio
+async def test_a1111_dynamic_model_fetch_skipped_when_configured(monkeypatch) -> None:
+    """已静态配置模型或用户已指定时，不做动态取 checkpoint 的网络往返。"""
+    compat = modules()[0]
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='checkpoint')),
+    )
+    assert await compat.resolve_dynamic_engine_model(request(), config(IMAGE_GENERATION_ENGINE=''), image_input()) is None
+    assert (
+        await compat.resolve_dynamic_engine_model(
+            request(), config(IMAGE_GENERATION_ENGINE='openai'), image_input()
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_a1111_provider_input_keeps_user_model_request(monkeypatch) -> None:
+    """复盘 #5③：A1111 的 model 不是每请求选择。provider 输入保留用户
+    原始请求（通常为 None），避免 billing 层预填的解析值触发
+    set_image_model 静默切换实例级 checkpoint；其他引擎仍预填解析值。"""
+    compat, adapter = modules()
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='checkpoint')),
+    )
+    prepared = await adapter.prepare_generation_call(request(), image_input(), None, user())
+    assert prepared.billing.resource_id == 'checkpoint'
+    assert prepared.provider_input.model is None
+
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='')),
+    )
+    fal_prepared = await adapter.prepare_generation_call(
+        request(), image_input(model='fal-ai/z-image/turbo'), None, user()
+    )
+    assert fal_prepared.provider_input.model == 'fal-ai/z-image/turbo'
 
 
 @pytest.mark.asyncio

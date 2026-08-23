@@ -67,7 +67,17 @@
 			close();
 			onAdjusted();
 		} catch (error) {
-			requestError = translateCreditApiError($i18n, error, 'credits.admin.adjustment.saveError');
+			if (
+				typeof error === 'object' &&
+				error !== null &&
+				(error as { code?: string }).code === 'credit_service_unavailable' &&
+				(error as { context?: { reason?: string } }).context?.reason === 'account_ledger_mismatch'
+			) {
+				// 账户-台账不一致：引导管理员使用台账修复而不是反复重试调整（审查发现 #9）。
+				requestError = $i18n.t('credits.errors.account_ledger_mismatch');
+			} else {
+				requestError = translateCreditApiError($i18n, error, 'credits.admin.adjustment.saveError');
+			}
 		} finally {
 			saving = false;
 		}

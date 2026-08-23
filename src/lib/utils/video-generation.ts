@@ -98,3 +98,17 @@ export const firstVideoAdvancedError = (
 	}
 	return null;
 };
+
+// 时长候选：优先显式 durations 列表；否则按 min/max/step 枚举。步进除以 2 的
+// 容差用于吸收浮点步进累积误差（如 0.1 步进 10 次后略超 max）。
+export const videoDurationChoices = (model: VideoModel | null): string[] => {
+	if (model?.durations?.length) return model.durations;
+	if (model?.duration_min === null || model?.duration_min === undefined) return [];
+	if (model.duration_max === null || model.duration_max === undefined) return [];
+	const step = model.duration_step ?? 1;
+	const values: string[] = [];
+	for (let value = model.duration_min; value <= model.duration_max + step / 2; value += step) {
+		values.push(String(Number(value.toFixed(3))));
+	}
+	return values;
+};

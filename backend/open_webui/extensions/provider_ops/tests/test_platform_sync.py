@@ -12,12 +12,12 @@ from open_webui.extensions.provider_ops.models import (
     ProviderRequestRecord,
     ProviderSyncRun,
 )
+from open_webui.extensions.provider_ops.platform_queries import get_provider_overview
 from open_webui.extensions.provider_ops.platform_sync import (
     _record_billing_events,
     _record_prices,
     _record_requests,
     _relevant_endpoint_ids,
-    get_provider_overview,
     sync_fal_platform,
 )
 from open_webui.extensions.provider_ops.providers.fal_platform import (

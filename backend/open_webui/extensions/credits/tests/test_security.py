@@ -30,6 +30,13 @@ def _router_source() -> ast.Module:
     return ast.parse((ROOT / 'backend/open_webui/extensions/credits/router.py').read_text(encoding='utf-8'))
 
 
+def _router_support_source() -> ast.Module:
+    # 拆分后错误信封与限流降级助手位于 router_support.py（复盘：超长文件拆分）。
+    return ast.parse(
+        (ROOT / 'backend/open_webui/extensions/credits/router_support.py').read_text(encoding='utf-8')
+    )
+
+
 def _function(tree: ast.Module, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
@@ -169,15 +176,17 @@ def test_credit_ui_uses_svelte_text_interpolation_for_user_controlled_values() -
 
 
 def test_router_error_envelope_and_rate_limit_happen_before_sensitive_quote_processing() -> None:
-    source = (ROOT / 'backend/open_webui/extensions/credits/router.py').read_text(encoding='utf-8')
-    tree = ast.parse(source)
-
-    unexpected = _function(tree, '_unexpected_error_response')
-    unexpected_source = ast.get_source_segment(source, unexpected) or ''
+    support_tree = _router_support_source()
+    unexpected = _function(support_tree, '_unexpected_error_response')
+    unexpected_source = ast.get_source_segment(
+        (ROOT / 'backend/open_webui/extensions/credits/router_support.py').read_text(encoding='utf-8'),
+        unexpected,
+    ) or ''
     assert "CreditError(code='credit_service_unavailable')" in unexpected_source
     assert 'str(error)' not in unexpected_source
     assert 'exc_info' not in unexpected_source
 
+    tree = _router_source()
     quote = _route_function(tree, 'get_image_credit_quote')
     statements = quote.body
     rate_limit_at = next(
@@ -200,7 +209,7 @@ def test_router_error_envelope_and_rate_limit_happen_before_sensitive_quote_proc
 
 
 def test_rate_limit_source_guard_does_not_log_request_payloads() -> None:
-    source = (ROOT / 'backend/open_webui/extensions/credits/router.py').read_text(encoding='utf-8')
+    source = (ROOT / 'backend/open_webui/extensions/credits/router_support.py').read_text(encoding='utf-8')
     tree = ast.parse(source)
     fallback = _function(tree, '_record_rate_limit_fallback')
     fallback_source = ast.get_source_segment(source, fallback) or ''
@@ -267,8 +276,7 @@ def test_builtin_error_path_uses_a_sanitized_domain_envelope_without_secret_logg
 
 
 def test_structured_credit_log_fields_exclude_authorization_prompt_base64_and_raw_ip() -> None:
-    source = (ROOT / 'backend/open_webui/extensions/credits/router.py').read_text(encoding='utf-8')
-    tree = ast.parse(source)
+    tree = _router_support_source()
     unexpected = _function(tree, '_unexpected_error_response')
     log_calls = [
         node
