@@ -1142,6 +1142,20 @@ def test_recovery_catalog_rejection_terminates_task(monkeypatch) -> None:
 
         monkeypatch.setattr(service.FalVideoExecutor, 'resume', unexpected_resume)
         monkeypatch.setattr(service, 'build_video_provider_payload', payload_raises)
+        # 隔离管理端 FAL 配置：本地库的 mock 开关（video_generation.fal.mock_enabled）
+        # 会改变 resolve_video_executor 的返回类型，导致恢复路径提前转
+        # video_fal_not_configured（retryable）而非走到 catalog 校验。
+        async def resolve_fal_executor():
+            return service.FalVideoExecutor(
+                api_key='unit-test-key',
+                queue_base_url='https://queue.test',
+                storage_base_url='https://storage.test',
+                timeout_seconds=1,
+                result_max_bytes=1024,
+                upload_lifetime_seconds=1,
+            )
+
+        monkeypatch.setattr(service, 'resolve_video_executor', resolve_fal_executor)
         monkeypatch.setattr(service, 'creation_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, '_existing_creation_result', no_op)
@@ -1184,6 +1198,18 @@ def test_recovery_billing_failure_does_not_block_terminal_state(monkeypatch) -> 
             return None
 
         monkeypatch.setattr(service.FalVideoExecutor, 'resume', resume_raises)
+        # 同 catalog 拒绝用例：隔离本地库 mock 开关，保证 executor 类型为 FAL。
+        async def resolve_fal_executor():
+            return service.FalVideoExecutor(
+                api_key='unit-test-key',
+                queue_base_url='https://queue.test',
+                storage_base_url='https://storage.test',
+                timeout_seconds=1,
+                result_max_bytes=1024,
+                upload_lifetime_seconds=1,
+            )
+
+        monkeypatch.setattr(service, 'resolve_video_executor', resolve_fal_executor)
         monkeypatch.setattr(service, 'creation_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, '_existing_creation_result', no_op)

@@ -32,9 +32,10 @@ _ANALYTICS_METRICS = (
     'timeout_error_count',
     'runtime_error_count',
     'cold_boot_count',
-    'p50_cold_boot_duration',
-    'p75_cold_boot_duration',
-    'p90_cold_boot_duration',
+    # p50/p75/p90_cold_boot_duration 已移除：FAL 平台对部分 endpoint
+    # （如 fal-ai/kling-video/v3/pro/text-to-video）请求这三个分位数时
+    # 服务端返回 500 server_error（2026-08-23 实测），导致整个 analytics
+    # 同步失败回滚。cold_boot_count 保留冷启动监控；待 FAL 修复后可加回。
     'total_billable_duration',
 )
 
