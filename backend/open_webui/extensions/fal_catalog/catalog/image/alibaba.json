@@ -26,23 +26,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1024x1024",
-      "512x512",
-      "1024x576",
-      "576x1024",
-      "1024x768",
-      "768x1024"
-    ],
-    "default_resolution": "1024x768",
-    "image_size_whitelist": {
-      "1024x1024": "1024x1024",
-      "512x512": "512x512",
-      "1024x576": "1024x576",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "768x1024": "768x1024"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -73,13 +56,21 @@
         "max": 8
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "16:9": "1280x720",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "3:4": "768x1024"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/z-image/turbo/image-to-image",
@@ -108,23 +99,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1024x1024",
-      "512x512",
-      "1024x576",
-      "576x1024",
-      "1024x768",
-      "768x1024"
-    ],
-    "default_resolution": "1024x768",
-    "image_size_whitelist": {
-      "1024x1024": "1024x1024",
-      "512x512": "512x512",
-      "1024x576": "1024x576",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "768x1024": "768x1024"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -157,13 +131,21 @@
     ],
     "image_input_field": "image_url",
     "image_input_max_count": 1,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "16:9",
+      "9:16",
+      "4:3",
+      "3:4"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "16:9": "1280x720",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "3:4": "768x1024"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/z-image/base",
@@ -192,23 +174,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x768",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -239,13 +204,21 @@
         "max": 50
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/qwen-image-max/text-to-image",
@@ -279,23 +252,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -309,13 +265,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/qwen-image-max/edit",
@@ -351,23 +315,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -383,13 +330,21 @@
     ],
     "image_input_field": "image_urls",
     "image_input_max_count": 3,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/qwen-image-2/pro/text-to-image",
@@ -423,23 +378,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -453,14 +391,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 2048,
-      "min_height": 256,
-      "max_height": 2048,
-      "min_pixels": 262144,
-      "max_pixels": 4194304
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/qwen-image-2/pro/edit",
@@ -496,23 +441,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -528,14 +456,21 @@
     ],
     "image_input_field": "image_urls",
     "image_input_max_count": 3,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 2048,
-      "min_height": 256,
-      "max_height": 2048,
-      "min_pixels": 262144,
-      "max_pixels": 4194304
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/qwen-image-2/text-to-image",
@@ -569,23 +504,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -599,14 +517,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 2048,
-      "min_height": 256,
-      "max_height": 2048,
-      "min_pixels": 262144,
-      "max_pixels": 4194304
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/qwen-image-2/edit",
@@ -642,23 +567,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -674,14 +582,21 @@
     ],
     "image_input_field": "image_urls",
     "image_input_max_count": 3,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 2048,
-      "min_height": 256,
-      "max_height": 2048,
-      "min_pixels": 262144,
-      "max_pixels": 4194304
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/qwen-image-2512",
@@ -710,23 +625,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x768",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -757,13 +655,21 @@
         "max": 50
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/qwen-image",
@@ -793,23 +699,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x768",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -840,13 +729,21 @@
         "max": 250
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/qwen-image/image-to-image",
@@ -876,23 +773,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x768",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -925,13 +805,21 @@
     ],
     "image_input_field": "image_url",
     "image_input_max_count": 1,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/wan/v2.7/pro/text-to-image",
@@ -962,23 +850,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "512x512",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -992,13 +863,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/wan/v2.7/pro/edit",
@@ -1028,23 +907,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "512x512",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -1060,13 +922,21 @@
     ],
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/wan/v2.7/text-to-image",
@@ -1097,23 +967,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "512x512",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -1127,13 +980,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/wan/v2.7/edit",
@@ -1163,23 +1024,6 @@
         "default": false
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "512x512",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png",
@@ -1195,13 +1039,21 @@
     ],
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "wan/v2.6/text-to-image",
@@ -1236,23 +1088,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [],
     "default_output_format": "png",
     "custom_size_field": "image_size",
@@ -1262,13 +1097,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1280,
-      "min_height": 256,
-      "max_height": 1280,
-      "max_pixels": 1638400
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "wan/v2.6/image-to-image",
@@ -1302,23 +1145,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [],
     "default_output_format": "png",
     "custom_size_field": "image_size",
@@ -1330,14 +1156,21 @@
     ],
     "image_input_field": "image_urls",
     "image_input_max_count": 3,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1280,
-      "min_height": 256,
-      "max_height": 1280,
-      "min_pixels": 589824,
-      "max_pixels": 1638400
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/wan-v2.5/text-to-image",
@@ -1366,23 +1199,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [],
     "default_output_format": "png",
     "custom_size_field": "image_size",
@@ -1392,14 +1208,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1440,
-      "min_height": 256,
-      "max_height": 1440,
-      "min_pixels": 589824,
-      "max_pixels": 2073600
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/wan-25-preview/image-to-image",
@@ -1433,23 +1256,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "1024x1024",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [],
     "default_output_format": "png",
     "custom_size_field": "image_size",
@@ -1461,12 +1267,21 @@
     ],
     "image_input_field": "image_urls",
     "image_input_max_count": 2,
-    "custom_size": {
-      "min_width": 384,
-      "max_width": 1440,
-      "min_height": 384,
-      "max_height": 1440
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/wan/v2.2-a14b/text-to-image",
@@ -1501,23 +1316,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "512x512",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png"
@@ -1530,13 +1328,21 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/wan/v2.2-a14b/image-to-image",
@@ -1571,23 +1377,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "512x512",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png"
@@ -1602,13 +1391,14 @@
     ],
     "image_input_field": "image_url",
     "image_input_max_count": 1,
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "auto",
+      "1:1",
+      "16:9",
+      "9:16"
+    ],
+    "aspect_ratio_field": "aspect_ratio",
+    "default_aspect_ratio": "auto"
   },
   {
     "id": "fal-ai/wan/v2.2-5b/text-to-image",
@@ -1642,23 +1432,6 @@
         "default": true
       }
     ],
-    "resolutions": [
-      "1280x720",
-      "1024x768",
-      "720x1280",
-      "768x1024",
-      "1024x1024",
-      "512x512"
-    ],
-    "default_resolution": "512x512",
-    "image_size_whitelist": {
-      "1280x720": "1280x720",
-      "1024x768": "1024x768",
-      "720x1280": "720x1280",
-      "768x1024": "768x1024",
-      "1024x1024": "1024x1024",
-      "512x512": "512x512"
-    },
     "output_formats": [
       "jpeg",
       "png"
@@ -1671,12 +1444,20 @@
         "field": "seed"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "16:9",
+      "4:3",
+      "9:16",
+      "3:4",
+      "1:1"
+    ],
+    "aspect_ratio_sizes": {
+      "16:9": "1280x720",
+      "4:3": "1024x768",
+      "9:16": "720x1280",
+      "3:4": "768x1024",
+      "1:1": "1024x1024"
+    },
+    "default_aspect_ratio": "1:1"
   }
 ]

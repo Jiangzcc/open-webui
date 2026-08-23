@@ -26,14 +26,19 @@ def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_rout
 
     by_id = {item['id']: item for item in public}
 
-    # z-image exposes fixed pixel buckets directly as resolutions instead of routing
-    # through an aspect-ratio abstraction; neither aspect_ratios nor aspect_ratio_sizes
-    # should survive into the public catalog for this model.
+    # z-image 的像素枚举已按审查转换为比例抽象（1K 级隐藏分辨率）：
+    # 公开目录暴露 aspect_ratios + aspect_ratio_sizes 映射，不再暴露 resolutions。
     z_image = by_id['z-image-turbo']
     assert z_image['is_default'] is True
-    assert z_image['resolutions'] == ['1024x1024', '512x512', '1024x576', '576x1024', '1024x768', '768x1024']
-    assert z_image.get('aspect_ratios') in ([], None)
-    assert 'aspect_ratio_sizes' not in z_image
+    assert 'resolutions' not in z_image
+    assert z_image['aspect_ratios'] == ['1:1', '16:9', '9:16', '4:3', '3:4']
+    assert z_image['aspect_ratio_sizes'] == {
+        '1:1': '1024x1024',
+        '16:9': '1280x720',
+        '9:16': '720x1280',
+        '4:3': '1024x768',
+        '3:4': '768x1024',
+    }
     assert z_image['edit_model'] == 'z-image-turbo/edit'
     assert by_id['z-image-turbo/edit']['generation_model'] == 'z-image-turbo'
 

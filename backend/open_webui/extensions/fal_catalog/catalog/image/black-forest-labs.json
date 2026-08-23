@@ -39,25 +39,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -77,13 +60,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-1/dev/image-to-image",
@@ -127,25 +118,7 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
-    "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -164,14 +137,7 @@
         ],
         "default": "none"
       }
-    ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    ]
   },
   {
     "id": "fal-ai/flux-1/krea",
@@ -213,25 +179,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -251,13 +200,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-1/krea/image-to-image",
@@ -301,25 +258,7 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
-    "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -338,14 +277,7 @@
         ],
         "default": "none"
       }
-    ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    ]
   },
   {
     "id": "fal-ai/flux-1/schnell",
@@ -386,25 +318,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -424,13 +339,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-1/srpo",
@@ -472,25 +395,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -510,13 +416,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-1/srpo/image-to-image",
@@ -560,25 +474,7 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
-    "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -597,14 +493,7 @@
         ],
         "default": "none"
       }
-    ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    ]
   },
   {
     "id": "fal-ai/flux-2",
@@ -651,25 +540,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -689,12 +561,21 @@
         "default": "regular"
       }
     ],
-    "custom_size": {
-      "min_width": 512,
-      "max_width": 2048,
-      "min_height": 512,
-      "max_height": 2048
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/edit",
@@ -741,25 +622,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [
@@ -781,12 +645,21 @@
         "default": "regular"
       }
     ],
-    "custom_size": {
-      "min_width": 512,
-      "max_width": 2048,
-      "min_height": 512,
-      "max_height": 2048
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/flash",
@@ -827,25 +700,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -854,12 +710,21 @@
         "max": 20
       }
     ],
-    "custom_size": {
-      "min_width": 512,
-      "max_width": 2048,
-      "min_height": 512,
-      "max_height": 2048
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/flash/edit",
@@ -900,25 +765,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [
@@ -929,12 +777,21 @@
         "max": 20
       }
     ],
-    "custom_size": {
-      "min_width": 512,
-      "max_width": 2048,
-      "min_height": 512,
-      "max_height": 2048
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2-flex",
@@ -973,25 +830,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -1013,13 +853,21 @@
         "default": "5"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2-flex/edit",
@@ -1058,25 +906,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_url",
     "image_input_max_count": 1,
     "number_fields": [
@@ -1100,13 +931,21 @@
         "default": "5"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/4b",
@@ -1149,34 +988,25 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [],
     "option_fields": [],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/4b/edit",
@@ -1219,36 +1049,27 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [],
     "option_fields": [],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/4b/base",
@@ -1291,25 +1112,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -1334,13 +1138,21 @@
         "field": "negative_prompt"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/4b/base/edit",
@@ -1383,25 +1195,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [
@@ -1428,13 +1223,21 @@
         "field": "negative_prompt"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/9b",
@@ -1477,34 +1280,25 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [],
     "option_fields": [],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/9b/edit",
@@ -1547,36 +1341,27 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [],
     "option_fields": [],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/9b/base",
@@ -1619,25 +1404,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -1662,13 +1430,21 @@
         "field": "negative_prompt"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/klein/9b/base/edit",
@@ -1711,25 +1487,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [
@@ -1756,13 +1515,21 @@
         "field": "negative_prompt"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2-max",
@@ -1795,25 +1562,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "option_fields": [
       {
         "field": "safety_tolerance",
@@ -1827,13 +1577,21 @@
         "default": "5"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2-max/edit",
@@ -1866,25 +1624,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_url",
     "image_input_max_count": 1,
     "option_fields": [
@@ -1900,13 +1641,21 @@
         "default": "5"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2-pro",
@@ -1939,25 +1688,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "option_fields": [
       {
         "field": "safety_tolerance",
@@ -1971,13 +1703,21 @@
         "default": "5"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2-pro/edit",
@@ -2010,25 +1750,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_url",
     "image_input_max_count": 1,
     "option_fields": [
@@ -2044,13 +1767,21 @@
         "default": "5"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/turbo",
@@ -2091,25 +1822,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -2118,12 +1832,21 @@
         "max": 20
       }
     ],
-    "custom_size": {
-      "min_width": 512,
-      "max_width": 2048,
-      "min_height": 512,
-      "max_height": 2048
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-2/turbo/edit",
@@ -2164,25 +1887,8 @@
       "webp"
     ],
     "default_output_format": "png",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "number_fields": [
@@ -2193,12 +1899,21 @@
         "max": 20
       }
     ],
-    "custom_size": {
-      "min_width": 512,
-      "max_width": 2048,
-      "min_height": 512,
-      "max_height": 2048
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux/dev",
@@ -2240,25 +1955,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -2278,13 +1976,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux/dev/image-to-image",
@@ -2328,25 +2034,7 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
-    "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -2365,14 +2053,7 @@
         ],
         "default": "none"
       }
-    ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    ]
   },
   {
     "id": "fal-ai/flux/krea",
@@ -2414,25 +2095,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -2452,13 +2116,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux/krea/image-to-image",
@@ -2502,25 +2174,7 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
-    "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -2539,14 +2193,7 @@
         ],
         "default": "none"
       }
-    ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    ]
   },
   {
     "id": "fal-ai/flux-pro/kontext",
@@ -2835,25 +2482,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "option_fields": [
       {
         "field": "safety_tolerance",
@@ -2868,13 +2498,21 @@
         "default": "6"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux-pro/v1.1-ultra",
@@ -3047,25 +2685,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -3085,13 +2706,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux/srpo",
@@ -3133,25 +2762,8 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -3171,13 +2783,21 @@
         "default": "none"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "4:3"
   },
   {
     "id": "fal-ai/flux/srpo/image-to-image",
@@ -3221,25 +2841,7 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x768",
     "resolution_field": "image_size",
-    "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -3258,13 +2860,6 @@
         ],
         "default": "none"
       }
-    ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    ]
   }
 ]

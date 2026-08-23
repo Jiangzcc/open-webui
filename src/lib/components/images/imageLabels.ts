@@ -6,6 +6,11 @@ import { DEFAULT_IMAGE_ASPECT_RATIO, type ImageAspectRatio } from '$lib/utils/im
 export const imageAspectRatioLabelKey = (ratio: ImageAspectRatio): string =>
 	ratio === DEFAULT_IMAGE_ASPECT_RATIO ? 'Auto' : ratio;
 
+// 比例标签（"4:3" 等）是技术值，不得再经 i18next 翻译：i18next 的
+// nsSeparator（":"）会把 "4:3" 拆成 ns "4" + key "3"，miss 后只返回 "3"。
+export const imageAspectRatioLabel = (ratio: ImageAspectRatio): string =>
+	ratio === DEFAULT_IMAGE_ASPECT_RATIO ? 'Auto' : ratio;
+
 export const imageResolutionLabelKey = (resolution: string): string =>
 	resolution === 'auto' ? 'Auto' : resolution;
 

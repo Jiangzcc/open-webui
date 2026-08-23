@@ -13,7 +13,7 @@
 	} from '$lib/utils/image-generation-batches';
 	import type { GeneratedImage, ImageGenerationModel } from '$lib/utils/image-generation';
 	import {
-		imageAspectRatioLabelKey,
+		imageAspectRatioLabel,
 		imageQualityLabelKey,
 		imageResolutionLabelKey
 	} from './imageLabels';
@@ -100,7 +100,7 @@
 	const getBatchMetaPills = (task: ImageGenerationBatch) => {
 		const pills = [
 			getBatchModelLabel(task),
-			$i18n.t(imageAspectRatioLabelKey(task.aspectRatio))
+			imageAspectRatioLabel(task.aspectRatio)
 		];
 		if (task.resolution) pills.push($i18n.t(imageResolutionLabelKey(task.resolution)));
 		pills.push(String(task.expectedCount));

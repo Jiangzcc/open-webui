@@ -83,6 +83,21 @@ def test_payload_qwen_image_sends_num_images_and_image_size_object():
     assert data['image_size'] == {'width': 1024, 'height': 768}
 
 
+def test_payload_ratio_models_map_aspect_ratio_to_image_size():
+    data = build_fal_image_payload(_form(n=1, aspect_ratio='4:3'), 'fal-ai/z-image/turbo')
+    assert data['image_size'] == {'width': 1024, 'height': 768}
+
+
+def test_payload_seedream_scales_resolution_tier_over_baseline():
+    base = 'bytedance/seedream/v5/pro/text-to-image'
+    data_1k = build_fal_image_payload(_form(aspect_ratio='4:3', resolution='1K'), base)
+    data_2k = build_fal_image_payload(_form(aspect_ratio='4:3', resolution='2K'), base)
+    data_4k = build_fal_image_payload(_form(aspect_ratio='16:9', resolution='4K'), base)
+    assert data_1k['image_size'] == {'width': 1024, 'height': 768}
+    assert data_2k['image_size'] == {'width': 2048, 'height': 1536}
+    assert data_4k['image_size'] == {'width': 5120, 'height': 2880}
+
+
 def test_payload_wan_v26_uses_max_images_field():
     data = build_fal_image_payload(_form(n=3), 'wan/v2.6/text-to-image')
     assert data['max_images'] == 3

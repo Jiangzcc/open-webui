@@ -202,19 +202,37 @@ def validate_fal_image_size(model: str | None, form_data: Any) -> None:
         raise FalImageSizeError(f'unsupported image size {requested_size}: {reason}')
 
 
+def _scale_pixel_size(wxh: str, multiplier: int) -> str:
+    parsed = _parse_pixel_size(wxh)
+    if parsed is None or multiplier <= 1:
+        return wxh
+    width, height = parsed
+    return f'{width * multiplier}x{height * multiplier}'
+
+
 def _set_custom_image_size(
     data: dict[str, Any],
     field: str | None,
     form_data: Any,
     sizes: dict[str, str] | None,
     constraints: dict[str, Any] | None,
+    multipliers: dict[str, int] | None = None,
 ) -> None:
     if not field:
         return
 
-    requested_size = getattr(form_data, 'size', None) or getattr(form_data, 'resolution', None)
+    requested_size = getattr(form_data, 'size', None)
+    # A resolution tier like "2K"/"4K" is a multiplier over the aspect-ratio
+    # baseline, not a pixel value; a "WxH"-shaped resolution stays a direct size.
+    resolution = getattr(form_data, 'resolution', None)
+    if not requested_size and resolution and _parse_pixel_size(resolution) is not None:
+        requested_size = resolution
+
     if not requested_size:
-        requested_size = (sizes or {}).get(getattr(form_data, 'aspect_ratio', None))
+        baseline = (sizes or {}).get(getattr(form_data, 'aspect_ratio', None))
+        if baseline:
+            multiplier = (multipliers or {}).get(resolution, 1)
+            requested_size = _scale_pixel_size(baseline, multiplier)
 
     if not requested_size:
         return
@@ -483,6 +501,7 @@ def build_fal_image_payload(form_data: Any, model: str | None, image_urls: list[
                 form_data,
                 image_size_whitelist,
                 model_info.get('custom_size'),
+                model_info.get('resolution_multipliers'),
             )
         else:
             _set_option(

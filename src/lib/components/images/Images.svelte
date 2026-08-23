@@ -62,7 +62,6 @@
 	import ImageBatchCard from '$lib/components/images/ImageBatchCard.svelte';
 	import ImagePromptForm from '$lib/components/images/ImagePromptForm.svelte';
 	import {
-		imageAspectRatioLabelKey,
 		imageQualityLabelKey,
 		imageResolutionLabelKey
 	} from '$lib/components/images/imageLabels';
@@ -418,8 +417,10 @@
 	const modelBasePrice = (model: ImageGenerationModel) =>
 		referenceImages.length > 0 ? resolveImageEditModel(model, models)?.basePrice : model.basePrice;
 
-	// label 显示名映射在 imageLabels.ts（与 ImageBatchCard 共享），这里包一层 $i18n.t。
-	const getAspectRatioLabel = (ratio: ImageAspectRatio) => $i18n.t(imageAspectRatioLabelKey(ratio));
+	// label 显示名映射在 imageLabels.ts（与 ImageBatchCard 共享）；比例是技术值
+	// 不过 i18next（"4:3" 会被 nsSeparator 拆坏），仅 Auto 走翻译。
+	const getAspectRatioLabel = (ratio: ImageAspectRatio) =>
+		ratio === DEFAULT_IMAGE_ASPECT_RATIO ? $i18n.t('Auto') : ratio;
 	const getResolutionLabel = (resolution: string) => $i18n.t(imageResolutionLabelKey(resolution));
 	const getQualityLabel = (quality: string) => $i18n.t(imageQualityLabelKey(quality));
 

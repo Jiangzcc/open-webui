@@ -13,25 +13,8 @@
     ],
     "hosting": "serverless",
     "count_field": "num_images",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x1024",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "integer_fields": [
       {
         "field": "seed"
@@ -79,13 +62,21 @@
         "field": "negative_prompt"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/hunyuan-image/v3/text-to-image",
@@ -101,25 +92,8 @@
     ],
     "hosting": "serverless",
     "count_field": "num_images",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x1024",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "integer_fields": [
       {
         "field": "seed"
@@ -163,13 +137,21 @@
         "field": "negative_prompt"
       }
     ],
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/hunyuan-image/v3/instruct/text-to-image",
@@ -185,27 +167,8 @@
     ],
     "hosting": "serverless",
     "count_field": "num_images",
-    "resolutions": [
-      "auto",
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "auto",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "auto": "auto",
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "integer_fields": [
       {
         "field": "seed"
@@ -239,13 +202,23 @@
     ],
     "default_output_format": "png",
     "edit_model": "fal-ai/hunyuan-image/v3/instruct/edit",
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9",
+      "auto"
+    ],
+    "aspect_ratio_sizes": {
+      "auto": "auto",
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "auto"
   },
   {
     "id": "fal-ai/hunyuan-image/v3/instruct/edit",
@@ -261,27 +234,8 @@
     ],
     "hosting": "serverless",
     "count_field": "num_images",
-    "resolutions": [
-      "auto",
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "auto",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "auto": "auto",
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "integer_fields": [
       {
         "field": "seed"
@@ -317,12 +271,22 @@
     "image_input_field": "image_urls",
     "image_input_max_count": 4,
     "generation_model": "fal-ai/hunyuan-image/v3/instruct/text-to-image",
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9",
+      "auto"
+    ],
+    "aspect_ratio_sizes": {
+      "auto": "auto",
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "auto"
   }
 ]

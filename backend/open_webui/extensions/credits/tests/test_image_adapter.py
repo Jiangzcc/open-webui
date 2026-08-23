@@ -360,6 +360,38 @@ async def test_pixel_count_is_server_derived_and_unknown_auto_is_omitted(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_pixel_count_resolves_from_catalog_ratio_mapping(monkeypatch) -> None:
+    """比例驱动的模型无 WxH 字符串：pixel_count 从目录基线映射推导，分辨率档按乘数放大。"""
+    compat, adapter = modules()
+    monkeypatch.setattr(
+        compat,
+        'get_runtime_image_config',
+        AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='')),
+    )
+
+    ratio_only = await adapter.prepare_generation_call(
+        request(),
+        image_input(model='z-image-turbo', aspect_ratio='4:3', extra={'pixel_count': 1}),
+        None,
+        user(),
+    )
+    tiered = await adapter.prepare_generation_call(
+        request(),
+        image_input(
+            model='bytedance-seedream-v5-pro',
+            aspect_ratio='4:3',
+            resolution='2K',
+            extra={'pixel_count': 1},
+        ),
+        None,
+        user(),
+    )
+
+    assert ratio_only.billing.dimensions['pixel_count'] == 1024 * 768
+    assert tiered.billing.dimensions['pixel_count'] == 2048 * 1536
+
+
+@pytest.mark.asyncio
 async def test_provider_input_does_not_let_configured_size_override_requested_aspect_ratio(monkeypatch) -> None:
     compat, adapter = modules()
     monkeypatch.setattr(

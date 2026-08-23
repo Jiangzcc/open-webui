@@ -219,7 +219,43 @@ def _pixel_count(value: str | None) -> int | None:
     return pixels if pixels <= MAX_CREDIT_VALUE else None
 
 
-def _dimensions(config: object, image_input: CompatImageInput, action: str) -> Mapping[str, str | int]:
+def _ratio_pixel_count(model: str | None, aspect_ratio: str | None, resolution: str | None) -> int | None:
+    """Resolve pixel count from the catalog's aspect-ratio baseline mapping.
+
+    比例驱动的模型（用户只提交 aspect_ratio）没有 WxH 字符串可解析；从目录的
+    aspect_ratio_sizes 基线按分辨率档乘数（如 2K → ×2）放大后计算像素，
+    与 build_fal_image_payload 的组合规则同源。
+    """
+    if not model or not aspect_ratio:
+        return None
+    from open_webui.extensions.fal_images.models import (  # 延迟导入避免环
+        FAL_IMAGE_MODELS,
+        normalize_fal_image_model_id,
+    )
+
+    internal = normalize_fal_image_model_id(model) or model
+    info = next((m for m in FAL_IMAGE_MODELS if m.get('id') == internal), None)
+    if not info:
+        return None
+    baseline = (info.get('aspect_ratio_sizes') or {}).get(aspect_ratio)
+    if not baseline:
+        return None
+    multiplier = (info.get('resolution_multipliers') or {}).get(resolution or '', 1)
+    if not isinstance(multiplier, int) or multiplier < 1:
+        multiplier = 1
+    match = _PIXEL_SIZE_PATTERN.fullmatch(baseline)
+    if match is None:
+        return None
+    pixels = int(match.group(1)) * multiplier * int(match.group(2)) * multiplier
+    return pixels if pixels <= MAX_CREDIT_VALUE else None
+
+
+def _dimensions(
+    config: object,
+    image_input: CompatImageInput,
+    action: str,
+    model: str | None = None,
+) -> Mapping[str, str | int]:
     requested_non_size_dimension = bool(image_input.resolution or image_input.aspect_ratio)
     if action == 'text-to-image':
         configured_size = getattr(config, 'IMAGE_SIZE', None)
@@ -254,6 +290,9 @@ def _dimensions(config: object, image_input: CompatImageInput, action: str) -> M
     # size. Preserve that same source of truth for billing, and never trust a
     # client-supplied pixel_count from `extra`.
     pixels = _pixel_count(image_input.resolution or size)
+    if pixels is None:
+        # 比例驱动模型：无 WxH 字符串，按目录映射（基线 × 分辨率档乘数）计像素。
+        pixels = _ratio_pixel_count(model, image_input.aspect_ratio, image_input.resolution)
     if pixels is not None:
         dimensions['pixel_count'] = pixels
     return MappingProxyType(dimensions)
@@ -449,7 +488,7 @@ async def _prepare(
     dynamic_model = await compat.resolve_dynamic_engine_model(request, config, normalized)
     resolution = compat.resolve_provider_model(config, normalized, action, dynamic_model=dynamic_model)
     resource_id = _bounded_string(resolution.resource_id, name='resource_id', limit=128, required=True)
-    dimensions = _dimensions(config, normalized, action)
+    dimensions = _dimensions(config, normalized, action, model=normalized.model)
     prompt_hash = _sha256(normalized.prompt.encode('utf-8'))
 
     # A1111 的 model 不是每请求选择：provider 收到用户原始请求（通常为 None），

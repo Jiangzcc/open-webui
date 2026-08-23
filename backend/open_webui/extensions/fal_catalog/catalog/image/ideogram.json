@@ -326,25 +326,8 @@
       8
     ],
     "count_field": "num_images",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x1024",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "option_fields": [
       {
         "field": "rendering_speed",
@@ -388,13 +371,21 @@
     ],
     "edit_model": "fal-ai/ideogram/v3/edit",
     "hosting": "proxy",
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "fal-ai/ideogram/v3/edit",
@@ -463,25 +454,8 @@
       4
     ],
     "count_field": "num_images",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x1024",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "option_fields": [
       {
         "field": "expansion_model",
@@ -533,13 +507,21 @@
     "default_output_format": "jpeg",
     "edit_model": "ideogram/v4/image-to-image",
     "hosting": "proxy",
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "ideogram/v4/image-to-image",
@@ -554,27 +536,8 @@
       4
     ],
     "count_field": "num_images",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576",
-      "auto"
-    ],
-    "default_resolution": "auto",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576",
-      "auto": "auto"
-    },
     "option_fields": [
       {
         "field": "expansion_model",
@@ -635,13 +598,23 @@
     "image_input_max_count": 1,
     "generation_model": "ideogram/v4",
     "hosting": "proxy",
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9",
+      "auto"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720",
+      "auto": "auto"
+    },
+    "default_aspect_ratio": "auto"
   },
   {
     "id": "ideogram/v4/fast",
@@ -656,25 +629,8 @@
       4
     ],
     "count_field": "num_images",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x1024",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "option_fields": [
       {
         "field": "expansion_model",
@@ -714,13 +670,21 @@
     ],
     "default_output_format": "jpeg",
     "hosting": "proxy",
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "1:1"
   },
   {
     "id": "ideogram/v4/instant",
@@ -735,25 +699,8 @@
       4
     ],
     "count_field": "num_images",
-    "resolutions": [
-      "512x512",
-      "1024x1024",
-      "768x1024",
-      "576x1024",
-      "1024x768",
-      "1024x576"
-    ],
-    "default_resolution": "1024x1024",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_size_whitelist": {
-      "512x512": "512x512",
-      "1024x1024": "1024x1024",
-      "768x1024": "768x1024",
-      "576x1024": "576x1024",
-      "1024x768": "1024x768",
-      "1024x576": "1024x576"
-    },
     "option_fields": [
       {
         "field": "expansion_model",
@@ -784,12 +731,20 @@
     ],
     "default_output_format": "jpeg",
     "hosting": "proxy",
-    "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
-    }
+    "aspect_ratios": [
+      "1:1",
+      "3:4",
+      "9:16",
+      "4:3",
+      "16:9"
+    ],
+    "aspect_ratio_sizes": {
+      "1:1": "1024x1024",
+      "3:4": "768x1024",
+      "9:16": "720x1280",
+      "4:3": "1024x768",
+      "16:9": "1280x720"
+    },
+    "default_aspect_ratio": "1:1"
   }
 ]

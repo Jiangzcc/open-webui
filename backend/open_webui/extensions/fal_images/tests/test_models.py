@@ -14,7 +14,8 @@ from open_webui.extensions.fal_images.models import (
     public_fal_image_models,
 )
 
-# 阿里系模型统一的六档像素尺寸（原 FAL_ALIBABA_NAMED_SIZES 常量的数据契约）
+# 阿里系模型统一的比例档（原六档像素枚举转换而来；512x512 与 1024x1024
+# 同为 1:1，按「1K 级隐藏分辨率、同比例取大档」规则合并为 1024x1024）
 ALIBABA_NAMED_SIZES = [
     '1280x720',
     '1024x768',
@@ -23,6 +24,13 @@ ALIBABA_NAMED_SIZES = [
     '1024x1024',
     '512x512',
 ]
+ALIBABA_RATIO_SIZES = {
+    '1:1': '1024x1024',
+    '16:9': '1280x720',
+    '9:16': '720x1280',
+    '4:3': '1024x768',
+    '3:4': '768x1024',
+}
 
 
 def test_z_image_turbo_remains_backward_compatible():
@@ -61,7 +69,8 @@ def test_all_twelve_new_models_registered():
         assert m['count_field'] == count_field
         assert m['image_counts'] == image_counts
         assert m['custom_size_field'] == 'image_size'
-        assert set(m['image_size_whitelist'].keys()) == set(ALIBABA_NAMED_SIZES)
+        assert m['aspect_ratio_sizes'] == ALIBABA_RATIO_SIZES
+        assert m['default_aspect_ratio'] in m['aspect_ratios']
 
 
 def test_existing_22_models_still_present():
@@ -196,7 +205,12 @@ def test_each_alibaba_i2i_sibling_is_registered_with_correct_shape():
         assert sibling['hosting'] == twin['hosting'], (
             f'{edit_id} hosting diverges from {t2i_id}: {sibling["hosting"]!r} vs {twin["hosting"]!r}'
         )
-        assert sibling['image_size_whitelist'] == twin['image_size_whitelist']
+        if 'aspect_ratio_field' in sibling:
+            # wan v2.2-a14b i2i：fal 端点原生 aspect_ratio 参数（文档 Options
+            # auto/16:9/9:16/1:1），比例直传而非像素映射，与 t2i 的 image_size 机制不同。
+            assert sibling['aspect_ratio_field'] == 'aspect_ratio'
+        else:
+            assert sibling['aspect_ratio_sizes'] == twin['aspect_ratio_sizes']
 
 
 def test_known_alibaba_i2i_registrations_remain_available():

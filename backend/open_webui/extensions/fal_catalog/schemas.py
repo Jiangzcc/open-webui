@@ -138,6 +138,9 @@ class FalImageModelDefinition(_StrictModel):
     aspect_ratio_sizes: dict[str, str] | None = None
     aspect_ratio_field: str | None = Field(default=None, min_length=1)
     resolutions: list[str] | None = None
+    # 分辨率档乘数（如 {"2K": 2, "4K": 4}）：比例基线（aspect_ratio_sizes 的
+    # 1K 值）按档位放大得到实际 WxH，供 image_size 单参数模型表达组合尺寸。
+    resolution_multipliers: dict[str, int] | None = None
     default_aspect_ratio: str | None = None
     default_resolution: str | None = None
     resolution_field: str | None = Field(default=None, min_length=1)

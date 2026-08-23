@@ -1,44 +1,90 @@
 [
-	{
-		"id": "fal-ai/phota",
-		"public_id": "phota",
-		"name": "Phota / Phota",
-		"provider": "phota",
-		"task": "text-to-image",
-		"image_counts": [1, 2, 3, 4],
-		"count_field": "num_images",
-		"resolutions": ["1K", "4K"],
-		"default_resolution": "1K",
-		"resolution_field": "resolution",
-		"aspect_ratios": ["auto", "1:1", "16:9", "4:3", "3:4", "9:16"],
-		"default_aspect_ratio": "auto",
-		"aspect_ratio_field": "aspect_ratio",
-		"output_formats": ["jpeg", "png"],
-		"default_output_format": "jpeg",
-		"boolean_fields": [{ "field": "sync_mode", "default": false }],
-		"hosting": "serverless",
-		"edit_model": "fal-ai/phota/edit"
-	},
-	{
-		"id": "fal-ai/phota/edit",
-		"public_id": "phota-edit",
-		"name": "Phota / Edit",
-		"provider": "phota",
-		"task": "image-to-image",
-		"image_counts": [1, 2, 3, 4],
-		"count_field": "num_images",
-		"resolutions": ["1K", "4K"],
-		"default_resolution": "1K",
-		"resolution_field": "resolution",
-		"aspect_ratios": ["auto", "1:1", "16:9", "4:3", "3:4", "9:16"],
-		"default_aspect_ratio": "auto",
-		"aspect_ratio_field": "aspect_ratio",
-		"output_formats": ["jpeg", "png"],
-		"default_output_format": "jpeg",
-		"boolean_fields": [{ "field": "sync_mode", "default": false }],
-		"image_input_field": "image_urls",
-		"image_input_max_count": 4,
-		"hosting": "serverless",
-		"generation_model": "fal-ai/phota"
-	}
+  {
+    "id": "fal-ai/phota",
+    "public_id": "phota",
+    "name": "Phota / Phota",
+    "provider": "phota",
+    "task": "text-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "1K",
+      "4K"
+    ],
+    "default_resolution": "1K",
+    "resolution_field": "resolution",
+    "aspect_ratios": [
+      "auto",
+      "1:1",
+      "16:9",
+      "4:3",
+      "3:4",
+      "9:16"
+    ],
+    "default_aspect_ratio": "auto",
+    "aspect_ratio_field": "aspect_ratio",
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "boolean_fields": [
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "hosting": "serverless",
+    "edit_model": "fal-ai/phota/edit"
+  },
+  {
+    "id": "fal-ai/phota/edit",
+    "public_id": "phota-edit",
+    "name": "Phota / Edit",
+    "provider": "phota",
+    "task": "image-to-image",
+    "image_counts": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "count_field": "num_images",
+    "resolutions": [
+      "1K",
+      "4K"
+    ],
+    "default_resolution": "1K",
+    "resolution_field": "resolution",
+    "aspect_ratios": [
+      "auto",
+      "1:1",
+      "16:9",
+      "4:3",
+      "3:4",
+      "9:16"
+    ],
+    "default_aspect_ratio": "auto",
+    "aspect_ratio_field": "aspect_ratio",
+    "output_formats": [
+      "jpeg",
+      "png"
+    ],
+    "default_output_format": "jpeg",
+    "boolean_fields": [
+      {
+        "field": "sync_mode",
+        "default": false
+      }
+    ],
+    "image_input_field": "image_urls",
+    "image_input_max_count": 4,
+    "hosting": "serverless",
+    "generation_model": "fal-ai/phota"
+  }
 ]
