@@ -21,7 +21,6 @@
 		type ImageGenerationModel
 	} from '$lib/utils/image-generation';
 	import {
-		imageAspectRatioLabelKey,
 		imageQualityLabelKey,
 		imageResolutionLabelKey
 	} from './imageLabels';
@@ -116,9 +115,22 @@
 	}
 
 	// ---- 纯展示函数（值 → i18n key / 预览样式） ----
-	const getAspectRatioLabel = (ratio: ImageAspectRatio) => $i18n.t(imageAspectRatioLabelKey(ratio));
+	// 比例是技术值不过 i18next（nsSeparator 会把 "4:3" 拆坏），仅 Auto 走翻译。
+	const getAspectRatioLabel = (ratio: ImageAspectRatio) =>
+		ratio === DEFAULT_IMAGE_ASPECT_RATIO ? $i18n.t('Auto') : ratio;
 	const getResolutionLabel = (resolution: string) => $i18n.t(imageResolutionLabelKey(resolution));
 	const getQualityLabel = (quality: string) => $i18n.t(imageQualityLabelKey(quality));
+	// 参数按钮摘要：与视频侧一致，用「·」分隔当前参数值。
+	$: imageOptionsLabel = [
+		selectedImageSizeLabel,
+		aspectRatioOptions.length > 0 && selectedResolution
+			? getResolutionLabel(selectedResolution)
+			: null,
+		qualityOptions.length > 0 && selectedQuality ? getQualityLabel(selectedQuality) : null,
+		imageCountOptions.length > 1 ? String(imageCount) : null
+	]
+		.filter(Boolean)
+		.join(' · ');
 	const getAspectRatioPreviewClass = (ratio: ImageAspectRatio) => {
 		return ratio === DEFAULT_IMAGE_ASPECT_RATIO ? 'size-5 rounded-full' : 'rounded-[3px]';
 	};
@@ -198,13 +210,6 @@
 						</svelte:fragment>
 					</GenerationModelSelector>
 				</div>
-				<!-- 标签选择入口与模型选择器同排：点击标签即插入实际文本 -->
-				<PromptTagPicker
-					mediaKind="image"
-					modelId={selectedModel || null}
-					negativeSupported={Boolean(negativePromptField)}
-					on:insert={handlePromptTagInsert}
-				/>
 			</div>
 			<form
 				class="relative rounded-[1.5rem] border border-gray-100/90 bg-white/95 shadow-xl shadow-gray-200/50 backdrop-blur-xl dark:border-gray-800/90 dark:bg-gray-950/95 dark:shadow-black/25"
@@ -305,23 +310,7 @@
 										aria-hidden="true"
 										><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" /></svg
 									>
-									<span class="truncate">{selectedImageSizeLabel}</span>
-									{#if aspectRatioOptions.length > 0 && selectedResolution}
-										<span class="hidden truncate min-[360px]:inline">
-											{getResolutionLabel(selectedResolution)}
-										</span>
-									{/if}
-									{#if qualityOptions.length > 0 && selectedQuality}
-										<span class="hidden truncate min-[360px]:inline">
-											{getQualityLabel(selectedQuality)}
-										</span>
-									{/if}
-									{#if imageCountOptions.length > 1}
-										<span class="inline-flex items-center gap-1">
-											<Photo className="size-4" strokeWidth="2" />
-											{imageCount}
-										</span>
-									{/if}
+									<span class="truncate">{imageOptionsLabel}</span>
 								</button>
 
 								{#if showAspectRatioPicker}
@@ -693,6 +682,13 @@
 									</div>
 								{/if}
 							</div>
+							<!-- 标签选择入口在参数按钮右侧：点击标签即插入实际文本 -->
+							<PromptTagPicker
+								mediaKind="image"
+								modelId={selectedModel || null}
+								negativeSupported={Boolean(negativePromptField)}
+								on:insert={handlePromptTagInsert}
+							/>
 						</div>
 
 						<div class="flex min-w-0 items-center justify-between gap-2 sm:justify-end">

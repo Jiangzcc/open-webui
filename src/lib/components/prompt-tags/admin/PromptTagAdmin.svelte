@@ -17,6 +17,7 @@
 		type PromptTagItem,
 		type PromptTagMediaKind
 	} from '$lib/apis/prompt_tags';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { registerPromptTagTranslations } from '$lib/components/prompt-tags/prompt-tags-i18n';
 	import { trapFocus } from '$lib/actions/focusTrap';
 	import { toast } from 'svelte-sonner';
@@ -284,19 +285,20 @@
 	<title>{$i18n.t('promptTags.admin.management')}</title>
 </svelte:head>
 
-<div class="mx-auto max-w-4xl p-4 sm:p-6">
-	<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-		<div>
-			<h1 class="text-xl font-semibold text-gray-900 dark:text-gray-100">
+<!-- 外层与头部对齐运营中心其它 tab（ProviderOperations）模式：撑满容器、H2 标题、gap 间距。 -->
+<div class="flex min-h-0 flex-col gap-5">
+	<header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+		<div class="min-w-0">
+			<h2 class="text-base font-medium dark:text-gray-100">
 				{$i18n.t('promptTags.admin.management')}
-			</h1>
+			</h2>
 			<p class="mt-1 text-sm text-gray-500">
 				{categories.length}
 				{$i18n.t('promptTags.admin.categories')} · {tags.length}
 				{$i18n.t('promptTags.admin.tags')}
 			</p>
 		</div>
-		<div class="flex flex-wrap gap-2">
+		<div class="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
 			<button
 				type="button"
 				class="inline-flex min-h-9 items-center rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-850"
@@ -326,18 +328,13 @@
 				{$i18n.t('promptTags.admin.createTag')}
 			</button>
 		</div>
-	</div>
+	</header>
 
 	{#if loading}
-		<div class="flex items-center justify-center py-16 text-gray-400">
-			<svg class="size-6 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-				<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4z" />
-			</svg>
-		</div>
+		<div class="flex min-h-64 items-center justify-center"><Spinner className="size-5" /></div>
 	{:else}
 		<!-- categories -->
-		<section class="mb-8">
+		<section>
 			<h2
 				class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
 			>

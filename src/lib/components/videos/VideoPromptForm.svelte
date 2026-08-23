@@ -170,13 +170,6 @@
 						</svelte:fragment>
 					</GenerationModelSelector>
 				</div>
-				<!-- 标签选择入口与模型选择器同排：离开提示词区域 -->
-				<PromptTagPicker
-					mediaKind="video"
-					modelId={selectedModel?.id ?? null}
-					negativeSupported={advancedFields.some((field) => field.key === 'negative_prompt')}
-					on:insert={onPromptTagInsert}
-				/>
 			</div>
 
 			{#snippet taskIcon(id: string, className: string = 'size-4 shrink-0')}
@@ -386,7 +379,7 @@
 					>
 						<button
 							type="button"
-							class="inline-flex h-8 max-w-[min(70vw,32rem)] items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+							class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 sm:gap-4 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 						>
 							<svg
 								class="size-4 shrink-0"
@@ -602,6 +595,13 @@
 							{/if}
 						</div>
 					</Dropdown>
+					<!-- 标签选择入口在参数按钮右侧：点击标签即插入实际文本 -->
+					<PromptTagPicker
+						mediaKind="video"
+						modelId={selectedModel?.id ?? null}
+						negativeSupported={advancedFields.some((field) => field.key === 'negative_prompt')}
+						on:insert={onPromptTagInsert}
+					/>
 				</div>
 
 				<div class="flex shrink-0 items-center gap-2">

@@ -690,7 +690,10 @@
 				<main class="flex-1 min-h-0 overflow-y-auto px-4 pt-4 sm:px-6 lg:px-8 sm:pt-20">
 					<div class="mx-auto w-full max-w-5xl min-h-full flex flex-col sm:px-2">
 						{#if history.length === 0}
-							<section class="flex min-h-[calc(100dvh-22rem)] items-center justify-center py-12">
+							<!-- flex-1 占满剩余高度把表单推到容器底（min-h 硬算在视口/表单高度变化时留残差），对齐 Images.svelte 空态结构 -->
+							<section
+								class="flex min-h-[calc(100dvh-22rem)] flex-1 items-center justify-center py-12"
+							>
 								<div class="max-w-md text-center">
 									<div
 										class="mx-auto mb-4 flex aspect-video w-56 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
