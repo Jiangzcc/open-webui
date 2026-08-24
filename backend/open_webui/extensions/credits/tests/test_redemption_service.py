@@ -94,7 +94,7 @@ async def create_batch(
 
 
 @pytest.mark.asyncio
-async def test_generation_returns_strong_unique_codes_and_persists_plaintext_for_admins(
+async def test_generation_returns_strong_unique_codes_without_persisting_plaintext(
     redemption_database,
 ) -> None:
     created = await create_batch(redemption_database, quantity=4)
@@ -109,23 +109,26 @@ async def test_generation_returns_strong_unique_codes_and_persists_plaintext_for
 
     assert len(rows) == 4
     assert all(len(row.code_hash) == 64 for row in rows)
-    # Administrators must be able to view codes at any time, so the display
-    # plaintext is persisted alongside the redemption hash.
-    assert sorted(row.code for row in rows) == sorted(created.codes)
+    assert all(row.code_hint.startswith('…') for row in rows)
+    assert not hasattr(rows[0], 'code')
+    serialized_rows = repr([(row.code_hash, row.code_hint) for row in rows])
+    assert all(code not in serialized_rows for code in created.codes)
     assert [(item.action, item.metadata_snapshot) for item in audits] == [
         ('generate', {'quantity': 4, 'face_value': 25})
     ]
 
 
 @pytest.mark.asyncio
-async def test_admin_code_listing_returns_persisted_plaintext(redemption_database) -> None:
+async def test_admin_code_listing_returns_only_non_secret_hints(redemption_database) -> None:
     created = await create_batch(redemption_database, quantity=3)
 
     async with redemption_database() as session:
         page = await redemption.list_redeem_codes(session, created.id, skip=0, limit=50)
 
     assert page.total == 3
-    assert sorted(item.code for item in page.items) == sorted(created.codes)
+    assert all(item.hint.startswith('…') for item in page.items)
+    assert all(not hasattr(item, 'code') for item in page.items)
+    assert all(code not in page.model_dump_json() for code in created.codes)
 
 
 def test_code_normalization_accepts_only_documented_ascii_separators() -> None:

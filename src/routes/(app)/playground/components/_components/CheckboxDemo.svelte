@@ -12,7 +12,9 @@
 
 <DemoCard
 	title="Checkbox"
-	desc={$i18n.t("state is 'unchecked'/'checked' string, not boolean. indeterminate for half-check.")}
+	desc={$i18n.t(
+		"state is 'unchecked'/'checked' string, not boolean. indeterminate for half-check."
+	)}
 >
 	<div class="flex flex-col items-start gap-3">
 		<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">

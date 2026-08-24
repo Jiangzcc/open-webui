@@ -3,19 +3,17 @@ from __future__ import annotations
 import asyncio
 
 from open_webui.extensions.images import limits
+from open_webui.extensions.tests.gate_test_support import assert_rate_bucket
 
 
 def test_rate_check_uses_image_bucket(monkeypatch) -> None:
     # 图片限流使用独立的 images: 命名桶，不能与视频 videos: 桶共享配额。
-    captured: list[str] = []
-
-    async def fake_is_limited(key: str) -> bool:
-        captured.append(key)
-        return False
-
-    monkeypatch.setattr(limits._gate, '_is_limited', fake_is_limited)
-    asyncio.run(limits.enforce_image_generation_rate('user-1'))
-    assert captured == ['images:generation:user-1']
+    assert_rate_bucket(
+        monkeypatch,
+        limits,
+        limits.enforce_image_generation_rate,
+        'images:generation:user-1',
+    )
 
 
 def test_rate_check_over_limit_raises_credit_error(monkeypatch) -> None:

@@ -21,6 +21,7 @@ _IMAGES_PATH = Path(__file__).resolve().parents[3] / 'routers' / 'images.py'
 _MIDDLEWARE_PATH = Path(__file__).resolve().parents[3] / 'utils' / 'middleware.py'
 _BUILTIN_PATH = Path(__file__).resolve().parents[3] / 'tools' / 'builtin.py'
 _GENERATION_TASKS_PATH = Path(__file__).resolve().parents[1] / 'generation_tasks.py'
+_FAL_BRIDGE_PATH = Path(__file__).resolve().parents[2] / 'images' / 'fal_bridge.py'
 
 _GATE_CALLS = (
     'enforce_image_generation_rate(',
@@ -150,8 +151,11 @@ def test_core_and_direct_endpoints_do_not_wrap_gate_calls(images_funcs) -> None:
 
 def test_generation_task_runner_declares_slot_already_held() -> None:
     """异步任务执行路径（image/image-to-image 两处）显式声明槽位已由提交端持有。"""
-    source = _GENERATION_TASKS_PATH.read_text(encoding='utf-8')
-    assert source.count('concurrency_slot_held_by_caller=True') == 2
+    funcs = _func_defs(_load(_GENERATION_TASKS_PATH))
+    body = ast.unparse(funcs['_invoke_generation_provider'])
+    assert "'concurrency_slot_held_by_caller': True" in body
+    assert 'image_edits(' in body
+    assert 'image_generations(' in body
 
 
 def test_generation_invoke_closure_ignores_prepared_and_uses_provider_form(images_funcs) -> None:
@@ -213,36 +217,43 @@ def test_invoke_image_edits_branches_return_captured_batch(images_funcs) -> None
 
 
 def test_fal_generation_gates_mock_by_admin_toggle_and_uploads_results(images_funcs) -> None:
-    # 复盘 P2：fal 管线提取至 _run_fal_image_pipeline（generations/edits 共享）。
+    # 复盘 P2：fal 管线属于独立扩展桥接层（generations/edits 共享）。
     invoke = ast.unparse(images_funcs['_invoke_image_generations'])
-    pipeline = ast.unparse(images_funcs['_run_fal_image_pipeline'])
-    assert '_run_fal_image_pipeline(' in invoke
+    bridge_funcs = _func_defs(_load(_FAL_BRIDGE_PATH))
+    pipeline = ast.unparse(bridge_funcs['run_fal_image_pipeline'])
+    capture = ast.unparse(bridge_funcs['capture_fal_image_result'])
+    assert 'run_fal_image_pipeline(' in invoke
     assert 'api_key=image_config.FAL_API_KEY' in invoke
-    assert 'if image_config.FAL_MOCK_ENABLED:' in pipeline
-    assert 'res = get_mock_fal_image_result(fal_model, form_data)' in pipeline
-    assert 'res = await run_fal_queue(' in pipeline
-    assert 'extract_fal_image_urls(res)' in pipeline
-    assert 'get_image_data(image_url)' in pipeline
-    assert 'upload_image(' in pipeline
-    assert 'CapturedImageResult(' in pipeline
+    assert 'if mock_enabled:' in pipeline
+    assert 'result = get_mock_fal_image_result(fal_model, form_data)' in pipeline
+    assert 'result = await run_fal_queue(' in pipeline
+    assert 'capture_fal_image_result(' in pipeline
+    assert 'extract_fal_image_urls(result)' in capture
+    assert 'download_image(image_url)' in capture
+    assert 'upload_image(' in capture
+    assert 'cleanup_uploaded_files(uploaded_files)' in capture
+    assert 'CapturedImageResult(' in capture
     assert 'ReusedImageResult(' not in invoke
     assert 'ReusedImageResult(' not in pipeline
 
 
 def test_fal_edit_gates_mock_by_admin_toggle_and_uploads_results(images_funcs) -> None:
-    # 复盘 P2：fal 管线提取至 _run_fal_image_pipeline；edit 专属差异在
+    # 复盘 P2：fal 管线提取至独立扩展桥接层；edit 专属差异在
     # 调用点（模型解析、参考图 URL、编辑专用 API key 回退）。
     invoke = ast.unparse(images_funcs['_invoke_image_edits'])
-    pipeline = ast.unparse(images_funcs['_run_fal_image_pipeline'])
-    assert '_run_fal_image_pipeline(' in invoke
+    bridge_funcs = _func_defs(_load(_FAL_BRIDGE_PATH))
+    pipeline = ast.unparse(bridge_funcs['run_fal_image_pipeline'])
+    capture = ast.unparse(bridge_funcs['capture_fal_image_result'])
+    assert 'run_fal_image_pipeline(' in invoke
     assert 'api_key=image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY' in invoke
-    assert 'if image_config.FAL_MOCK_ENABLED:' in pipeline
-    assert 'res = get_mock_fal_image_result(fal_model, form_data)' in pipeline
-    assert 'res = await run_fal_queue(' in pipeline
-    assert 'extract_fal_image_urls(res)' in pipeline
-    assert 'get_image_data(image_url)' in pipeline
-    assert 'upload_image(' in pipeline
-    assert 'CapturedImageResult(' in pipeline
+    assert 'if mock_enabled:' in pipeline
+    assert 'result = get_mock_fal_image_result(fal_model, form_data)' in pipeline
+    assert 'result = await run_fal_queue(' in pipeline
+    assert 'capture_fal_image_result(' in pipeline
+    assert 'extract_fal_image_urls(result)' in capture
+    assert 'download_image(image_url)' in capture
+    assert 'upload_image(' in capture
+    assert 'CapturedImageResult(' in capture
 
 
 def test_real_provider_branches_project_captured_image_result(images_funcs) -> None:

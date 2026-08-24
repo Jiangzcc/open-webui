@@ -5,8 +5,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from open_webui.extensions.credits.models import CreditPrice
+from open_webui.extensions.tests.async_test_support import SelfTransactionalContext
 
-from .router_test_support import AuthenticatedUser
+from .router_test_support import AuthenticatedUser, seed_credit_price
+
+
+class _MissingPriceSession(SelfTransactionalContext):
+    async def get(self, _model, _price_id):
+        return None
 
 
 def test_price_requests_reject_invalid_base_prices() -> None:
@@ -189,23 +195,7 @@ def test_price_delete_persists_before_publishing_a_desensitized_event(router_dat
     from open_webui.extensions.credits import router as credits_router
     from open_webui.extensions.credits import router_admin
 
-    async def seed() -> None:
-        async with router_database() as session, session.begin():
-            session.add(
-                CreditPrice(
-                    id='price-delete-1',
-                    service_type='image',
-                    resource_id='model-a',
-                    action='text-to-image',
-                    base_price='1',
-                    rules={'schema_version': 1, 'dimensions': []},
-                    enabled=True,
-                    created_at=1,
-                    updated_at=1,
-                )
-            )
-
-    asyncio.run(seed())
+    asyncio.run(seed_credit_price(router_database, price_id='price-delete-1'))
     events = []
 
     async def database_session():
@@ -251,26 +241,12 @@ def test_price_update_returns_not_found_when_the_price_does_not_exist(monkeypatc
     from open_webui.extensions.credits import router as credits_router
     from open_webui.extensions.credits import router_admin
 
-    class Transaction:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-    class Session:
-        def begin(self):
-            return Transaction()
-
-        async def get(self, _model, _price_id):
-            return None
-
     app = FastAPI()
     app.include_router(credits_router.router)
     app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
-    app.dependency_overrides[credits_router.get_async_session] = lambda: Session()
+    app.dependency_overrides[credits_router.get_async_session] = _MissingPriceSession
 
     response = TestClient(app).put('/api/v1/credits/admin/prices/missing-price', json={'enabled': False})
 
@@ -282,26 +258,12 @@ def test_price_delete_returns_not_found_when_the_price_does_not_exist() -> None:
     from open_webui.extensions.credits import router as credits_router
     from open_webui.extensions.credits import router_admin
 
-    class Transaction:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-    class Session:
-        def begin(self):
-            return Transaction()
-
-        async def get(self, _model, _price_id):
-            return None
-
     app = FastAPI()
     app.include_router(credits_router.router)
     app.dependency_overrides[router_admin.get_admin_user] = lambda: AuthenticatedUser(
         id='admin-1', name='Admin', email='admin@example.test', role='admin'
     )
-    app.dependency_overrides[credits_router.get_async_session] = lambda: Session()
+    app.dependency_overrides[credits_router.get_async_session] = _MissingPriceSession
 
     response = TestClient(app).delete('/api/v1/credits/admin/prices/missing-price')
 
@@ -330,23 +292,7 @@ def test_price_update_commits_before_publishing_event(router_database, monkeypat
     from open_webui.extensions.credits import router as credits_router
     from open_webui.extensions.credits import router_admin
 
-    async def seed() -> None:
-        async with router_database() as session, session.begin():
-            session.add(
-                CreditPrice(
-                    id='price-1',
-                    service_type='image',
-                    resource_id='model-a',
-                    action='text-to-image',
-                    base_price='1',
-                    rules={'schema_version': 1, 'dimensions': []},
-                    enabled=True,
-                    created_at=1,
-                    updated_at=1,
-                )
-            )
-
-    asyncio.run(seed())
+    asyncio.run(seed_credit_price(router_database))
     events = []
 
     async def publish(*args, **kwargs):
@@ -482,7 +428,6 @@ def test_credit_dimensions_return_only_the_registered_image_dimensions() -> None
 
 
 def test_credit_dimensions_include_video_generation_rules() -> None:
-    from open_webui.extensions.credits import router as credits_router
     from open_webui.extensions.credits import router_admin
 
     response = asyncio.run(router_admin.get_credit_dimensions('video', object()))

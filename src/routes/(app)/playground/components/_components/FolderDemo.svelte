@@ -20,7 +20,9 @@
 
 <DemoCard
 	title="Folder"
-	desc={$i18n.t('Collapsible folder node. + button (onAdd) dispatches import/drop on drag. State persisted to localStorage.')}
+	desc={$i18n.t(
+		'Collapsible folder node. + button (onAdd) dispatches import/drop on drag. State persisted to localStorage.'
+	)}
 >
 	<div class="w-full flex flex-col gap-1">
 		<Folder
@@ -47,7 +49,9 @@
 			on:import={(e) => (lastEvent = 'import')}
 			on:drop={(e) => (lastEvent = 'drop')}
 		>
-			<div class="ml-3 pl-2 border-l border-gray-100 dark:border-gray-850 text-xs text-gray-500 py-1">
+			<div
+				class="ml-3 pl-2 border-l border-gray-100 dark:border-gray-850 text-xs text-gray-500 py-1"
+			>
 				{$i18n.t('No items')}
 			</div>
 		</Folder>
@@ -56,7 +60,11 @@
 			<p class="text-[11px] text-emerald-500">+ {$i18n.t('New Folder')} ×{added}</p>
 		{/if}
 		{#if lastEvent}
-			<p class="text-[11px] text-gray-400">{$i18n.t('Dropped data is not valid JSON text or is empty. Ignoring drop event for this type of data.')} → {lastEvent}</p>
+			<p class="text-[11px] text-gray-400">
+				{$i18n.t(
+					'Dropped data is not valid JSON text or is empty. Ignoring drop event for this type of data.'
+				)} → {lastEvent}
+			</p>
 		{/if}
 	</div>
 </DemoCard>

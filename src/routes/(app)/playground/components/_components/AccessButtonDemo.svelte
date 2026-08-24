@@ -7,7 +7,10 @@
 	const i18n = getContext<Writable<i18nType>>('i18n');
 </script>
 
-<DemoCard title="AccessButton" desc={$i18n.t('Small access entry button with lock icon. Forwards on:click.')}>
+<DemoCard
+	title="AccessButton"
+	desc={$i18n.t('Small access entry button with lock icon. Forwards on:click.')}
+>
 	<div class="flex flex-col items-start gap-2">
 		<AccessButton className="" disabled={false} on:click={() => console.log('access')} />
 		<AccessButton className="" disabled={true} on:click={() => console.log('access')} />

@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 import asyncio
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -12,13 +11,9 @@ import pytest
 from open_webui.extensions.credits.compat import BillingIdentity
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.schemas import UserLedgerQuery
+from open_webui.extensions.credits.tests.service_test_support import HeaderRequest as Request
 
 ROOT = Path(__file__).parents[5]
-
-
-@dataclass
-class Request:
-    headers: dict[str, object]
 
 
 @asynccontextmanager

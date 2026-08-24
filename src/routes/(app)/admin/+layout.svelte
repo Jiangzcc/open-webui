@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, getContext } from 'svelte';
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 
 	import { WEBUI_NAME, config, mobile, showSettings, showSidebar, user } from '$lib/stores';
@@ -9,8 +9,9 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	registerCreditTranslations(i18n);
 	registerPromptTagTranslations(i18n);
 

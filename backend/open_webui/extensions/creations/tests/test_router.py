@@ -10,6 +10,12 @@ from open_webui.extensions.creations import discovery_service, service
 from open_webui.extensions.creations.db import get_creation_session
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.creations.router import router as creations_router
+from open_webui.extensions.creations.tests.conftest import (
+    FakeFiles as _FakeFiles,
+)
+from open_webui.extensions.creations.tests.conftest import (
+    FakeUsers as _FakeUsers,
+)
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,22 +69,6 @@ def _seed_item(
     import asyncio
 
     asyncio.run(_go())
-
-
-class _FakeFiles:
-    def __init__(self, files):
-        self._files = {f.id: f for f in files}
-
-    async def get_files_by_ids(self, ids):
-        return [self._files[i] for i in ids if i in self._files]
-
-
-class _FakeUsers:
-    def __init__(self, users):
-        self._users = {u.id: u for u in users}
-
-    async def get_users_by_ids(self, ids):
-        return [self._users[i] for i in ids if i in self._users]
 
 
 def _file(fid, uid):

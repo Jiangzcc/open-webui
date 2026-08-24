@@ -51,7 +51,6 @@ _REQUIRED_CONSTRAINTS = {
             'ck_ext_credit_redeem_code_terminal_state',
             'ck_ext_credit_redeem_code_redemption_fields',
             'ck_ext_credit_redeem_code_void_fields',
-            'ck_ext_credit_redeem_code_code_nonempty',
         }
     ),
     'ext_credit_redeem_audit': frozenset(

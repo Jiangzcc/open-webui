@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 from open_webui.extensions.provider_ops import registration
 
@@ -86,25 +87,18 @@ def test_periodic_sync_uses_short_initial_delay(monkeypatch) -> None:
 
 def test_shutdown_is_idempotent_when_no_task() -> None:
     # 未初始化 worker 时 shutdown 应安全返回，不抛错。
-
-    class _FakeApp:
-        class state:
-            pass
-
-    asyncio.run(registration.shutdown_provider_ops_extension(_FakeApp()))
+    asyncio.run(
+        registration.shutdown_provider_ops_extension(
+            SimpleNamespace(state=SimpleNamespace())
+        )
+    )
 
 
 def test_shutdown_cancels_and_awaits_running_task() -> None:
     # 启动一个会一直 sleep 的 worker，shutdown 应 cancel 并 await 它。
 
     async def scenario() -> None:
-        class _State:
-            pass
-
-        class _FakeApp:
-            state = _State()
-
-        app = _FakeApp()
+        app = SimpleNamespace(state=SimpleNamespace())
 
         async def _stub_loop() -> None:
             try:
@@ -128,13 +122,7 @@ def test_initialize_skips_when_task_already_running(monkeypatch) -> None:
     # 不真实跑迁移（迁移校验由独立测试覆盖）。
 
     async def scenario() -> None:
-        class _State:
-            pass
-
-        class _FakeApp:
-            state = _State()
-
-        app = _FakeApp()
+        app = SimpleNamespace(state=SimpleNamespace())
 
         async def _stub_loop() -> None:
             await asyncio.sleep(100)
@@ -172,13 +160,7 @@ def test_initialize_creates_task_when_none(monkeypatch) -> None:
     # 无既有任务时应创建新 worker。
 
     async def scenario() -> None:
-        class _State:
-            pass
-
-        class _FakeApp:
-            state = _State()
-
-        app = _FakeApp()
+        app = SimpleNamespace(state=SimpleNamespace())
 
         monkeypatch.setattr(registration, 'run_provider_ops_migrations', lambda: None)
         import anyio

@@ -5,6 +5,7 @@ from open_webui.extensions.creations import discovery_service
 from open_webui.extensions.creations.models import (
     CreationMediaItem,
     CreationPost,
+    CreationPostMedia,
     DiscoveryCategorySetting,
 )
 from open_webui.extensions.creations.schemas import (
@@ -15,6 +16,7 @@ from open_webui.extensions.creations.schemas import (
 )
 from open_webui.extensions.creations.tests.conftest import make_file, make_user
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 
 async def _seed_creation(
@@ -204,6 +206,47 @@ async def test_feed_hides_withdrawn_posts_and_prompt_when_disabled(creation_sess
 
 
 @pytest.mark.asyncio
+async def test_disabled_category_hides_every_public_read_and_reaction(
+    creation_sessions,
+    monkeypatch,
+) -> None:
+    await _seed_creation(creation_sessions)
+    _bind_repositories(
+        monkeypatch,
+        files=[make_file('file-1', 'author-1')],
+        users=[make_user('author-1', name='Author')],
+    )
+    async with creation_sessions() as session:
+        publication = await discovery_service.publish_creation(
+            session,
+            'author-1',
+            'creation-1',
+            PublishCreationForm(category='portrait'),
+        )
+        assert publication
+        category = await session.get(DiscoveryCategorySetting, 'portrait')
+        assert category
+        category.enabled = False
+        await session.commit()
+
+        feed = await discovery_service.list_discovery_posts(session, 'viewer', 20, None, 'latest')
+        detail = await discovery_service.get_discovery_post(session, 'viewer', publication.post_id)
+        content = await discovery_service.get_published_content_file(session, publication.post_id)
+        reaction = await discovery_service.set_reaction(
+            session,
+            'viewer',
+            publication.post_id,
+            'like',
+            True,
+        )
+
+    assert feed.items == ()
+    assert detail is None
+    assert content is None
+    assert reaction is None
+
+
+@pytest.mark.asyncio
 async def test_discovery_feed_filters_image_and_video(creation_sessions, monkeypatch) -> None:
     await _seed_creation(creation_sessions, creation_id='image', file_id='fi', created_at=10)
     await _seed_creation(
@@ -284,9 +327,8 @@ async def test_soft_deleted_creation_cannot_receive_new_reactions(creation_sessi
 async def test_set_reaction_survives_concurrent_duplicate_insert(creation_sessions, monkeypatch) -> None:
     """复盘 P1：并发重复点赞（双击/双请求）撞反应主键时幂等返回已生效
     状态——按另一事务已提交的行重算计数，不把 IntegrityError 变成 500。"""
-    from sqlalchemy.exc import IntegrityError
-
     from open_webui.extensions.creations.models import CreationPostReaction
+    from sqlalchemy.exc import IntegrityError
 
     await _seed_creation(creation_sessions)
     _bind_repositories(
@@ -333,3 +375,64 @@ async def test_set_reaction_survives_concurrent_duplicate_insert(creation_sessio
         ).scalars().all()
     # 幂等：不产生重复行。
     assert len(remaining) == 1
+
+
+@pytest.mark.asyncio
+async def test_publish_creation_returns_concurrent_winner(creation_sessions, monkeypatch) -> None:
+    await _seed_creation(creation_sessions)
+    _bind_repositories(
+        monkeypatch,
+        files=[make_file('file-1', 'author-1')],
+        users=[make_user('author-1', name='Author')],
+    )
+    async with creation_sessions() as session:
+        original_commit = session.commit
+        commit_calls = 0
+
+        async def conflicting_commit():
+            nonlocal commit_calls
+            commit_calls += 1
+            if commit_calls == 1:
+                await session.rollback()
+                async with creation_sessions() as winner:
+                    winner.add(
+                        CreationPost(
+                            id='winning-post',
+                            user_id='author-1',
+                            status='published',
+                            title='Winner',
+                            description=None,
+                            show_prompt=True,
+                            category='other',
+                            featured_at=None,
+                            featured_rank=1000,
+                            like_count=0,
+                            favorite_count=0,
+                            published_at=1,
+                            created_at=1,
+                            updated_at=1,
+                        )
+                    )
+                    winner.add(
+                        CreationPostMedia(
+                            post_id='winning-post',
+                            creation_id='creation-1',
+                            position=0,
+                            created_at=1,
+                        )
+                    )
+                    await winner.commit()
+                raise IntegrityError('UNIQUE constraint failed', None, Exception('duplicate'))
+            await original_commit()
+
+        monkeypatch.setattr(session, 'commit', conflicting_commit)
+        publication = await discovery_service.publish_creation(
+            session,
+            'author-1',
+            'creation-1',
+            PublishCreationForm(title='Loser'),
+        )
+
+    assert publication is not None
+    assert publication.post_id == 'winning-post'
+    assert publication.title == 'Winner'

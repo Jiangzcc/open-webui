@@ -29,7 +29,9 @@ from open_webui.extensions.creations.generation_tasks import (
     IdempotencyPayloadConflictError,
     create_generation_task,
     delete_generation_task,
+    fail_generation_task_scheduling,
     get_generation_task,
+    get_generation_task_by_idempotency_key,
     list_generation_tasks,
     schedule_generation_task,
 )
@@ -91,6 +93,71 @@ def _invalid_cursor_response() -> JSONResponse:
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content={'detail': 'invalid cursor'})
 
 
+def _validated_generation_form(submission: ImageGenerationTaskSubmitForm):
+    from open_webui.routers.images import CreateImageForm, EditImageForm
+
+    model = EditImageForm if submission.kind == 'image-to-image' else CreateImageForm
+    return model.model_validate(submission.payload)
+
+
+def _normalized_idempotency_key(value: str | None) -> str:
+    key = (value or str(uuid4())).strip()
+    if not key or len(key) > 128:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='invalid idempotency key')
+    return key
+
+
+async def _schedule_created_image_task(
+    request: Request,
+    task: ImageGenerationTaskResponse,
+    *,
+    created: bool,
+    user: object,
+    form: object,
+    kind: str,
+) -> None:
+    if not created:
+        await release_image_generation_slot(user.id)
+        return
+    try:
+        schedule_generation_task(
+            request,
+            task_id=task.id,
+            user=user,
+            form=form,
+            kind=kind,
+            on_finished=lambda: release_image_generation_slot(user.id),
+        )
+    except Exception:
+        await fail_generation_task_scheduling(request.app, task.id, user.id)
+        await release_image_generation_slot(user.id)
+        raise
+
+
+async def _create_reserved_image_task(
+    session: AsyncSession,
+    *,
+    user_id: str,
+    key: str,
+    kind: str,
+    payload: dict,
+) -> tuple[ImageGenerationTaskResponse, bool]:
+    try:
+        return await create_generation_task(
+            session,
+            user_id=user_id,
+            idempotency_key=key,
+            kind=kind,
+            payload=payload,
+        )
+    except IdempotencyPayloadConflictError as error:
+        await release_image_generation_slot(user_id)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='idempotency_key_conflict') from error
+    except Exception:
+        await release_image_generation_slot(user_id)
+        raise
+
+
 @router.post(
     '/generation-tasks',
     response_model=ImageGenerationTaskResponse,
@@ -103,56 +170,45 @@ async def create_image_generation_task(
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
-    from open_webui.routers.images import CreateImageForm, EditImageForm
-
     try:
-        form = (
-            EditImageForm.model_validate(submission.payload)
-            if submission.kind == 'image-to-image'
-            else CreateImageForm.model_validate(submission.payload)
-        )
+        form = _validated_generation_form(submission)
     except ValidationError as error:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=jsonable_encoder(error.errors()))
 
-    key = (idempotency_key or str(uuid4())).strip()
-    if not key or len(key) > 128:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='invalid idempotency key')
+    key = _normalized_idempotency_key(idempotency_key)
+    payload = form.model_dump(exclude_none=True)
+    try:
+        existing = await get_generation_task_by_idempotency_key(
+            session,
+            user.id,
+            key,
+            kind=submission.kind,
+            payload=payload,
+        )
+    except IdempotencyPayloadConflictError:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={'detail': 'idempotency_key_conflict'})
+    if existing is not None:
+        return existing
     try:
         await enforce_image_generation_rate(user.id)
         await acquire_image_generation_slot(user.id)
     except CreditError as error:
         return JSONResponse(status_code=error.status_code, content=error.to_envelope())
-    try:
-        task, created = await create_generation_task(
-            session,
-            user_id=user.id,
-            idempotency_key=key,
-            kind=submission.kind,
-            payload=form.model_dump(exclude_none=True),
-        )
-    except IdempotencyPayloadConflictError:
-        # 幂等键命中但载荷不一致：拒绝而不是静默复用旧任务丢弃新载荷
-        #（与视频端 idempotency_key_conflict 契约一致）。
-        await release_image_generation_slot(user.id)
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={'detail': 'idempotency_key_conflict'})
-    except Exception:
-        await release_image_generation_slot(user.id)
-        raise
-    if created:
-        try:
-            schedule_generation_task(
-                request,
-                task_id=task.id,
-                user=user,
-                form=form,
-                kind=submission.kind,
-                on_finished=lambda: release_image_generation_slot(user.id),
-            )
-        except Exception:
-            await release_image_generation_slot(user.id)
-            raise
-    else:
-        await release_image_generation_slot(user.id)
+    task, created = await _create_reserved_image_task(
+        session,
+        user_id=user.id,
+        key=key,
+        kind=submission.kind,
+        payload=payload,
+    )
+    await _schedule_created_image_task(
+        request,
+        task,
+        created=created,
+        user=user,
+        form=form,
+        kind=submission.kind,
+    )
     return task
 
 

@@ -145,11 +145,17 @@ def _poster_url(video: dict[str, object]) -> tuple[str | None, str]:
     pictures = video.get('video_pictures') if isinstance(video, dict) else None
     if isinstance(pictures, list):
         for picture in pictures:
-            if isinstance(picture, dict):
-                url = picture.get('picture')
-                if isinstance(url, str) and url.startswith('https://'):
-                    return url, 'image/jpeg'
+            url = _picture_url(picture)
+            if url is not None:
+                return url, 'image/jpeg'
     return None, 'image/jpeg'
+
+
+def _picture_url(picture: object) -> str | None:
+    if not isinstance(picture, dict):
+        return None
+    url = picture.get('picture')
+    return url if isinstance(url, str) and url.startswith('https://') else None
 
 
 async def fetch_random_pexels_clip() -> PexelsMockClip | None:

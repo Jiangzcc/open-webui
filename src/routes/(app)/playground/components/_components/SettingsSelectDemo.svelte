@@ -11,7 +11,8 @@
 
 <DemoCard
 	title="SettingsSelect"
-	desc={$i18n.t('Native <select> for settings pages. Provide <option> via slot. No custom arrow.')}>
+	desc={$i18n.t('Native <select> for settings pages. Provide <option> via slot. No custom arrow.')}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<SettingsSelect
 			bind:value={theme}

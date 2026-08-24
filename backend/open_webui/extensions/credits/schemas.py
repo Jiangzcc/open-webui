@@ -27,10 +27,9 @@ from open_webui.extensions.credits.constants import (
     MAX_USER_ID_LENGTH,
     MAX_USER_NAME_LENGTH,
 )
+from open_webui.extensions.schema import StrictFrozenModel as StrictModel
 from pydantic import (
-    BaseModel,
     BeforeValidator,
-    ConfigDict,
     Field,
     StrictInt,
     StringConstraints,
@@ -46,6 +45,15 @@ AdjustmentReason = Literal[
     'accounting_correction',
     'violation_deduction',
     'other',
+]
+LedgerReason = Literal[
+    'offline_recharge',
+    'promotion_gift',
+    'manual_refund',
+    'accounting_correction',
+    'violation_deduction',
+    'other',
+    'redeem',
 ]
 AuditSource = Literal['web', 'api', 'api_key', 'internal_admin']
 IdempotencyKey = Annotated[
@@ -96,10 +104,6 @@ PositiveExactDecimal = Annotated[
     BeforeValidator(parse_exact_positive_decimal),
     Field(gt=0, le=MAX_CREDIT_VALUE, allow_inf_nan=False),
 ]
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
 
 
 class AdjustmentRequest(StrictModel):
@@ -272,7 +276,7 @@ class UserLedgerQuery(LedgerQuery):
 class AdminLedgerQuery(LedgerQuery):
     user_id: str | None = Field(default=None, min_length=1, max_length=128)
     entry_type: Literal['consumption', 'admin_adjustment', 'system_adjustment'] | None = None
-    reason_code: AdjustmentReason | None = None
+    reason_code: LedgerReason | None = None
     service_type: str | None = Field(default=None, min_length=1, max_length=64)
     resource_id: str | None = Field(default=None, min_length=1, max_length=128)
     action: str | None = Field(default=None, min_length=1, max_length=64)
@@ -386,7 +390,6 @@ class RedeemBatchCreated(RedeemBatchItem):
 
 class RedeemCodeAdminItem(StrictModel):
     id: str
-    code: str
     hint: str
     status: Literal['available', 'redeemed', 'voided', 'expired']
     redeemed_by_user_id: str | None

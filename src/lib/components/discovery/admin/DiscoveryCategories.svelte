@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { trapFocus } from '$lib/actions/focusTrap';
@@ -11,9 +11,10 @@
 	} from '$lib/apis/discovery';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 	import type { DiscoveryCategoryItem } from '$lib/utils/discovery';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	let categories: DiscoveryCategoryItem[] = [];
 	let loading = true;
 	let savingId: string | null = null;
@@ -108,7 +109,9 @@
 	onMount(load);
 </script>
 
-<svelte:window on:keydown={(event) => event.key === 'Escape' && !creating && (showCreate = false)} />
+<svelte:window
+	on:keydown={(event) => event.key === 'Escape' && !creating && (showCreate = false)}
+/>
 
 <section class="flex min-h-0 flex-col gap-4">
 	<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -210,7 +213,7 @@
 		role="presentation"
 		on:click={(event) => event.currentTarget === event.target && !creating && (showCreate = false)}
 	>
-		<section
+		<div
 			class="w-full rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-gray-900 sm:max-w-md sm:rounded-3xl sm:p-6"
 			role="dialog"
 			aria-modal="true"
@@ -260,7 +263,7 @@
 					{creating ? $i18n.t('Creating') : $i18n.t('Create')}
 				</button>
 			</div>
-		</section>
+		</div>
 	</div>
 {/if}
 

@@ -15,9 +15,9 @@ from .migrations.runner import SPEC, run_provider_ops_migrations
 
 log = logging.getLogger(__name__)
 
-# 厂商计费同步自动化：provider_ops 现在只能通过 POST /admin/providers/fal/sync
-# 手动触发。补一个每日定时后台 worker，参考 credits/registration.py 的 recovery
-# worker 模式（CancelledError 重抛 + Exception 捕获 + shutdown cancel/await）。
+# 厂商计费同步既支持 POST /admin/providers/fal/sync 手动触发，也由这里的
+# 每日后台 worker 自动执行；worker 生命周期沿用 credits recovery 的
+# CancelledError 重抛、普通异常记录、shutdown cancel/await 约定。
 #
 # 默认每 24 小时跑一次全量同步（pricing/requests/billing_events/usage/analytics），
 # 查询窗口 48h。Redis 可用时用 SET NX 租约在多 worker/实例间选主；多 worker

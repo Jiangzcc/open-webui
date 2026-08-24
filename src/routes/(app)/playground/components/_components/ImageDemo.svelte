@@ -19,7 +19,9 @@
 
 <DemoCard
 	title="Image"
-	desc={$i18n.t('Image with preview + dismissible. Click to open ImagePreview (pan/zoom/download).')}
+	desc={$i18n.t(
+		'Image with preview + dismissible. Click to open ImagePreview (pan/zoom/download).'
+	)}
 >
 	<div class="flex flex-wrap items-start gap-3 w-full">
 		<div class="flex flex-col items-center gap-1">

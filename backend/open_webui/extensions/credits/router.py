@@ -2,9 +2,8 @@ import logging
 from collections.abc import Mapping
 from time import time
 from typing import Annotated
-from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Request
 from open_webui.extensions.credits import quote_cache
 from open_webui.extensions.credits.compat import CompatImageInput
 from open_webui.extensions.credits.constants import (
@@ -16,7 +15,6 @@ from open_webui.extensions.credits.image_adapter import prepare_edit_call, prepa
 from open_webui.extensions.credits.metrics import credit_metrics
 from open_webui.extensions.credits.pricing import compute_price
 from open_webui.extensions.credits.redemption import redeem_code
-from open_webui.extensions.videos.billing import normalize_video_duration_dimension
 from open_webui.extensions.credits.repository import get_balance_if_exists, get_enabled_price
 from open_webui.extensions.credits.router_admin import admin_router
 from open_webui.extensions.credits.router_support import (
@@ -33,6 +31,7 @@ from open_webui.extensions.credits.router_support import (
 )
 from open_webui.extensions.credits.schemas import UserLedgerQuery, UserSnapshot
 from open_webui.extensions.credits.service import get_balance, list_user_ledger
+from open_webui.extensions.videos.billing import normalize_video_duration_dimension
 from open_webui.internal.db import get_async_session
 from open_webui.utils.auth import get_verified_user
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,7 +42,6 @@ log = logging.getLogger(__name__)
 # 旧测试仍直接清理/注入 router._quote_cache；让它指向唯一的进程内缓存，
 # 不再维护第二份生产缓存。
 _quote_cache = quote_cache.memory_cache()
-
 
 
 class ImageQuoteRequest(BaseModel):
@@ -109,8 +107,6 @@ def _quote_image_input(payload: Mapping[str, object]) -> CompatImageInput:
     )
 
 
-
-
 def _quote_response(
     balance: int,
     *,
@@ -162,6 +158,10 @@ async def _cache_quote(cache_key: tuple[str, str, str, int], response: dict[str,
     await quote_cache.cache_quote(cache_key, response, now)
 
 
+def _record_quote_success(resource_id: str, action: str, charged_credits: int) -> None:
+    credit_metrics.quote_succeeded(model=resource_id, action=action, charged_credits=charged_credits)
+
+
 async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mapping[str, object]) -> dict[str, object]:
     resource_id = payload.get('resource_id')
     action = payload.get('action')
@@ -185,11 +185,7 @@ async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mappin
     now = time()
     cached = await _cached_quote(cache_key, balance, now)
     if cached is not None:
-        credit_metrics.quote_succeeded(
-            model=billing.resource_id,
-            action=billing.action,
-            charged_credits=int(cached['charged_credits']),
-        )
+        _record_quote_success(billing.resource_id, billing.action, int(cached['charged_credits']))
         return cached
 
     try:
@@ -213,11 +209,7 @@ async def quote_image(session: AsyncSession, user: UserSnapshot, payload: Mappin
         error=None,
     )
     await _cache_quote(cache_key, quote_response, now)
-    credit_metrics.quote_succeeded(
-        model=billing.resource_id,
-        action=billing.action,
-        charged_credits=quote.charged_credits,
-    )
+    _record_quote_success(billing.resource_id, billing.action, quote.charged_credits)
     return quote_response
 
 
@@ -228,7 +220,7 @@ async def get_image_credit_quote(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
     snapshot = _user_snapshot(user)
-    _enforce_rate_limit(_quote_limiter, f'credits:quote:{snapshot.id}')
+    await _enforce_rate_limit(_quote_limiter, f'credits:quote:{snapshot.id}')
     payload = quote_request.model_dump()
     try:
         return await quote_image(session, snapshot, payload)
@@ -278,7 +270,7 @@ async def get_video_credit_quote(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
     snapshot = _user_snapshot(user)
-    _enforce_rate_limit(_quote_limiter, f'credits:quote:{snapshot.id}')
+    await _enforce_rate_limit(_quote_limiter, f'credits:quote:{snapshot.id}')
     try:
         return await quote_video(session, snapshot, quote_request)
     except CreditError as error:
@@ -314,7 +306,7 @@ async def get_my_credit_ledger(
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_ledger_limiter, f'credits:ledger:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_ledger_limiter, f'credits:ledger:{_user_snapshot(user).id}')
     try:
         page = await list_user_ledger(session, _user_snapshot(user).id, query)
     except CreditError as error:
@@ -335,7 +327,7 @@ async def redeem_my_credit_code(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
     snapshot = _user_snapshot(user)
-    _enforce_rate_limit(_redeem_limiter, f'credits:redeem:{snapshot.id}')
+    await _enforce_rate_limit(_redeem_limiter, f'credits:redeem:{snapshot.id}')
     audit = _audit_context(request)
     try:
         result = await redeem_code(session, redeem_code_header, snapshot, audit)

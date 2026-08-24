@@ -13,6 +13,7 @@ from open_webui.extensions.creations import db as creation_db
 from open_webui.extensions.creations.db import CreationBase
 from open_webui.extensions.creations.migrations.runner import run_creation_migrations
 from open_webui.extensions.creations.models import CreationMediaItem
+from open_webui.extensions.tests.migration_assertions import schema_fingerprint, sqlite_upstream_fingerprint
 from open_webui.internal import db as upstream_db
 from sqlalchemy import BigInteger, CheckConstraint, MetaData, Table, Text, create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
@@ -82,16 +83,6 @@ BIGINT_COLUMNS = {
 TEXT_COLUMNS = {'ext_creation_media_item': {'prompt', 'negative_prompt'}}
 
 
-def _sqlite_fingerprint(connection):
-    rows = connection.execute(
-        text(
-            'SELECT type, name, tbl_name, sql FROM sqlite_master '
-            "WHERE name = 'user' OR tbl_name = 'user' ORDER BY type, name"
-        )
-    ).fetchall()
-    return [(row.type, row.name, row.tbl_name, row.sql) for row in rows]
-
-
 def _upgrade_sqlite(engine) -> None:
     with engine.connect() as connection:
         run_creation_migrations(connection=connection, verify_upstream=False)
@@ -110,12 +101,12 @@ def test_upgrade_creates_only_creation_objects_and_preserves_upstream_sentinel(s
     with engine.begin() as connection:
         connection.execute(text('CREATE TABLE user (id VARCHAR(128) PRIMARY KEY, name VARCHAR(128) NOT NULL)'))
         connection.execute(text('CREATE UNIQUE INDEX ix_user_name ON user (name)'))
-        before = _sqlite_fingerprint(connection)
+        before = sqlite_upstream_fingerprint(connection)
 
     _upgrade_sqlite(engine)
 
     with engine.connect() as connection:
-        assert _sqlite_fingerprint(connection) == before
+        assert sqlite_upstream_fingerprint(connection) == before
         names = set(inspect(connection).get_table_names())
         assert names == {'user', *TABLE_NAMES, 'ext_creation_schema_version'}
         assert 'alembic_version' not in names
@@ -181,6 +172,10 @@ def test_revision_has_required_constraints_and_indexes(sqlite_database):
     ]
     task_unique = {constraint['name'] for constraint in inspector.get_unique_constraints('ext_image_generation_task')}
     assert task_unique >= {'uq_ext_image_task_user_key'}
+    image_task_columns = {
+        column['name']: column for column in inspector.get_columns('ext_image_generation_task')
+    }
+    assert image_task_columns['payload_sha256']['nullable'] is False
     video_task_unique = {
         constraint['name'] for constraint in inspector.get_unique_constraints('ext_video_generation_task')
     }
@@ -210,9 +205,7 @@ def test_orm_metadata_matches_the_revision_table(sqlite_database):
         # 此前 ck_ext_video_task_execution_mode/delivery_attempts 只存在于
         # 迁移（ORM 建表路径漏掉，create_all 与生产 schema 分叉）。
         orm_checks = {
-            constraint.name
-            for constraint in model_table.constraints
-            if isinstance(constraint, CheckConstraint)
+            constraint.name for constraint in model_table.constraints if isinstance(constraint, CheckConstraint)
         }
         migrated_checks = {constraint['name'] for constraint in inspector.get_check_constraints(table_name)}
         assert orm_checks == migrated_checks, (table_name, orm_checks, migrated_checks)
@@ -311,42 +304,6 @@ def test_production_adapter_identity():
     assert CreationBase.metadata.schema == upstream_env.DATABASE_SCHEMA
 
 
-def _schema_fingerprint(connection, schema: str) -> dict:
-    inspector = inspect(connection)
-    fingerprint = {}
-    for table_name in inspector.get_table_names(schema=schema):
-        fingerprint[table_name] = {
-            'columns': [
-                (column['name'], str(column['type']), column['nullable'], str(column.get('default')))
-                for column in inspector.get_columns(table_name, schema=schema)
-            ],
-            'indexes': sorted(
-                (index['name'], tuple(index['column_names']), index['unique'])
-                for index in inspector.get_indexes(table_name, schema=schema)
-            ),
-            'unique': sorted(
-                (constraint['name'], tuple(constraint['column_names']))
-                for constraint in inspector.get_unique_constraints(table_name, schema=schema)
-            ),
-            'foreign_keys': sorted(
-                (
-                    constraint.get('name'),
-                    tuple(constraint['constrained_columns']),
-                    constraint.get('referred_schema'),
-                    constraint['referred_table'],
-                    tuple(constraint['referred_columns']),
-                    constraint.get('options', {}).get('ondelete'),
-                )
-                for constraint in inspector.get_foreign_keys(table_name, schema=schema)
-            ),
-            'checks': sorted(
-                (constraint['name'], constraint['sqltext'])
-                for constraint in inspector.get_check_constraints(table_name, schema=schema)
-            ),
-        }
-    return fingerprint
-
-
 def _postgres_tables(schema: str) -> dict[str, Table]:
     metadata = MetaData()
     return {table.name: table.to_metadata(metadata, schema=schema) for table in (CreationMediaItem.__table__,)}
@@ -361,7 +318,7 @@ def test_postgresql_non_public_schema_concurrent_migrations_and_constraints():
     schema = f'creation_test_{uuid4().hex}'
     try:
         with engine.connect() as connection:
-            public_before = _schema_fingerprint(connection, 'public')
+            public_before = schema_fingerprint(connection, 'public')
             connection.rollback()
         with engine.begin() as connection:
             connection.execute(text(f'CREATE SCHEMA "{schema}"'))
@@ -456,7 +413,7 @@ def test_postgresql_non_public_schema_concurrent_migrations_and_constraints():
                 )
 
         with engine.connect() as connection:
-            assert _schema_fingerprint(connection, 'public') == public_before
+            assert schema_fingerprint(connection, 'public') == public_before
             connection.rollback()
     finally:
         with engine.begin() as connection:

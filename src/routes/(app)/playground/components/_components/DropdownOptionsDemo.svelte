@@ -11,7 +11,8 @@
 
 <DemoCard
 	title="DropdownOptions"
-	desc={$i18n.t('Select wrapper with ChevronDown. Default items: New / Top. bind:value, onChange.')}>
+	desc={$i18n.t('Select wrapper with ChevronDown. Default items: New / Top. bind:value, onChange.')}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<DropdownOptions
 			bind:value

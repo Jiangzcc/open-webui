@@ -1,240 +1,49 @@
-export const DEFAULT_IMAGE_ASPECT_RATIO = 'auto' as const;
-
-export const IMAGE_ASPECT_RATIO_OPTIONS = [
+import {
+	normalizeAdvancedFields,
+	normalizeCustomSizeConstraints,
+	normalizePresetSizes
+} from './image-generation-capabilities';
+import {
 	DEFAULT_IMAGE_ASPECT_RATIO,
-	'1:1',
-	'16:9',
-	'9:16',
-	'3:4',
-	'4:3',
-	'3:2',
-	'2:3',
-	'2.35:1',
-	'21:9',
-	'2:1',
-	'1:2',
-	'20:9',
-	'9:20',
-	'19.5:9',
-	'9:19.5',
-	'5:4',
-	'4:5',
-	'4:1',
-	'1:4',
-	'8:1',
-	'1:8'
-] as const;
+	DEFAULT_IMAGE_COUNT_OPTIONS,
+	IMAGE_ASPECT_RATIO_OPTIONS,
+	type FileLike,
+	type GeneratedImage,
+	type ImageAspectRatio,
+	type ImageEditPayload,
+	type ImageEditPayloadInput,
+	type ImageGenerationModel,
+	type ImageGenerationPayload,
+	type ImageModelCapability,
+	type ImagePayloadInput,
+	type RejectedImageFile
+} from './image-generation-types';
+import {
+	DALL_E_3_ASPECT_RATIO_SIZES,
+	DEFAULT_IMAGE_ASPECT_RATIO_SIZES,
+	DEFAULT_MODEL_CAPABILITY,
+	GPT_IMAGE_ASPECT_RATIO_SIZES
+} from './image-generation-presets';
 
-export const DEFAULT_IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
+export {
+	validateCustomSize,
+	type CustomSizeConstraints,
+	type CustomSizeValidationError,
+	type ImageAdvancedField,
+	type ImageAdvancedFieldName
+} from './image-generation-capabilities';
 
-export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number];
-
-export type ImageGenerationPayload = {
-	prompt: string;
-	model?: string;
-	size?: string;
-	n?: number;
-	steps?: number;
-	negative_prompt?: string;
-	aspect_ratio?: string;
-	resolution?: string;
-	quality?: string;
-	output_format?: string;
-	system_prompt?: string;
-	seed?: number;
-	guidance_scale?: number;
-	strength?: number;
-};
-
-export type ImageEditPayload = ImageGenerationPayload & {
-	image: string | string[];
-	background?: string;
-};
-
-export type GeneratedImage = {
-	url: string;
-	prompt?: string;
-	aspectRatio?: ImageAspectRatio;
-	createdAt?: number;
-};
-
-export type ImageGenerationModel = {
-	id: string;
-	name?: string;
-	provider?: string;
-	task?: 'text-to-image' | 'image-to-image' | string;
-	generationModel?: string;
-	editModel?: string;
-	isDefault?: boolean;
-	aspectRatios?: ImageAspectRatio[];
-	resolutions?: string[];
-	imageCounts?: number[];
-	maxImages?: number;
-	defaultAspectRatio?: ImageAspectRatio;
-	defaultResolution?: string;
-	aspectRatioSizes?: Partial<Record<ImageAspectRatio, string>>;
-	sizeField?: string;
-	supportsAspectRatioField?: boolean;
-	outputFormats?: string[];
-	defaultOutputFormat?: string;
-	qualityOptions?: string[];
-	defaultQuality?: string;
-	hosting?: string;
-	basePrice?: string;
-	editBasePrice?: string;
-	visible?: boolean;
-	enabled?: boolean;
-	recommended?: boolean;
-	sortOrder?: number;
-	tags?: string[];
-	maintenanceMessage?: string;
-	/**
-	 * Cap on how many reference images a single image-to-image request accepts.
-	 * Backend declares `image_input_max_count` (1 for single-image families);
-	 * the frontend mirrors it to tighten the uploader’s slot budget.
-	 */
-	imageInputMaxCount?: number;
-	/**
-	 * Per-model rules for free-form {width, height} input. Present only on models
-	 * whose backend declares `custom_size`. The frontend uses these to validate
-	 * user-typed dimensions; the backend re-validates authoritatively.
-	 */
-	customSize?: CustomSizeConstraints;
-	presetSizes?: string[];
-	advancedFields?: ImageAdvancedField[];
-};
-
-export type ImageAdvancedFieldName =
-	| 'seed'
-	| 'negative_prompt'
-	| 'steps'
-	| 'guidance_scale'
-	| 'strength';
-
-export type ImageAdvancedField = {
-	field: ImageAdvancedFieldName;
-	kind: 'integer' | 'number' | 'text';
-	min?: number;
-	max?: number;
-};
-
-export type CustomSizeConstraints = {
-	minWidth?: number;
-	maxWidth?: number;
-	minHeight?: number;
-	maxHeight?: number;
-	multipleOf?: number;
-	minPixels?: number;
-	maxPixels?: number;
-	aspectRatioMin?: number;
-	aspectRatioMax?: number;
-};
-
-export type ImageModelCapability = {
-	aspectRatios: ImageAspectRatio[];
-	resolutions: string[];
-	imageCounts: number[];
-	defaultAspectRatio: ImageAspectRatio;
-	defaultResolution?: string;
-	aspectRatioSizes: Partial<Record<ImageAspectRatio, string>>;
-	sizeField?: string;
-	supportsAspectRatioField?: boolean;
-	outputFormats: string[];
-	defaultOutputFormat?: string;
-	qualityOptions: string[];
-	defaultQuality?: string;
-	customSize?: CustomSizeConstraints;
-	presetSizes: string[];
-	advancedFields: ImageAdvancedField[];
-};
-
-type ImagePayloadInput = {
-	prompt: string;
-	aspectRatio?: unknown;
-	model?: ImageGenerationModel | string | null;
-	size?: string | null;
-	resolution?: string | null;
-	quality?: string | null;
-	n?: number | null;
-	steps?: number | null;
-	negative_prompt?: string | null;
-	output_format?: string | null;
-	seed?: number | null;
-	guidance_scale?: number | null;
-	strength?: number | null;
-};
-
-type ImageEditPayloadInput = ImagePayloadInput & {
-	referenceImages: string[];
-	background?: string | null;
-};
-
-type FileLike = {
-	name?: string;
-	type?: string;
-	size?: number;
-};
-
-type RejectedImageFile = {
-	file: FileLike;
-	reason: 'unsupported_type' | 'too_large' | 'too_many';
-};
-
-const DEFAULT_IMAGE_ASPECT_RATIO_SIZES: Record<ImageAspectRatio, string | undefined> = {
-	auto: undefined,
-	'1:1': '1024x1024',
-	'16:9': '1792x1024',
-	'9:16': '1024x1792',
-	'3:4': '768x1024',
-	'4:3': '1024x768',
-	'3:2': '1536x1024',
-	'2:3': '1024x1536',
-	'2.35:1': '1536x654',
-	'21:9': '1536x640',
-	'2:1': '1536x768',
-	'1:2': '768x1536',
-	'20:9': '1536x691',
-	'9:20': '691x1536',
-	'19.5:9': '1536x709',
-	'9:19.5': '709x1536',
-	'5:4': '1280x1024',
-	'4:5': '1024x1280',
-	'4:1': '1536x384',
-	'1:4': '384x1536',
-	'8:1': '1536x192',
-	'1:8': '192x1536'
-};
-
-const GPT_IMAGE_ASPECT_RATIO_SIZES: Partial<Record<ImageAspectRatio, string>> = {
-	'1:1': '1024x1024',
-	'16:9': '1536x864',
-	'9:16': '864x1536',
-	'3:4': '1152x1536',
-	'4:3': '1536x1152',
-	'3:2': '1536x1024',
-	'2:3': '1024x1536',
-	'21:9': '1536x640',
-	'5:4': '1280x1024',
-	'4:5': '1024x1280'
-};
-
-const DALL_E_3_ASPECT_RATIO_SIZES: Partial<Record<ImageAspectRatio, string>> = {
-	'1:1': '1024x1024',
-	'16:9': '1792x1024',
-	'9:16': '1024x1792'
-};
-
-const DEFAULT_MODEL_CAPABILITY: ImageModelCapability = {
-	aspectRatios: [...IMAGE_ASPECT_RATIO_OPTIONS],
-	resolutions: [],
-	imageCounts: [...DEFAULT_IMAGE_COUNT_OPTIONS],
-	defaultAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
-	aspectRatioSizes: DEFAULT_IMAGE_ASPECT_RATIO_SIZES,
-	outputFormats: [],
-	qualityOptions: [],
-	presetSizes: [],
-	advancedFields: []
-};
+export {
+	DEFAULT_IMAGE_ASPECT_RATIO,
+	DEFAULT_IMAGE_COUNT_OPTIONS,
+	IMAGE_ASPECT_RATIO_OPTIONS,
+	type GeneratedImage,
+	type ImageAspectRatio,
+	type ImageEditPayload,
+	type ImageGenerationModel,
+	type ImageGenerationPayload,
+	type ImageModelCapability
+} from './image-generation-types';
 
 const isPositiveInteger = (value?: number | null) => {
 	return Number.isInteger(value) && Number(value) > 0;
@@ -342,187 +151,6 @@ const normalizeAspectRatioSizeMap = (value: unknown) => {
 
 const hasOwn = (value: object, key: string) => {
 	return Object.prototype.hasOwnProperty.call(value, key);
-};
-
-const isPositiveNumber = (value: unknown): value is number =>
-	typeof value === 'number' && Number.isFinite(value) && value > 0;
-
-const normalizeCustomSizeConstraints = (value: unknown): CustomSizeConstraints | undefined => {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		return undefined;
-	}
-	const src = value as Record<string, unknown>;
-	const pick = (key: string, isInt = true): number | undefined => {
-		const v = src[key];
-		if (!isPositiveNumber(v)) {
-			return undefined;
-		}
-		return isInt ? Math.floor(v as number) : (v as number);
-	};
-	const result: CustomSizeConstraints = {};
-	const minWidth = pick('min_width');
-	const maxWidth = pick('max_width');
-	const minHeight = pick('min_height');
-	const maxHeight = pick('max_height');
-	const multipleOf = pick('multiple_of');
-	const minPixels = pick('min_pixels');
-	const maxPixels = pick('max_pixels');
-	const aspectRatioMin = pick('aspect_ratio_min', false);
-	const aspectRatioMax = pick('aspect_ratio_max', false);
-	if (minWidth !== undefined) result.minWidth = minWidth;
-	if (maxWidth !== undefined) result.maxWidth = maxWidth;
-	if (minHeight !== undefined) result.minHeight = minHeight;
-	if (maxHeight !== undefined) result.maxHeight = maxHeight;
-	if (multipleOf !== undefined) result.multipleOf = multipleOf;
-	if (minPixels !== undefined) result.minPixels = minPixels;
-	if (maxPixels !== undefined) result.maxPixels = maxPixels;
-	if (aspectRatioMin !== undefined) result.aspectRatioMin = aspectRatioMin;
-	if (aspectRatioMax !== undefined) result.aspectRatioMax = aspectRatioMax;
-	return Object.keys(result).length > 0 ? result : undefined;
-};
-
-const normalizePresetSizes = (value: unknown): string[] => {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
-		return [];
-	}
-	return Object.keys(value as Record<string, unknown>)
-		.filter((key) => /^\d+x\d+$/.test(key))
-		.sort((a, b) => {
-			const [aw, ah] = a.split('x').map(Number);
-			const [bw, bh] = b.split('x').map(Number);
-			return aw * ah - bw * bh;
-		});
-};
-
-const IMAGE_ADVANCED_FIELD_NAMES = new Set<ImageAdvancedFieldName>([
-	'seed',
-	'negative_prompt',
-	'steps',
-	'guidance_scale',
-	'strength'
-]);
-
-const normalizeAdvancedFields = (value: unknown): ImageAdvancedField[] => {
-	if (!Array.isArray(value)) return [];
-	const seen = new Set<ImageAdvancedFieldName>();
-	return value.flatMap((item) => {
-		if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
-		const source = item as Record<string, unknown>;
-		const field = source.field as ImageAdvancedFieldName;
-		const kind = source.kind;
-		if (
-			!IMAGE_ADVANCED_FIELD_NAMES.has(field) ||
-			!['integer', 'number', 'text'].includes(String(kind)) ||
-			seen.has(field)
-		) {
-			return [];
-		}
-		const min =
-			typeof source.min === 'number' && Number.isFinite(source.min) ? source.min : undefined;
-		const max =
-			typeof source.max === 'number' && Number.isFinite(source.max) ? source.max : undefined;
-		if (min !== undefined && max !== undefined && min > max) return [];
-		seen.add(field);
-		return [
-			{
-				field,
-				kind: kind as ImageAdvancedField['kind'],
-				...(min !== undefined && { min }),
-				...(max !== undefined && { max })
-			}
-		];
-	});
-};
-
-export type CustomSizeValidationError = {
-	field: 'width' | 'height' | 'pixels' | 'aspect';
-	// i18n key consumed by the caller via `$i18n.t(message, messageParams)`.
-	// Using the English literal as the i18n key follows the repo convention
-	// (see "Minimum: {{value}}" / "Maximum: {{value}}") so en-US falls back to
-	// the key itself and zh-CN supplies the translated string.
-	message: string;
-	messageParams?: Record<string, string | number>;
-};
-
-export const validateCustomSize = (
-	width: number,
-	height: number,
-	constraints?: CustomSizeConstraints
-): CustomSizeValidationError | null => {
-	if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
-		return { field: 'width', message: 'Width and height must be positive integers' };
-	}
-	if (!constraints) {
-		return null;
-	}
-	if (constraints.minWidth !== undefined && width < constraints.minWidth) {
-		return {
-			field: 'width',
-			message: 'Width must be at least {{min}}',
-			messageParams: { min: constraints.minWidth }
-		};
-	}
-	if (constraints.maxWidth !== undefined && width > constraints.maxWidth) {
-		return {
-			field: 'width',
-			message: 'Width must be at most {{max}}',
-			messageParams: { max: constraints.maxWidth }
-		};
-	}
-	if (constraints.minHeight !== undefined && height < constraints.minHeight) {
-		return {
-			field: 'height',
-			message: 'Height must be at least {{min}}',
-			messageParams: { min: constraints.minHeight }
-		};
-	}
-	if (constraints.maxHeight !== undefined && height > constraints.maxHeight) {
-		return {
-			field: 'height',
-			message: 'Height must be at most {{max}}',
-			messageParams: { max: constraints.maxHeight }
-		};
-	}
-	if (
-		constraints.multipleOf !== undefined &&
-		(width % constraints.multipleOf || height % constraints.multipleOf)
-	) {
-		return {
-			field: 'width',
-			message: 'Dimensions must be a multiple of {{multipleOf}}',
-			messageParams: { multipleOf: constraints.multipleOf }
-		};
-	}
-	const pixels = width * height;
-	if (constraints.minPixels !== undefined && pixels < constraints.minPixels) {
-		return {
-			field: 'pixels',
-			message: 'Total pixels must be at least {{min}}',
-			messageParams: { min: constraints.minPixels }
-		};
-	}
-	if (constraints.maxPixels !== undefined && pixels > constraints.maxPixels) {
-		return {
-			field: 'pixels',
-			message: 'Total pixels must be at most {{max}}',
-			messageParams: { max: constraints.maxPixels }
-		};
-	}
-	if (constraints.aspectRatioMin !== undefined && width / height < constraints.aspectRatioMin) {
-		return {
-			field: 'aspect',
-			message: 'Aspect ratio is below the minimum ({{min}})',
-			messageParams: { min: constraints.aspectRatioMin }
-		};
-	}
-	if (constraints.aspectRatioMax !== undefined && width / height > constraints.aspectRatioMax) {
-		return {
-			field: 'aspect',
-			message: 'Aspect ratio is above the maximum ({{max}})',
-			messageParams: { max: constraints.aspectRatioMax }
-		};
-	}
-	return null;
 };
 
 const getImageCountsFromMax = (maxImages?: number) => {

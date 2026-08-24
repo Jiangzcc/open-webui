@@ -15,6 +15,7 @@ from open_webui.extensions.credits.constants import (
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.schemas import (
     AdjustmentRequest,
+    AdminLedgerQuery,
     ExactMapRule,
     IdempotencyKey,
     LedgerItem,
@@ -45,6 +46,13 @@ def test_adjustment_amount_requires_strict_integer(amount: object) -> None:
 def test_adjustment_rejects_unknown_reason() -> None:
     with pytest.raises(ValidationError):
         AdjustmentRequest(direction='increase', amount=1, reason_code='not_approved')
+
+
+def test_admin_ledger_query_accepts_redeem_and_rejects_unknown_reason() -> None:
+    assert AdminLedgerQuery(reason_code='redeem').reason_code == 'redeem'
+
+    with pytest.raises(ValidationError):
+        AdminLedgerQuery(reason_code='not_approved')
 
 
 @pytest.mark.parametrize('note', [None, '', '   '])

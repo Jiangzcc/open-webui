@@ -131,6 +131,106 @@ async def _public_owners(user_ids: Iterable[str]) -> dict[str, PublicOwner]:
     }
 
 
+async def _owned_publishable_item(
+    session: AsyncSession,
+    user_id: str,
+    creation_id: str,
+) -> CreationMediaItem | None:
+    item = await session.scalar(
+        select(CreationMediaItem)
+        .where(
+            CreationMediaItem.id == creation_id,
+            CreationMediaItem.user_id == user_id,
+            CreationMediaItem.soft_deleted.is_(False),
+        )
+        .limit(1)
+    )
+    if item is None:
+        return None
+    file = (await _load_files([item.file_id])).get(item.file_id)
+    return item if file is not None and getattr(file, 'user_id', None) == user_id else None
+
+
+async def _post_for_creation(session: AsyncSession, creation_id: str) -> CreationPost | None:
+    return await session.scalar(
+        select(CreationPost)
+        .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
+        .where(CreationPostMedia.creation_id == creation_id)
+        .limit(1)
+    )
+
+
+async def _validated_category(
+    session: AsyncSession,
+    category: str,
+    *,
+    allow_hidden: bool,
+) -> str:
+    if not await _category_exists(session, category, include_disabled=allow_hidden):
+        raise ValueError('invalid discovery category')
+    return category
+
+
+def _new_post(user_id: str, form: PublishCreationForm, category: str, now: int) -> CreationPost:
+    return CreationPost(
+        id=str(uuid4()),
+        user_id=user_id,
+        status='published',
+        title=form.title,
+        description=form.description,
+        show_prompt=form.show_prompt,
+        category=category,
+        featured_at=None,
+        featured_rank=1000,
+        like_count=0,
+        favorite_count=0,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+async def _update_post_for_publish(
+    session: AsyncSession,
+    post: CreationPost,
+    form: PublishCreationForm,
+    now: int,
+    *,
+    allow_hidden: bool,
+) -> None:
+    if form.category is not None:
+        post.category = await _validated_category(session, form.category, allow_hidden=allow_hidden)
+    post.status = 'published'
+    post.title = form.title
+    post.description = form.description
+    post.show_prompt = form.show_prompt
+    post.published_at = now
+    post.updated_at = now
+
+
+async def _commit_new_publication(
+    session: AsyncSession,
+    post: CreationPost,
+    user_id: str,
+    creation_id: str,
+    *,
+    created_post: bool,
+) -> CreationPost:
+    try:
+        await session.commit()
+        return post
+    except IntegrityError:
+        if not created_post:
+            raise
+        # The unique creation_id relation chooses one concurrent winner; a
+        # matching loser is an idempotent publish, not a server error.
+        await session.rollback()
+        winner = await _post_for_creation(session, creation_id)
+        if winner is None or winner.user_id != user_id:
+            raise
+        return winner
+
+
 async def publish_creation(
     session: AsyncSession,
     user_id: str,
@@ -139,76 +239,29 @@ async def publish_creation(
     *,
     allow_hidden: bool = False,
 ) -> CreationPublication | None:
-    item = (
-        await session.execute(
-            select(CreationMediaItem)
-            .where(
-                CreationMediaItem.id == creation_id,
-                CreationMediaItem.user_id == user_id,
-                CreationMediaItem.soft_deleted.is_(False),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if item is None:
+    if await _owned_publishable_item(session, user_id, creation_id) is None:
         return None
-    file = (await _load_files([item.file_id])).get(item.file_id)
-    if file is None or getattr(file, 'user_id', None) != user_id:
-        return None
-
-    post = (
-        await session.execute(
-            select(CreationPost)
-            .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
-            .where(CreationPostMedia.creation_id == creation_id)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    post = await _post_for_creation(session, creation_id)
     now = _now()
-    if post is None:
-        category = form.category or 'other'
-        if not await _category_exists(session, category, include_disabled=allow_hidden):
-            raise ValueError('invalid discovery category')
-        post = CreationPost(
-            id=str(uuid4()),
-            user_id=user_id,
-            status='published',
-            title=form.title,
-            description=form.description,
-            show_prompt=form.show_prompt,
-            category=category,
-            featured_at=None,
-            featured_rank=1000,
-            like_count=0,
-            favorite_count=0,
-            published_at=now,
-            created_at=now,
-            updated_at=now,
-        )
+    created_post = post is None
+    if created_post:
+        category = await _validated_category(session, form.category or 'other', allow_hidden=allow_hidden)
+        post = _new_post(user_id, form, category, now)
         session.add(post)
-        session.add(
-            CreationPostMedia(
-                post_id=post.id,
-                creation_id=creation_id,
-                position=0,
-                created_at=now,
-            )
-        )
+        session.add(CreationPostMedia(post_id=post.id, creation_id=creation_id, position=0, created_at=now))
     else:
         if post.user_id != user_id or (post.status == 'hidden' and not allow_hidden):
             return None
-        if form.category is not None:
-            if not await _category_exists(session, form.category, include_disabled=allow_hidden):
-                raise ValueError('invalid discovery category')
-            post.category = form.category
-        post.status = 'published'
-        post.title = form.title
-        post.description = form.description
-        post.show_prompt = form.show_prompt
-        post.published_at = now
-        post.updated_at = now
-    await session.commit()
-    return _publication(post)
+        await _update_post_for_publish(session, post, form, now, allow_hidden=allow_hidden)
+    return _publication(
+        await _commit_new_publication(
+            session,
+            post,
+            user_id,
+            creation_id,
+            created_post=created_post,
+        )
+    )
 
 
 async def withdraw_creation(session: AsyncSession, user_id: str, creation_id: str) -> bool:
@@ -326,29 +379,79 @@ def _visible_posts_stmt():
         select(CreationPost, CreationMediaItem)
         .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
         .join(CreationMediaItem, CreationMediaItem.id == CreationPostMedia.creation_id)
+        .join(DiscoveryCategorySetting, DiscoveryCategorySetting.id == CreationPost.category)
         .where(
             CreationPost.status == 'published',
             CreationMediaItem.soft_deleted.is_(False),
+            DiscoveryCategorySetting.enabled.is_(True),
         )
     )
 
 
-async def _disabled_category_ids(session: AsyncSession) -> tuple[str, ...]:
-    """Return the ids of disabled discovery categories (public feed excludes them)."""
-    rows = (
-        await session.execute(select(DiscoveryCategorySetting.id).where(DiscoveryCategorySetting.enabled.is_(False)))
-    ).scalars()
-    return tuple(rows)
-
-
-def _apply_feed_filters(stmt, disabled_categories, category, media_kind):
-    if disabled_categories:
-        stmt = stmt.where(CreationPost.category.notin_(disabled_categories))
+def _apply_feed_filters(stmt, category, media_kind):
     if category is not None:
         stmt = stmt.where(CreationPost.category == category)
     if media_kind is not None:
         stmt = stmt.where(CreationMediaItem.kind == media_kind)
     return stmt
+
+
+def _apply_discovery_cursor(stmt, sort: DiscoverySort, cursor: str, popularity):
+    primary, published_at, post_id = _decode_cursor(cursor)
+    if sort == 'featured':
+        return stmt.where(
+            or_(
+                CreationPost.featured_rank > primary,
+                and_(CreationPost.featured_rank == primary, CreationPost.featured_at < published_at),
+                and_(
+                    CreationPost.featured_rank == primary,
+                    CreationPost.featured_at == published_at,
+                    CreationPost.id < post_id,
+                ),
+            )
+        )
+    if sort == 'popular':
+        return stmt.where(
+            or_(
+                popularity < primary,
+                and_(popularity == primary, CreationPost.published_at < published_at),
+                and_(popularity == primary, CreationPost.published_at == published_at, CreationPost.id < post_id),
+            )
+        )
+    return stmt.where(
+        or_(
+            CreationPost.published_at < published_at,
+            and_(CreationPost.published_at == published_at, CreationPost.id < post_id),
+        )
+    )
+
+
+def _order_discovery_posts(stmt, sort: DiscoverySort, popularity):
+    if sort == 'featured':
+        return stmt.order_by(
+            CreationPost.featured_rank.asc(),
+            desc(CreationPost.featured_at),
+            desc(CreationPost.id),
+        )
+    if sort == 'popular':
+        return stmt.order_by(desc(popularity), desc(CreationPost.published_at), desc(CreationPost.id))
+    return stmt.order_by(desc(CreationPost.published_at), desc(CreationPost.id))
+
+
+def _discovery_next_cursor(rows: list, page: list, limit: int, sort: DiscoverySort) -> str | None:
+    if len(rows) <= limit:
+        return None
+    post = page[-1][0]
+    if sort == 'featured':
+        primary = post.featured_rank
+        cursor_time = post.featured_at
+    elif sort == 'popular':
+        primary = post.favorite_count * 2 + post.like_count
+        cursor_time = post.published_at
+    else:
+        primary = post.published_at
+        cursor_time = post.published_at
+    return _encode_cursor(primary, cursor_time or 0, post.id)
 
 
 async def list_discovery_posts(
@@ -361,72 +464,16 @@ async def list_discovery_posts(
     media_kind: str | None = None,
 ) -> DiscoveryPostListResponse:
     stmt = _visible_posts_stmt()
-    # 公开动态排除已禁用分类的帖子：分类选择器隐藏已禁用分类，动态亦不应泄露其内容。
-    disabled_categories = await _disabled_category_ids(session)
-    stmt = _apply_feed_filters(stmt, disabled_categories, category, media_kind)
+    stmt = _apply_feed_filters(stmt, category, media_kind)
     if sort == 'featured':
         stmt = stmt.where(CreationPost.featured_at.is_not(None))
     popularity = CreationPost.favorite_count * 2 + CreationPost.like_count
     if cursor:
-        primary, published_at, post_id = _decode_cursor(cursor)
-        if sort == 'featured':
-            stmt = stmt.where(
-                or_(
-                    CreationPost.featured_rank > primary,
-                    and_(
-                        CreationPost.featured_rank == primary,
-                        CreationPost.featured_at < published_at,
-                    ),
-                    and_(
-                        CreationPost.featured_rank == primary,
-                        CreationPost.featured_at == published_at,
-                        CreationPost.id < post_id,
-                    ),
-                )
-            )
-        elif sort == 'popular':
-            stmt = stmt.where(
-                or_(
-                    popularity < primary,
-                    and_(popularity == primary, CreationPost.published_at < published_at),
-                    and_(
-                        popularity == primary,
-                        CreationPost.published_at == published_at,
-                        CreationPost.id < post_id,
-                    ),
-                )
-            )
-        else:
-            stmt = stmt.where(
-                or_(
-                    CreationPost.published_at < published_at,
-                    and_(CreationPost.published_at == published_at, CreationPost.id < post_id),
-                )
-            )
-    if sort == 'featured':
-        stmt = stmt.order_by(
-            CreationPost.featured_rank.asc(),
-            desc(CreationPost.featured_at),
-            desc(CreationPost.id),
-        )
-    elif sort == 'popular':
-        stmt = stmt.order_by(desc(popularity), desc(CreationPost.published_at), desc(CreationPost.id))
-    else:
-        stmt = stmt.order_by(desc(CreationPost.published_at), desc(CreationPost.id))
+        stmt = _apply_discovery_cursor(stmt, sort, cursor, popularity)
+    stmt = _order_discovery_posts(stmt, sort, popularity)
     rows = list((await session.execute(stmt.limit(limit + 1))).all())
     page = rows[:limit]
-    next_cursor = None
-    if len(rows) > limit:
-        post = page[-1][0]
-        primary = (
-            post.featured_rank
-            if sort == 'featured'
-            else post.favorite_count * 2 + post.like_count
-            if sort == 'popular'
-            else post.published_at
-        )
-        cursor_time = post.featured_at if sort == 'featured' else post.published_at
-        next_cursor = _encode_cursor(primary, cursor_time or 0, post.id)
+    next_cursor = _discovery_next_cursor(rows, page, limit, sort)
     return DiscoveryPostListResponse(items=await _summaries(session, user_id, page), next_cursor=next_cursor)
 
 
@@ -446,8 +493,7 @@ async def list_favorite_posts(
             CreationPostReaction.kind == 'favorite',
         ),
     )
-    disabled_categories = await _disabled_category_ids(session)
-    stmt = _apply_feed_filters(stmt, disabled_categories, category, media_kind)
+    stmt = _apply_feed_filters(stmt, category, media_kind)
     if cursor:
         _, published_at, post_id = _decode_cursor(cursor)
         stmt = stmt.where(
@@ -613,21 +659,22 @@ async def set_reaction(
     kind: ReactionKind,
     active: bool,
 ) -> ReactionState | None:
-    post = (
-        await session.execute(
-            select(CreationPost)
-            .join(CreationPostMedia, CreationPostMedia.post_id == CreationPost.id)
-            .join(CreationMediaItem, CreationMediaItem.id == CreationPostMedia.creation_id)
-            .where(
-                CreationPost.id == post_id,
-                CreationPost.status == 'published',
-                CreationMediaItem.soft_deleted.is_(False),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if post is None:
+    visible = (await session.execute(_visible_posts_stmt().where(CreationPost.id == post_id).limit(1))).first()
+    if visible is None:
         return None
+    await _apply_reaction(session, user_id, post_id, kind, active)
+    await _refresh_reaction_counts(session, post_id)
+    await session.commit()
+    return await _reaction_state(session, user_id, post_id, kind)
+
+
+async def _apply_reaction(
+    session: AsyncSession,
+    user_id: str,
+    post_id: str,
+    kind: ReactionKind,
+    active: bool,
+) -> None:
     existing = (
         await session.execute(
             select(CreationPostReaction).where(
@@ -654,8 +701,10 @@ async def set_reaction(
                 CreationPostReaction.kind == kind,
             )
         )
-    # 复盘 P1：计数重算为单条原子 UPDATE（子查询在数据库端执行），消除
-    # Python 侧"读统计→赋值"间隙下并发反应互相覆盖计数的丢更新窗口。
+
+
+async def _refresh_reaction_counts(session: AsyncSession, post_id: str) -> None:
+    """Recount atomically so concurrent reactions cannot overwrite totals."""
     await session.execute(
         update(CreationPost)
         .where(CreationPost.id == post_id)
@@ -669,16 +718,32 @@ async def set_reaction(
             updated_at=_now(),
         )
     )
-    await session.commit()
+
+
+async def _reaction_state(
+    session: AsyncSession,
+    user_id: str,
+    post_id: str,
+    kind: ReactionKind,
+) -> ReactionState:
     fresh = (
         await session.execute(
             select(CreationPost.like_count, CreationPost.favorite_count).where(CreationPost.id == post_id)
         )
     ).one()
+    active_now = bool(
+        await session.scalar(
+            select(func.count()).where(
+                CreationPostReaction.post_id == post_id,
+                CreationPostReaction.user_id == user_id,
+                CreationPostReaction.kind == kind,
+            )
+        )
+    )
     return ReactionState(
         post_id=post_id,
         kind=kind,
-        active=active,
+        active=active_now,
         like_count=int(fresh[0]),
         favorite_count=int(fresh[1]),
     )

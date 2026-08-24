@@ -4,7 +4,8 @@ import re
 from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from open_webui.extensions.schema import StrictFrozenModel as _StrictModel
+from pydantic import Field, field_validator, model_validator
 
 _MODEL_ROUTE_PATTERN = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$')
 _PROVIDER_PATTERN = re.compile(r'^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$')
@@ -20,10 +21,6 @@ VideoAssetRole = Literal[
     'reference_audio',
 ]
 VideoAudioMode = Literal['silent', 'generate', 'upload', 'preserve', 'auto']
-
-
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
 
 
 class VideoCatalogDefaults(_StrictModel):
@@ -299,29 +296,34 @@ class FalVideoModelDefinition(_StrictModel):
             raise ValueError('video fixed fields must use lowercase snake_case')
         return values
 
-    @model_validator(mode='after')
-    def validate_capabilities(self) -> FalVideoModelDefinition:  # noqa: C901
+    def _validate_outputs(self) -> None:
         if len(self.output_mime_types) != len(set(self.output_mime_types)) or any(
             not value.startswith('video/') for value in self.output_mime_types
         ):
             raise ValueError('video outputs must use unique video MIME types')
-        if bool(self.durations) == bool(self.duration_min is not None or self.duration_max is not None):
-            if self.durations is not None or self.duration_min is not None or self.duration_max is not None:
-                raise ValueError('video duration must use either options or numeric range')
+
+    def _validate_duration(self) -> None:
+        has_range = self.duration_min is not None or self.duration_max is not None
+        if bool(self.durations) == has_range and (self.durations is not None or has_range):
+            raise ValueError('video duration must use either options or numeric range')
         if self.durations is not None:
             if len(self.durations) != len(set(self.durations)):
                 raise ValueError('video duration values must be unique')
             if self.default_duration is not None and self.default_duration not in self.durations:
                 raise ValueError('default video duration must be included in options')
-        elif self.default_duration is not None:
-            try:
-                default_duration = float(self.default_duration)
-            except ValueError as error:
-                raise ValueError('range video duration default must be numeric') from error
-            if (self.duration_min is not None and default_duration < self.duration_min) or (
-                self.duration_max is not None and default_duration > self.duration_max
-            ):
-                raise ValueError('default video duration must be within range')
+            return
+        if self.default_duration is None:
+            return
+        try:
+            default_duration = float(self.default_duration)
+        except ValueError as error:
+            raise ValueError('range video duration default must be numeric') from error
+        if (self.duration_min is not None and default_duration < self.duration_min) or (
+            self.duration_max is not None and default_duration > self.duration_max
+        ):
+            raise ValueError('default video duration must be within range')
+
+    def _validate_primary_options(self) -> None:
         for label, default, options in (
             ('aspect ratio', self.default_aspect_ratio, self.aspect_ratios),
             ('resolution', self.default_resolution, self.resolutions),
@@ -330,38 +332,46 @@ class FalVideoModelDefinition(_StrictModel):
                 raise ValueError(f'video {label} values must be unique')
             if default is not None and options and default not in options:
                 raise ValueError(f'default video {label} must be included in options')
+
+    def _validate_audio(self) -> None:
         audio_modes = [option.mode for option in self.audio_options or ()]
         if len(audio_modes) != len(set(audio_modes)):
             raise ValueError('video audio modes must be unique')
         if self.default_audio_mode is not None and self.default_audio_mode not in audio_modes:
             raise ValueError('default video audio mode must be included in options')
+
+    def _validate_assets(self) -> list[str]:
         assets = self.asset_inputs or ()
         roles = [asset.role for asset in assets]
         fields = [asset.field for asset in assets]
         if len(roles) != len(set(roles)) or len(fields) != len(set(fields)):
             raise ValueError('video asset roles and fields must be unique')
         required_roles = {asset.role for asset in assets if asset.required}
-        expected = {
-            'image-to-video': 'start_image',
-            'video-to-video': 'source_video',
-        }.get(self.task)
-        has_primary_json_input = any(field.required and field.primary_input for field in self.json_fields or ())
-        if expected is not None and expected not in required_roles and not has_primary_json_input:
+        expected = {'image-to-video': 'start_image', 'video-to-video': 'source_video'}.get(self.task)
+        has_primary_json = any(field.required and field.primary_input for field in self.json_fields or ())
+        if expected is not None and expected not in required_roles and not has_primary_json:
             raise ValueError(f'{self.task} models must require {expected}')
-        dynamic_fields = [
-            field.field
-            for group in (
-                self.option_fields,
-                self.boolean_fields,
-                self.integer_fields,
-                self.number_fields,
-                self.text_fields,
-                self.json_fields,
-            )
-            if group is not None
-            for field in group
-        ]
-        provider_fields = fields + dynamic_fields + list(self.fixed_fields)
+        return fields
+
+    def _validate_provider_fields(self, asset_fields: list[str]) -> None:
+        groups = (
+            self.option_fields,
+            self.boolean_fields,
+            self.integer_fields,
+            self.number_fields,
+            self.text_fields,
+            self.json_fields,
+        )
+        dynamic_fields = [field.field for group in groups if group is not None for field in group]
+        provider_fields = asset_fields + dynamic_fields + list(self.fixed_fields)
         if len(provider_fields) != len(set(provider_fields)):
             raise ValueError('video provider request fields must be unique')
+
+    @model_validator(mode='after')
+    def validate_capabilities(self) -> FalVideoModelDefinition:
+        self._validate_outputs()
+        self._validate_duration()
+        self._validate_primary_options()
+        self._validate_audio()
+        self._validate_provider_fields(self._validate_assets())
         return self

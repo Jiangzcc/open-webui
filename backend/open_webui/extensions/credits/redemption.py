@@ -68,9 +68,7 @@ def _new_code() -> tuple[str, str, str]:
 
 
 async def _current_user(session: AsyncSession, user_id: str) -> UserSnapshot:
-    row = (
-        await session.execute(select(User.id, User.name, User.email).where(User.id == user_id))
-    ).one_or_none()
+    row = (await session.execute(select(User.id, User.name, User.email).where(User.id == user_id))).one_or_none()
     if row is None:
         raise CreditError(code='redeem_code_invalid')
     return UserSnapshot(id=row.id, name=row.name, email=row.email)
@@ -164,27 +162,25 @@ async def _enforce_per_user_limit(
         raise CreditError(code='redeem_code_limit_reached')
 
 
-async def create_redeem_batch(
-    session: AsyncSession,
-    form: RedeemBatchCreate,
-    operator: UserSnapshot,
-    audit: RequestAuditContext,
-) -> RedeemBatchCreated:
-    created_at = _now()
-    if form.expires_at is not None and form.expires_at <= created_at:
-        raise CreditError(code='invalid_adjustment', context={'reason': 'redeem_expiry_not_future'})
-
+def _generate_unique_codes(quantity: int) -> list[tuple[str, str, str]]:
     generated: list[tuple[str, str, str]] = []
     hashes: set[str] = set()
-    while len(generated) < form.quantity:
+    while len(generated) < quantity:
         candidate = _new_code()
-        if candidate[1] in hashes:
-            continue
-        hashes.add(candidate[1])
-        generated.append(candidate)
+        if candidate[1] not in hashes:
+            hashes.add(candidate[1])
+            generated.append(candidate)
+    return generated
 
-    batch_id = str(uuid4())
-    batch = CreditRedeemBatch(
+
+def _new_redeem_batch(
+    form: RedeemBatchCreate,
+    operator: UserSnapshot,
+    *,
+    batch_id: str,
+    created_at: int,
+) -> CreditRedeemBatch:
+    return CreditRedeemBatch(
         id=batch_id,
         name=form.name,
         face_value=form.face_value,
@@ -197,6 +193,21 @@ async def create_redeem_batch(
         created_at=created_at,
         updated_at=created_at,
     )
+
+
+async def create_redeem_batch(
+    session: AsyncSession,
+    form: RedeemBatchCreate,
+    operator: UserSnapshot,
+    audit: RequestAuditContext,
+) -> RedeemBatchCreated:
+    created_at = _now()
+    if form.expires_at is not None and form.expires_at <= created_at:
+        raise CreditError(code='invalid_adjustment', context={'reason': 'redeem_expiry_not_future'})
+
+    generated = _generate_unique_codes(form.quantity)
+    batch_id = str(uuid4())
+    batch = _new_redeem_batch(form, operator, batch_id=batch_id, created_at=created_at)
     async with session.begin():
         session.add(batch)
         session.add_all(
@@ -206,7 +217,6 @@ async def create_redeem_batch(
                     batch_id=batch_id,
                     code_hash=code_hash,
                     code_hint=hint,
-                    code=display,
                     created_at=created_at,
                 )
                 for display, code_hash, hint in generated
@@ -251,12 +261,8 @@ async def list_redeem_batches(session: AsyncSession, *, skip: int, limit: int) -
                 await session.execute(
                     select(
                         CreditRedeemCode.batch_id,
-                        func.coalesce(
-                            func.sum(case((CreditRedeemCode.redeemed_at.is_not(None), 1), else_=0)), 0
-                        ),
-                        func.coalesce(
-                            func.sum(case((CreditRedeemCode.voided_at.is_not(None), 1), else_=0)), 0
-                        ),
+                        func.coalesce(func.sum(case((CreditRedeemCode.redeemed_at.is_not(None), 1), else_=0)), 0),
+                        func.coalesce(func.sum(case((CreditRedeemCode.voided_at.is_not(None), 1), else_=0)), 0),
                     )
                     .where(CreditRedeemCode.batch_id.in_(batch_ids))
                     .group_by(CreditRedeemCode.batch_id)
@@ -275,6 +281,27 @@ async def list_redeem_batches(session: AsyncSession, *, skip: int, limit: int) -
             for batch in page_batches
         ),
         total=total,
+    )
+
+
+def _admin_code_item(row: CreditRedeemCode, batch: CreditRedeemBatch, *, expired: bool) -> RedeemCodeAdminItem:
+    status = (
+        'redeemed'
+        if row.redeemed_at is not None
+        else 'voided'
+        if row.voided_at is not None or batch.voided_at is not None
+        else 'expired'
+        if expired
+        else 'available'
+    )
+    return RedeemCodeAdminItem(
+        id=row.id,
+        hint=row.code_hint,
+        status=status,
+        redeemed_by_user_id=row.redeemed_by_user_id,
+        redeemed_by_name_snapshot=row.redeemed_by_name_snapshot,
+        redeemed_at=row.redeemed_at,
+        voided_at=row.voided_at,
     )
 
 
@@ -302,33 +329,10 @@ async def list_redeem_codes(
         .all()
     )
     total = int(
-        await session.scalar(select(func.count(CreditRedeemCode.id)).where(CreditRedeemCode.batch_id == batch_id))
-        or 0
+        await session.scalar(select(func.count(CreditRedeemCode.id)).where(CreditRedeemCode.batch_id == batch_id)) or 0
     )
     expired = batch.expires_at is not None and batch.expires_at <= _now()
-    items = []
-    for row in rows:
-        status = (
-            'redeemed'
-            if row.redeemed_at is not None
-            else 'voided'
-            if row.voided_at is not None or batch.voided_at is not None
-            else 'expired'
-            if expired
-            else 'available'
-        )
-        items.append(
-            RedeemCodeAdminItem(
-                id=row.id,
-                code=row.code,
-                hint=row.code_hint,
-                status=status,
-                redeemed_by_user_id=row.redeemed_by_user_id,
-                redeemed_by_name_snapshot=row.redeemed_by_name_snapshot,
-                redeemed_at=row.redeemed_at,
-                voided_at=row.voided_at,
-            )
-        )
+    items = [_admin_code_item(row, batch, expired=expired) for row in rows]
     return RedeemCodeAdminPage(items=tuple(items), total=total)
 
 
@@ -459,6 +463,85 @@ async def void_redeem_code(
     return True
 
 
+async def _locked_redeem_entities(
+    session: AsyncSession,
+    code_hash: str,
+    *,
+    now: int,
+) -> tuple[CreditRedeemBatch, CreditRedeemCode]:
+    """Serialize code claims through a real batch-row update across SQLite/Postgres."""
+    code = await session.scalar(select(CreditRedeemCode).where(CreditRedeemCode.code_hash == code_hash))
+    if code is None:
+        raise CreditError(code='redeem_code_invalid')
+    await session.execute(update(CreditRedeemBatch).where(CreditRedeemBatch.id == code.batch_id).values(updated_at=now))
+    batch = await session.scalar(select(CreditRedeemBatch).where(CreditRedeemBatch.id == code.batch_id))
+    fresh_code = await session.get(CreditRedeemCode, code.id)
+    if batch is None or fresh_code is None:
+        raise CreditError(code='redeem_code_invalid')
+    await session.refresh(fresh_code)
+    _ensure_redeemable(batch, fresh_code, now=now)
+    return batch, fresh_code
+
+
+def _redemption_ledger_values(
+    batch: CreditRedeemBatch,
+    code: CreditRedeemCode,
+    user: UserSnapshot,
+    audit: RequestAuditContext,
+    account_id: str,
+    balance: tuple[int, int],
+    now: int,
+) -> dict[str, object]:
+    remote = {'remote_address_hash': audit.remote_address_hash} if audit.remote_address_hash is not None else {}
+    return {
+        'id': str(uuid4()),
+        'account_id': account_id,
+        'user_id': user.id,
+        'user_name_snapshot': user.name,
+        'user_email_snapshot': user.email,
+        'amount': batch.face_value,
+        'balance_before': balance[0],
+        'balance_after': balance[1],
+        'entry_type': 'system_adjustment',
+        'reason_code': 'redeem',
+        'note': f'Redeem-code batch: {batch.name}',
+        'request_source': audit.source,
+        'request_id': audit.request_id,
+        'idempotency_key': f'redemption:{code.id}',
+        'service_type': 'credits',
+        'resource_id': batch.id,
+        'action': 'redeem',
+        'metadata_snapshot': {'batch_id': batch.id, 'code_id': code.id, **remote},
+        'created_at': now,
+    }
+
+
+async def _claim_redeem_code(
+    session: AsyncSession,
+    code: CreditRedeemCode,
+    user: UserSnapshot,
+    ledger_id: str,
+    now: int,
+) -> None:
+    claimed = await session.execute(
+        update(CreditRedeemCode)
+        .where(
+            CreditRedeemCode.id == code.id,
+            CreditRedeemCode.redeemed_at.is_(None),
+            CreditRedeemCode.voided_at.is_(None),
+        )
+        .values(
+            redeemed_by_user_id=user.id,
+            redeemed_by_name_snapshot=user.name,
+            redeemed_by_email_snapshot=user.email,
+            redeemed_ledger_id=ledger_id,
+            redeemed_at=now,
+        )
+    )
+    if claimed.rowcount != 1:
+        raise CreditError(code='redeem_code_used')
+
+
 async def redeem_code(
     session: AsyncSession,
     raw_code: str,
@@ -472,90 +555,19 @@ async def redeem_code(
     now = _now()
 
     async with session.begin():
-        code = await session.scalar(select(CreditRedeemCode).where(CreditRedeemCode.code_hash == code_hash))
-        if code is None:
-            raise CreditError(code='redeem_code_invalid')
-
-        # 批次行写锁同时串行化同码兑换与 per-user 限额检查（PostgreSQL 与
-        # SQLite 行为一致）。SQLite 上事务提交会真正推进 updated_at；Postgres
-        # 上行锁本身即提供串行化，updated_at 变化不影响可见性判断。
-        # 这里用真实的列更新代替 no-op UPDATE：语义明确、不会被「清理冗余
-        # 语句」的重构误删（审查发现 #10）。
-        await session.execute(
-            update(CreditRedeemBatch)
-            .where(CreditRedeemBatch.id == code.batch_id)
-            .values(updated_at=now)
-        )
-        batch = await session.scalar(
-            select(CreditRedeemBatch).where(CreditRedeemBatch.id == code.batch_id)
-        )
-        code = await session.get(CreditRedeemCode, code.id)
-        if batch is None or code is None:
-            raise CreditError(code='redeem_code_invalid')
-        await session.refresh(code)
-        _ensure_redeemable(batch, code, now=now)
-
+        batch, code = await _locked_redeem_entities(session, code_hash, now=now)
         current_user = await _current_user(session, user.id)
         await _enforce_per_user_limit(session, batch, current_user.id)
-
         account = await get_or_create_account(session, current_user, now=now)
         account = await _lock_and_verify_account_matches_ledger(session, account.id)
         balance = await update_account_balance(session, account, batch.face_value, now=now)
         if balance is None:
             raise CreditError(code='invalid_adjustment', context={'reason': 'balance_limit_exceeded'})
-        balance_before, balance_after = balance
         ledger = await insert_ledger(
             session,
-            {
-                'id': str(uuid4()),
-                'account_id': account.id,
-                'user_id': current_user.id,
-                'user_name_snapshot': current_user.name,
-                'user_email_snapshot': current_user.email,
-                'amount': batch.face_value,
-                'balance_before': balance_before,
-                'balance_after': balance_after,
-                'entry_type': 'system_adjustment',
-                # 独立 reason_code='redeem'：报表按 reason_code 即可区分卡密充值
-                # 与其他系统调整（如台账修复），前端无需再按 service_type/action
-                # 特判（审查发现 #11）。
-                'reason_code': 'redeem',
-                'note': f'Redeem-code batch: {batch.name}',
-                'request_source': audit.source,
-                'request_id': audit.request_id,
-                'idempotency_key': f'redemption:{code.id}',
-                'service_type': 'credits',
-                'resource_id': batch.id,
-                'action': 'redeem',
-                'metadata_snapshot': {
-                    'batch_id': batch.id,
-                    'code_id': code.id,
-                    **(
-                        {'remote_address_hash': audit.remote_address_hash}
-                        if audit.remote_address_hash is not None
-                        else {}
-                    ),
-                },
-                'created_at': now,
-            },
+            _redemption_ledger_values(batch, code, current_user, audit, account.id, balance, now),
         )
-        claimed = await session.execute(
-            update(CreditRedeemCode)
-            .where(
-                CreditRedeemCode.id == code.id,
-                CreditRedeemCode.redeemed_at.is_(None),
-                CreditRedeemCode.voided_at.is_(None),
-            )
-            .values(
-                redeemed_by_user_id=current_user.id,
-                redeemed_by_name_snapshot=current_user.name,
-                redeemed_by_email_snapshot=current_user.email,
-                redeemed_ledger_id=ledger.id,
-                redeemed_at=now,
-            )
-        )
-        if claimed.rowcount != 1:
-            raise CreditError(code='redeem_code_used')
+        await _claim_redeem_code(session, code, current_user, ledger.id, now)
         session.add(
             _audit_row(
                 batch_id=batch.id,
@@ -570,7 +582,7 @@ async def redeem_code(
     return RedeemCodeResult(
         ledger_id=ledger.id,
         credited=batch.face_value,
-        balance=balance_after,
+        balance=balance[1],
         redeemed_at=now,
     )
 

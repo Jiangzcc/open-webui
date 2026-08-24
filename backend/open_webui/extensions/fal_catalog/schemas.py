@@ -4,15 +4,12 @@ import re
 from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from open_webui.extensions.schema import StrictFrozenModel as _StrictModel
+from pydantic import Field, field_validator, model_validator
 
 _MODEL_ROUTE_PATTERN = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$')
 _PROVIDER_PATTERN = re.compile(r'^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$')
 _INPUT_FIELD_PATTERN = re.compile(r'^[a-z][a-z0-9_]*$')
-
-
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
 
 
 class CatalogDefaults(_StrictModel):

@@ -43,12 +43,6 @@ async def mark_usage_invoking(usage_id: str) -> int:
     return await mark(usage_id)
 
 
-async def mark_usage_succeeded(usage_id: str, urls: Sequence[str]) -> int:
-    from open_webui.extensions.credits.service import mark_usage_succeeded as mark
-
-    return await mark(usage_id, urls)
-
-
 async def mark_usage_succeeded_in_session(session: object, usage_id: str, urls: Sequence[str]) -> int:
     from open_webui.extensions.credits.service import mark_usage_succeeded_in_session as mark
 
@@ -210,12 +204,6 @@ async def _authorize_image_call(
             if current_user is None or current_user.role not in ('user', 'admin') or current_user.role != identity.role:
                 raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
-            if scope == 'direct':
-                # Verified users may call the direct HTTP endpoints regardless of the
-                # image feature switches or per-user image_generation permission; the
-                # chat/tool paths below keep the existing gates.
-                return UserSnapshot(id=current_user.id, name=current_user.name, email=current_user.email)
-
             config = await compat.get_runtime_image_config()
             enabled = (
                 getattr(config, 'ENABLE_IMAGE_GENERATION', False)
@@ -304,13 +292,76 @@ async def _mark_failed_or_unavailable(
         raise _unavailable(usage_id, reason='failed_status_not_updated')
 
 
-async def _mark_succeeded_or_unavailable(usage_id: str, urls: Sequence[str]) -> None:
+async def _begin_or_replay_usage(
+    user: UserSnapshot,
+    billing: object,
+    idempotency_key: str,
+) -> object:
     try:
-        changed = await mark_usage_succeeded(usage_id, urls)
+        async with credit_session() as session:
+            return await begin_image_usage(session, user, billing, idempotency_key)
+    except CreditError:
+        raise
     except Exception:
-        raise _unavailable(usage_id, reason='success_status_write_failed') from None
-    if changed != 1:
-        raise _unavailable(usage_id, reason='success_status_not_updated')
+        raise _unavailable(reason='precharge_failed') from None
+
+
+async def _mark_invoking_or_unavailable(usage_id: str) -> None:
+    try:
+        invoking = await mark_usage_invoking(usage_id)
+    except Exception:
+        raise _unavailable(usage_id, reason='invoking_status_write_failed') from None
+    if invoking != 1:
+        raise _unavailable(usage_id, reason='invoking_status_not_updated')
+
+
+async def _invoke_image_provider(
+    usage_id: str,
+    prepared: object,
+    provider_form: object,
+    invoke: Callable[[object, object], Awaitable[object]],
+) -> tuple[object, list[str]]:
+    try:
+        result = await invoke(prepared, provider_form)
+        urls = _result_urls(result)
+        if not urls:
+            error = RuntimeError('image provider returned no usable media URL')
+            # invoke 已正常返回，说明请求已被 provider 接受并完成；空结果是
+            # provider 结果错误，不能按“提交前失败”退还预扣额度。
+            setattr(error, 'provider_submitted', True)
+            setattr(error, 'provider_completed', True)
+            raise error
+        return result, urls
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        # FAL annotates errors with the acceptance boundary. Only an explicit
+        # pre-submission failure is safe to refund; missing/True means the
+        # provider may already have accepted and charged the request.
+        restore_prepaid = hasattr(error, 'provider_submitted') and not bool(
+            getattr(error, 'provider_submitted')
+        )
+        await _mark_failed_or_unavailable(usage_id, error, restore_prepaid=restore_prepaid)
+        raise CreditError(code='provider_failed', context={'usage_id': usage_id}) from None
+
+
+async def _finalize_image_success(
+    usage_id: str,
+    prepared: object,
+    result: object,
+    urls: Sequence[str],
+    finalize: Callable[..., Awaitable[None]],
+) -> None:
+    try:
+        async with credit_session() as session, session.begin():
+            await finalize(session, prepared, result, usage_id)
+            changed = await mark_usage_succeeded_in_session(session, usage_id, urls)
+            if changed != 1:
+                raise _unavailable(usage_id, reason='success_status_not_updated')
+    except CreditError:
+        raise
+    except Exception:
+        raise _unavailable(usage_id, reason='terminal_finalize_failed') from None
 
 
 async def bill_image_call(
@@ -338,51 +389,15 @@ async def bill_image_call(
     prepared = await _prepare_image_call(request, raw_form_data, metadata, raw_user, action)
     validate_authorization_scope(authorization_scope, prepared.billing.channel)
     idempotency_key = _idempotency_key(request, metadata, identity, action)
-
-    try:
-        async with credit_session() as session:
-            begin = await begin_image_usage(session, user, prepared.billing, idempotency_key)
-    except CreditError:
-        raise
-    except Exception:
-        raise _unavailable(reason='precharge_failed') from None
+    begin = await _begin_or_replay_usage(user, prepared.billing, idempotency_key)
 
     if begin.outcome != 'new':
         return _old_outcome(begin)
 
-    try:
-        invoking = await mark_usage_invoking(begin.usage.id)
-    except Exception:
-        raise _unavailable(begin.usage.id, reason='invoking_status_write_failed') from None
-    if invoking != 1:
-        raise _unavailable(begin.usage.id, reason='invoking_status_not_updated')
-
-    provider_form = _to_provider_form(prepared, action)
-    try:
-        result = await invoke(prepared, provider_form)
-        urls = _result_urls(result)
-    except asyncio.CancelledError as error:
-        if error.args and error.args[0] == 'generation_cancelled':
-            await _mark_failed_or_unavailable(
-                begin.usage.id,
-                CreditError(code='generation_cancelled'),
-                restore_prepaid=True,
-            )
-        raise
-    except Exception as error:
-        await _mark_failed_or_unavailable(begin.usage.id, error)
-        raise CreditError(code='provider_failed', context={'usage_id': begin.usage.id}) from None
-
-    try:
-        async with credit_session() as session, session.begin():
-            await finalize(session, prepared, result, begin.usage.id)
-            changed = await mark_usage_succeeded_in_session(session, begin.usage.id, urls)
-            if changed != 1:
-                raise _unavailable(begin.usage.id, reason='success_status_not_updated')
-    except CreditError:
-        raise
-    except Exception:
-        raise _unavailable(begin.usage.id, reason='terminal_finalize_failed') from None
+    usage_id = begin.usage.id
+    await _mark_invoking_or_unavailable(usage_id)
+    result, urls = await _invoke_image_provider(usage_id, prepared, _to_provider_form(prepared, action), invoke)
+    await _finalize_image_success(usage_id, prepared, result, urls, finalize)
 
     credit_metrics.usage_status(status='succeeded')
     return [{'url': url} for url in urls]

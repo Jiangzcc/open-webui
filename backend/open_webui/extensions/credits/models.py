@@ -233,7 +233,6 @@ class CreditRedeemCode(CreditBase):
             '(voided_at IS NOT NULL AND voided_by_id IS NOT NULL)',
             name='ck_ext_credit_redeem_code_void_fields',
         ),
-        CheckConstraint("code <> ''", name='ck_ext_credit_redeem_code_code_nonempty'),
         Index('ix_ext_credit_redeem_code_batch', 'batch_id'),
         Index('ix_ext_credit_redeem_code_batch_user', 'batch_id', 'redeemed_by_user_id'),
         Index('ix_ext_credit_redeem_code_batch_state', 'batch_id', 'redeemed_at', 'voided_at'),
@@ -243,7 +242,6 @@ class CreditRedeemCode(CreditBase):
     batch_id = Column(String(128), nullable=False)
     code_hash = Column(String(64), nullable=False)
     code_hint = Column(String(16), nullable=False)
-    code = Column(String(64), nullable=False)
     redeemed_by_user_id = Column(String(128), nullable=True)
     redeemed_by_name_snapshot = Column(String(256), nullable=True)
     redeemed_by_email_snapshot = Column(String(320), nullable=True)

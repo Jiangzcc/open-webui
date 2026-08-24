@@ -42,13 +42,22 @@ describe('CreditMenuEntry', () => {
 	});
 
 	test('matches the compact visual language of the upstream UserMenu items', () => {
-		expect(componentSource).toContain('h-[1.6875rem]');
+		expect(componentSource).toContain('h-11');
+		expect(componentSource).toContain('sm:h-[1.6875rem]');
 		expect(componentSource).toContain('gap-2 rounded-xl px-2 text-left text-[13px]');
-		expect(componentSource).toContain('hover:bg-gray-50/40 dark:hover:bg-gray-800/40');
+		expect(componentSource).toContain('hover:bg-gray-50/40');
+		expect(componentSource).toContain('dark:hover:bg-gray-800/40');
 		expect(componentSource).toContain("import CreditCoins from './CreditCoins.svelte'");
 		expect(componentSource).toContain('CreditCoins className="size-3.5"');
 		expect(componentSource).not.toContain('ChartBar');
 		expect(componentSource).toContain('text-[11px] leading-none text-gray-500 tabular-nums');
 		expect(componentSource).not.toContain('rounded-xl px-3 py-1.5');
+	});
+
+	test('lets only the latest balance request update visible state', () => {
+		expect(componentSource).toContain('if (requestController !== controller) return;');
+		expect(componentSource).toContain(
+			'if (requestController === controller) requestController = null;'
+		);
 	});
 });

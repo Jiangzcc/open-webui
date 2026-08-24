@@ -88,26 +88,35 @@ def public_video_advanced_fields(definition: FalVideoModelDefinition) -> list[di
     )
     for kind, group in groups:
         for field in group or ():
-            public_key = _advanced_public_key(field)
-            if public_key is None or not field.advanced:
-                continue
-            descriptor: dict[str, object] = {
-                'key': public_key,
-                'kind': 'option' if public_key == 'prompt_enhancement' else kind,
-            }
-            options = _public_advanced_options(field, public_key)
-            default = _public_advanced_default(field, public_key)
-            if options:
-                descriptor['options'] = options
-            if default is not None:
-                descriptor['default'] = default
-            for attribute in ('min', 'max', 'step', 'max_length'):
-                value = getattr(field, attribute, None)
-                if value is not None:
-                    descriptor[attribute] = value
-            fields.append(descriptor)
+            descriptor = _public_video_advanced_field(field, kind)
+            if descriptor is not None:
+                fields.append(descriptor)
     order = {key: index for index, key in enumerate(_PUBLIC_ADVANCED_FIELD_ORDER)}
     return sorted(fields, key=lambda item: order[str(item['key'])])
+
+
+def _public_video_advanced_field(field: object, kind: str) -> dict[str, object] | None:
+    public_key = _advanced_public_key(field)
+    if public_key is None or not field.advanced:
+        return None
+    descriptor: dict[str, object] = {
+        'key': public_key,
+        'kind': 'option' if public_key == 'prompt_enhancement' else kind,
+    }
+    options = _public_advanced_options(field, public_key)
+    default = _public_advanced_default(field, public_key)
+    if options:
+        descriptor['options'] = options
+    if default is not None:
+        descriptor['default'] = default
+    descriptor.update(
+        {
+            attribute: value
+            for attribute in ('min', 'max', 'step', 'max_length')
+            if (value := getattr(field, attribute, None)) is not None
+        }
+    )
+    return descriptor
 
 
 def _public_model(definition: FalVideoModelDefinition) -> dict[str, object]:
@@ -192,26 +201,35 @@ async def public_video_catalog_for_user(session: AsyncSession) -> dict[str, obje
     catalog = load_video_catalog_cached()
     enriched: list[dict[str, object]] = []
     for model in models:
-        copy = dict(model)
-        public_id = copy.get('id')
-        internal_id = catalog.public_to_internal.get(public_id) if isinstance(public_id, str) else None
-        action = copy.get('task')
-        base_price = price_by_model.get((internal_id, action))
-        if base_price is not None:
-            copy['base_price'] = base_price
-        # 按秒（proportional）计费的视频模型无法解析 'auto' 时长：目录层隐藏该
-        # 选项并把默认值重置为具体秒数，避免默认进入即"积分未配置"。
-        # 仅当过滤后仍有可选时长时才改写，避免把仅含 'auto' 的退化配置清空。
-        if _duration_pricing_is_proportional(rules_by_model.get((internal_id, action))):
-            durations = copy.get('durations')
-            if isinstance(durations, list) and 'auto' in durations:
-                filtered = [value for value in durations if value != 'auto']
-                if filtered:
-                    copy['durations'] = filtered
-                    if copy.get('default_duration') == 'auto':
-                        copy['default_duration'] = filtered[0]
-        enriched.append(copy)
+        enriched.append(_enriched_video_model(model, catalog, price_by_model, rules_by_model))
     return {**payload, 'models': enriched}
+
+
+def _enriched_video_model(
+    model: dict[str, object],
+    catalog: object,
+    prices: dict[tuple[object, object], int],
+    rules: dict[tuple[object, object], object],
+) -> dict[str, object]:
+    enriched = dict(model)
+    public_id = enriched.get('id')
+    internal_id = catalog.public_to_internal.get(public_id) if isinstance(public_id, str) else None
+    action = enriched.get('task')
+    base_price = prices.get((internal_id, action))
+    if base_price is not None:
+        enriched['base_price'] = base_price
+    if not _duration_pricing_is_proportional(rules.get((internal_id, action))):
+        return enriched
+    durations = enriched.get('durations')
+    if not isinstance(durations, list) or 'auto' not in durations:
+        return enriched
+    filtered = [value for value in durations if value != 'auto']
+    if not filtered:
+        return enriched
+    enriched['durations'] = filtered
+    if enriched.get('default_duration') == 'auto':
+        enriched['default_duration'] = filtered[0]
+    return enriched
 
 
 def resolve_video_model(public_id: str) -> FalVideoModelDefinition:
@@ -243,7 +261,189 @@ def _set_supported_option(
     payload[field] = value
 
 
-def build_video_provider_payload(  # noqa: C901
+def _apply_primary_options(
+    definition: FalVideoModelDefinition,
+    params: Mapping[str, object],
+    payload: dict[str, object],
+) -> dict[str, object]:
+    options = (
+        ('duration', definition.duration_field, definition.durations, definition.default_duration),
+        ('aspect_ratio', definition.aspect_ratio_field, definition.aspect_ratios, definition.default_aspect_ratio),
+        ('resolution', definition.resolution_field, definition.resolutions, definition.default_resolution),
+    )
+    safe_params = {key: value for key, value in params.items() if value is not None}
+    for public_key, field, allowed, default in options:
+        _set_supported_option(
+            payload,
+            params,
+            public_key=public_key,
+            field=field,
+            options=allowed,
+            default=default,
+        )
+        if field is not None and field in payload:
+            safe_params[public_key] = payload[field]
+    return safe_params
+
+
+def _validate_freeform_duration(definition: FalVideoModelDefinition, payload: Mapping[str, object]) -> None:
+    field = definition.duration_field
+    if definition.durations is not None or field is None or field not in payload:
+        return
+    try:
+        duration = float(payload[field])
+    except (TypeError, ValueError) as error:
+        raise VideoInputError('invalid_duration') from error
+    if (definition.duration_min is not None and duration < definition.duration_min) or (
+        definition.duration_max is not None and duration > definition.duration_max
+    ):
+        raise VideoInputError('invalid_duration')
+
+
+def _apply_audio_mode(
+    definition: FalVideoModelDefinition,
+    params: Mapping[str, object],
+    payload: dict[str, object],
+    safe_params: dict[str, object],
+) -> None:
+    audio_mode = params.get('audio_mode', definition.default_audio_mode)
+    if audio_mode is None:
+        return
+    audio_option = next((option for option in definition.audio_options or () if option.mode == audio_mode), None)
+    if audio_option is None:
+        raise VideoInputError('invalid_audio_mode')
+    payload.update(audio_option.values)
+    safe_params['audio_mode'] = str(audio_mode)
+
+
+def _normalize_prompt_enhancement(
+    field: object,
+    value: object,
+    public_key: str,
+    submitted_key: str,
+) -> object:
+    if public_key != 'prompt_enhancement' or submitted_key != public_key:
+        return value
+    if isinstance(field, VideoBooleanField):
+        if value not in {'on', 'off'}:
+            raise VideoInputError(f'invalid_{public_key}')
+        return value == 'on'
+    if value not in _PROMPT_ENHANCEMENT_TO_PROVIDER:
+        raise VideoInputError(f'invalid_{public_key}')
+    return _PROMPT_ENHANCEMENT_TO_PROVIDER[str(value)]
+
+
+def _validated_dynamic_value(field: object, value: object, public_key: str) -> object:
+    if isinstance(field, VideoOptionField) and (not isinstance(value, str) or value not in field.options):
+        raise VideoInputError(f'invalid_{public_key}')
+    if isinstance(field, VideoBooleanField) and not isinstance(value, bool):
+        raise VideoInputError(f'invalid_{public_key}')
+    if isinstance(field, VideoIntegerField) and (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or (field.min is not None and value < field.min)
+        or (field.max is not None and value > field.max)
+    ):
+        raise VideoInputError(f'invalid_{public_key}')
+    if isinstance(field, VideoNumberField) and (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or (field.min is not None and value < field.min)
+        or (field.max is not None and value > field.max)
+    ):
+        raise VideoInputError(f'invalid_{public_key}')
+    if isinstance(field, VideoTextField) and (not isinstance(value, str) or len(value) > field.max_length):
+        raise VideoInputError(f'invalid_{public_key}')
+    return _validated_json_field(field, value, public_key)
+
+
+def _validated_json_field(field: object, value: object, public_key: str) -> object:
+    if not isinstance(field, VideoJsonField):
+        return value
+    if not isinstance(value, str) or len(value) > field.max_length:
+        raise VideoInputError(f'invalid_{public_key}')
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise VideoInputError(f'invalid_{public_key}') from error
+    if not isinstance(parsed, (dict, list)):
+        raise VideoInputError(f'invalid_{public_key}')
+    return parsed
+
+
+def _apply_dynamic_field(
+    field: object,
+    params: Mapping[str, object],
+    payload: dict[str, object],
+    safe_params: dict[str, object],
+) -> set[str]:
+    legacy_key = field.source or field.field
+    if legacy_key in _SERVER_CONTROLLED_DYNAMIC_FIELDS:
+        if legacy_key in params:
+            raise VideoInputError(f'unsupported_video_parameter:{legacy_key}')
+        default = getattr(field, 'default', None)
+        if default is not None:
+            payload[field.field] = default
+        return {legacy_key}
+    public_key = _advanced_public_key(field) or legacy_key
+    if public_key != legacy_key and public_key in params and legacy_key in params:
+        raise VideoInputError(f'conflicting_video_parameter:{public_key}')
+    if public_key != legacy_key:
+        safe_params.pop(legacy_key, None)
+    submitted_key = public_key if public_key in params else legacy_key
+    value = params.get(submitted_key, getattr(field, 'default', None))
+    if value is None:
+        if isinstance(field, VideoJsonField) and field.required:
+            raise VideoInputError(f'missing_{public_key}')
+        return {legacy_key, public_key}
+    value = _normalize_prompt_enhancement(field, value, public_key, submitted_key)
+    provider_value = _validated_dynamic_value(field, value, public_key)
+    payload[field.field] = provider_value
+    safe_params[public_key] = (
+        provider_value if isinstance(field, VideoJsonField) else _public_advanced_value(value, public_key)
+    )
+    return {legacy_key, public_key}
+
+
+def _apply_dynamic_fields(
+    definition: FalVideoModelDefinition,
+    params: Mapping[str, object],
+    payload: dict[str, object],
+    safe_params: dict[str, object],
+) -> set[str]:
+    consumed = {'duration', 'aspect_ratio', 'resolution', 'audio_mode'}
+    groups = (
+        definition.option_fields,
+        definition.boolean_fields,
+        definition.integer_fields,
+        definition.number_fields,
+        definition.text_fields,
+        definition.json_fields,
+    )
+    for group in groups:
+        for field in group or ():
+            consumed.update(_apply_dynamic_field(field, params, payload, safe_params))
+    return consumed
+
+
+def _validate_submitted_assets(definition: FalVideoModelDefinition, submission: VideoTaskSubmitForm) -> None:
+    definitions_by_role = {asset.role: asset for asset in definition.asset_inputs or ()}
+    asset_counts: dict[str, int] = {}
+    for submitted_asset in submission.assets:
+        role = submitted_asset.role
+        if role not in definitions_by_role:
+            raise VideoInputError(f'unsupported_video_asset:{role}')
+        asset_counts[role] = asset_counts.get(role, 0) + 1
+        constraint = definitions_by_role[role]
+        if (not constraint.multiple and asset_counts[role] > 1) or asset_counts[role] > constraint.max_count:
+            raise VideoInputError(f'too_many_video_assets:{role}')
+    for asset in definition.asset_inputs or ():
+        if asset.required and asset_counts.get(asset.role, 0) == 0:
+            raise VideoInputError(f'missing_video_asset:{asset.role}')
+
+
+def build_video_provider_payload(
     submission: VideoTaskSubmitForm,
 ) -> tuple[FalVideoModelDefinition, dict[str, object], dict[str, object]]:
     definition = resolve_video_model(submission.model)
@@ -259,158 +459,14 @@ def build_video_provider_payload(  # noqa: C901
     if prompt:
         payload['prompt'] = prompt
 
-    _set_supported_option(
-        payload,
-        params,
-        public_key='duration',
-        field=definition.duration_field,
-        options=definition.durations,
-        default=definition.default_duration,
-    )
-    _set_supported_option(
-        payload,
-        params,
-        public_key='aspect_ratio',
-        field=definition.aspect_ratio_field,
-        options=definition.aspect_ratios,
-        default=definition.default_aspect_ratio,
-    )
-    _set_supported_option(
-        payload,
-        params,
-        public_key='resolution',
-        field=definition.resolution_field,
-        options=definition.resolutions,
-        default=definition.default_resolution,
-    )
-
-    safe_params: dict[str, object] = {key: value for key, value in params.items() if value is not None}
-    for public_key, field in (
-        ('duration', definition.duration_field),
-        ('aspect_ratio', definition.aspect_ratio_field),
-        ('resolution', definition.resolution_field),
-    ):
-        if field is not None and field in payload:
-            safe_params[public_key] = payload[field]
-
-    if definition.durations is None and definition.duration_field is not None and definition.duration_field in payload:
-        try:
-            duration = float(payload[definition.duration_field])
-        except (TypeError, ValueError) as error:
-            raise VideoInputError('invalid_duration') from error
-        if (definition.duration_min is not None and duration < definition.duration_min) or (
-            definition.duration_max is not None and duration > definition.duration_max
-        ):
-            raise VideoInputError('invalid_duration')
-
-    audio_mode = params.get('audio_mode', definition.default_audio_mode)
-    if audio_mode is not None:
-        audio_option = next(
-            (option for option in definition.audio_options or () if option.mode == audio_mode),
-            None,
-        )
-        if audio_option is None:
-            raise VideoInputError('invalid_audio_mode')
-        payload.update(audio_option.values)
-        safe_params['audio_mode'] = str(audio_mode)
-
-    consumed = {'duration', 'aspect_ratio', 'resolution', 'audio_mode'}
-    for group in (
-        definition.option_fields,
-        definition.boolean_fields,
-        definition.integer_fields,
-        definition.number_fields,
-        definition.text_fields,
-        definition.json_fields,
-    ):
-        for field in group or ():
-            legacy_key = field.source or field.field
-            if legacy_key in _SERVER_CONTROLLED_DYNAMIC_FIELDS:
-                consumed.add(legacy_key)
-                if legacy_key in params:
-                    raise VideoInputError(f'unsupported_video_parameter:{legacy_key}')
-                default = field.default if hasattr(field, 'default') else None
-                if default is not None:
-                    payload[field.field] = default
-                continue
-            public_key = _advanced_public_key(field) or legacy_key
-            consumed.add(legacy_key)
-            consumed.add(public_key)
-            if public_key != legacy_key:
-                safe_params.pop(legacy_key, None)
-            if public_key != legacy_key and public_key in params and legacy_key in params:
-                raise VideoInputError(f'conflicting_video_parameter:{public_key}')
-            submitted_key = public_key if public_key in params else legacy_key
-            value = params.get(submitted_key, field.default if hasattr(field, 'default') else None)
-            if value is None:
-                if isinstance(field, VideoJsonField) and field.required:
-                    raise VideoInputError(f'missing_{public_key}')
-                continue
-            if public_key == 'prompt_enhancement' and submitted_key == public_key:
-                if isinstance(field, VideoBooleanField):
-                    if value not in {'on', 'off'}:
-                        raise VideoInputError(f'invalid_{public_key}')
-                    value = value == 'on'
-                else:
-                    if value not in _PROMPT_ENHANCEMENT_TO_PROVIDER:
-                        raise VideoInputError(f'invalid_{public_key}')
-                    value = _PROMPT_ENHANCEMENT_TO_PROVIDER[str(value)]
-            if isinstance(field, VideoOptionField) and (not isinstance(value, str) or value not in field.options):
-                raise VideoInputError(f'invalid_{public_key}')
-            if isinstance(field, VideoBooleanField) and not isinstance(value, bool):
-                raise VideoInputError(f'invalid_{public_key}')
-            if isinstance(field, VideoIntegerField) and (
-                isinstance(value, bool)
-                or not isinstance(value, int)
-                or (field.min is not None and value < field.min)
-                or (field.max is not None and value > field.max)
-            ):
-                raise VideoInputError(f'invalid_{public_key}')
-            if isinstance(field, VideoNumberField) and (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                # 复盘 #18：NaN/inf 与任何数的比较恒为 False，会静默穿透
-                # min/max 校验，导致 params_json 落库非法 JSON 且幂等匹配失效。
-                or not math.isfinite(value)
-                or (field.min is not None and value < field.min)
-                or (field.max is not None and value > field.max)
-            ):
-                raise VideoInputError(f'invalid_{public_key}')
-            if isinstance(field, VideoTextField) and (not isinstance(value, str) or len(value) > field.max_length):
-                raise VideoInputError(f'invalid_{public_key}')
-            if isinstance(field, VideoJsonField):
-                if not isinstance(value, str) or len(value) > field.max_length:
-                    raise VideoInputError(f'invalid_{public_key}')
-                try:
-                    parsed_value = json.loads(value)
-                except json.JSONDecodeError as error:
-                    raise VideoInputError(f'invalid_{public_key}') from error
-                if not isinstance(parsed_value, (dict, list)):
-                    raise VideoInputError(f'invalid_{public_key}')
-                payload[field.field] = parsed_value
-                safe_params[public_key] = parsed_value
-            else:
-                payload[field.field] = value
-                safe_params[public_key] = _public_advanced_value(value, public_key)
-
+    safe_params = _apply_primary_options(definition, params, payload)
+    _validate_freeform_duration(definition, payload)
+    _apply_audio_mode(definition, params, payload, safe_params)
+    consumed = _apply_dynamic_fields(definition, params, payload, safe_params)
     unknown = set(params) - consumed
     if unknown:
         raise VideoInputError(f'unsupported_video_parameter:{sorted(unknown)[0]}')
-
-    definitions_by_role = {asset.role: asset for asset in definition.asset_inputs or ()}
-    asset_counts: dict[str, int] = {}
-    for submitted_asset in submission.assets:
-        role = submitted_asset.role
-        if role not in definitions_by_role:
-            raise VideoInputError(f'unsupported_video_asset:{role}')
-        asset_counts[role] = asset_counts.get(role, 0) + 1
-        constraint = definitions_by_role[role]
-        if (not constraint.multiple and asset_counts[role] > 1) or asset_counts[role] > constraint.max_count:
-            raise VideoInputError(f'too_many_video_assets:{role}')
-    for asset in definition.asset_inputs or ():
-        if asset.required and asset_counts.get(asset.role, 0) == 0:
-            raise VideoInputError(f'missing_video_asset:{asset.role}')
-
+    _validate_submitted_assets(definition, submission)
     return definition, payload, safe_params
 
 

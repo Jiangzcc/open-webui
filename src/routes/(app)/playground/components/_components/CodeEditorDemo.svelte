@@ -18,8 +18,8 @@ if __name__ == "__main__":
     print(greet("world"))`;
 
 	let saved = '';
-	const onSave = (e: any) => (saved = typeof e === 'string' ? e : JSON.stringify(e));
-	const onChange = (e: any) => {};
+	const onSave = () => (saved = value);
+	const onChange = () => {};
 </script>
 
 <DemoCard

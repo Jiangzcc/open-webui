@@ -5,28 +5,50 @@ import json
 import logging
 import os
 import tempfile
-import time
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 
-import aiohttp
 import aiofiles
+import aiohttp
 from fastapi import Request
 from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL, AIOHTTP_CLIENT_STREAM_IDLE_TIMEOUT
 from open_webui.extensions.fal_catalog.video_schemas import FalVideoModelDefinition, VideoAssetInput
+from open_webui.extensions.fal_images.client import FalImageError, resume_fal_queue, run_fal_queue
 from open_webui.extensions.provider_ops.service import (
     DatabaseProviderInvocationObserver,
     try_resume_provider_invocation,
     try_start_provider_invocation,
 )
+from open_webui.extensions.url_security import normalize_https_base_url
+from open_webui.extensions.videos import video_result
+from open_webui.extensions.videos.execution_types import VideoExecutionError, VideoExecutionOutput
+from open_webui.extensions.videos.fal_config import (
+    enforce_fal_video_policy,
+    get_video_fal_settings,
+)
+from open_webui.extensions.videos.fal_config import (
+    positive_int_env as _positive_int_env,
+)
 from open_webui.extensions.videos.pexels_mock import probe_video_duration
+from open_webui.extensions.videos.provider_observer import (
+    ProviderResultCallback,
+    ProviderSubmittedCallback,
+    ResumeContext,
+    VideoProviderObserver,
+    mark_observer_failed_if_pending,
+    record_provider_result_url,
+)
 from open_webui.extensions.videos.schemas import VideoAssetReference, VideoTaskResponse
-from open_webui.models.config import Config
+from open_webui.extensions.videos.video_result import (
+    TEMP_FILE_PREFIX,
+    extract_fal_video_url,
+)
+from open_webui.extensions.videos.video_result import (
+    cleanup_stale_fal_video_temp_files as _cleanup_stale_fal_video_temp_files,
+)
 from open_webui.models.files import Files
+from open_webui.retrieval.web.utils import get_ssrf_safe_session
 from open_webui.storage.provider import Storage
-from open_webui.extensions.fal_images.client import FalImageError, resume_fal_queue, run_fal_queue
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +60,6 @@ _DEFAULT_UPLOAD_LIFETIME_SECONDS = 24 * 60 * 60
 _DEFAULT_DELIVERY_MAX_ATTEMPTS = 3
 _DEFAULT_RETRY_BASE_DELAY_SECONDS = 1
 _DEFAULT_TEMP_MAX_AGE_SECONDS = 24 * 60 * 60
-_TEMP_FILE_PREFIX = 'open-webui-fal-video-'
 # 复盘 P1：大文件传输（视频上传/下载）的超时配置——大文件正常传输也可能
 # 超过 5 分钟，不能用共享池的 total=300s 总超时（会把正常传输砍断成
 # download_failed）；改用连接建立超时 + 读空闲超时（复用共享流会话的同一
@@ -51,10 +72,8 @@ _TRANSFER_CHUNK_SIZE_BYTES = 1024 * 1024
 def _retryable_http_status(status_code: int | None) -> bool:
     """408 超时 / 429 限流 / 5xx 服务端错误视为可重试；无状态码不可重试。"""
     return status_code is not None and (status_code in {408, 429} or status_code >= 500)
-# 运营中心管理端持久化配置键（Config 表）
-_VIDEO_FAL_MOCK_ENABLED_KEY = 'video_generation.fal.mock_enabled'
-_VIDEO_FAL_API_KEY_KEY = 'video_generation.fal.api_key'
-_IMAGE_FAL_API_KEY_KEY = 'image_generation.fal.api_key'
+
+
 _MOCK_SCENARIOS = frozenset(
     {
         'success',
@@ -67,66 +86,6 @@ _MOCK_SCENARIOS = frozenset(
         'delivery_failure',
     }
 )
-
-
-class VideoExecutionError(Exception):
-    def __init__(
-        self,
-        code: str,
-        message: str | None = None,
-        *,
-        provider_submitted: bool = False,
-        provider_completed: bool = False,
-        retryable: bool = False,
-    ):
-        super().__init__(message or code)
-        self.code = code[:64]
-        # Once FAL reports success, delivery failures must not be treated like
-        # provider failures: the upstream cost may already be final.
-        self.provider_submitted = provider_submitted or provider_completed
-        self.provider_completed = provider_completed
-        self.retryable = retryable
-
-
-@dataclass(frozen=True)
-class VideoExecutionOutput:
-    video_path: Path
-    content_type: str
-    duration_seconds: int | None = None
-
-
-ProviderSubmittedCallback = Callable[[dict[str, object]], Awaitable[None]]
-ProviderResultCallback = Callable[[str], Awaitable[None]]
-
-
-class _VideoProviderObserver:
-    def __init__(self, base: object | None, on_submitted: ProviderSubmittedCallback | None):
-        self._base = base
-        self._on_submitted = on_submitted
-
-    async def _base_call(self, method: str, *args: object) -> None:
-        if self._base is not None:
-            await getattr(self._base, method)(*args)
-
-    async def submitted(self, payload: dict[str, object]) -> None:
-        # Persist Provider Ops first so request_id still has an authoritative
-        # diagnostic record if the task-specific recovery write fails.
-        # 注意：run_fal_queue 对 observer 回调按 best-effort 吞异常
-        # （extensions/fal_images/client.py _notify_provider），提交状态写入
-        # 失败不会中断生成。恢复路径的兜底是 video_recovery_state_missing 时
-        # 按"供应商受理未确认"退款（service.recover_video_task）。
-        await self._base_call('submitted', payload)
-        if self._on_submitted is not None:
-            await self._on_submitted(payload)
-
-    async def status(self, payload: dict[str, object]) -> None:
-        await self._base_call('status', payload)
-
-    async def succeeded(self) -> None:
-        await self._base_call('succeeded')
-
-    async def failed(self, error: BaseException) -> None:
-        await self._base_call('failed', error)
 
 
 @dataclass(frozen=True)
@@ -144,7 +103,95 @@ class FalVideoExecutor:
     upload_lifetime_seconds: int
     mode: str = 'fal'
 
-    async def invoke(  # noqa: C901 - provider and local-delivery phases share one cost boundary
+    def __post_init__(self) -> None:
+        try:
+            queue_base_url = normalize_https_base_url(self.queue_base_url)
+            storage_base_url = normalize_https_base_url(self.storage_base_url)
+        except ValueError as error:
+            raise VideoExecutionError('video_fal_configuration_invalid') from error
+        object.__setattr__(self, 'queue_base_url', queue_base_url)
+        object.__setattr__(self, 'storage_base_url', storage_base_url)
+
+    async def _provider_result(
+        self,
+        definition: FalVideoModelDefinition,
+        payload: dict[str, object],
+        observer: object,
+    ) -> dict[str, object]:
+        try:
+            return await run_fal_queue(
+                definition.id,
+                payload,
+                self.api_key,
+                self.queue_base_url,
+                observer=observer,
+                timeout_seconds=self.timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except FalImageError as error:
+            code = 'video_provider_timeout' if 'timed out' in str(error).lower() else 'video_provider_failed'
+            raise VideoExecutionError(
+                code,
+                str(error),
+                provider_submitted=bool(getattr(error, 'provider_submitted', False)),
+                provider_completed=bool(getattr(error, 'provider_completed', False)),
+                retryable=code == 'video_provider_timeout' or _retryable_http_status(error.status_code),
+            ) from error
+        except Exception as error:
+            submitted = bool(getattr(error, 'provider_submitted', False))
+            raise VideoExecutionError(
+                'video_provider_failed',
+                str(error),
+                provider_submitted=submitted,
+                provider_completed=bool(getattr(error, 'provider_completed', False)),
+                retryable=submitted,
+            ) from error
+
+    async def _download_output(
+        self,
+        task: VideoTaskResponse,
+        definition: FalVideoModelDefinition,
+        video_url: str,
+    ) -> VideoExecutionOutput:
+        video_path: Path | None = None
+        try:
+            video_path, content_type = await download_fal_video_with_retry(
+                video_url,
+                max_bytes=self.result_max_bytes,
+            )
+            if content_type in {'application/octet-stream', 'video/mp4'}:
+                if not await asyncio.to_thread(video_result.looks_like_mp4_file, video_path):
+                    raise VideoExecutionError('video_result_invalid_type')
+                content_type = 'video/mp4'
+            if content_type not in definition.output_mime_types:
+                raise VideoExecutionError('video_result_invalid_type')
+            actual_duration = await asyncio.to_thread(probe_video_duration, video_path)
+            return VideoExecutionOutput(
+                video_path=video_path,
+                content_type=content_type,
+                duration_seconds=actual_duration or video_result.task_duration_seconds(task),
+            )
+        except BaseException:
+            if video_path is not None:
+                await video_result.remove_file(video_path)
+            raise
+
+    async def _completed_provider_output(
+        self,
+        task: VideoTaskResponse,
+        definition: FalVideoModelDefinition,
+        result: object,
+        observer: DatabaseProviderInvocationObserver | None,
+        on_result_url: ProviderResultCallback | None,
+    ) -> VideoExecutionOutput:
+        video_url = extract_fal_video_url(result, definition.output_field)
+        if video_url is None:
+            raise VideoExecutionError('video_result_missing')
+        await record_provider_result_url(observer, on_result_url, video_url)
+        return await self._download_output(task, definition, video_url)
+
+    async def invoke(
         self,
         request: Request,
         user: object,
@@ -174,74 +221,39 @@ class FalVideoExecutor:
             provider_model_id=definition.id,
             payload=payload,
         )
-        observer = (
-            provider_observer
-            if on_submitted is None
-            else _VideoProviderObserver(provider_observer, on_submitted)
+        observer = provider_observer if on_submitted is None else VideoProviderObserver(provider_observer, on_submitted)
+        result = await self._provider_result(definition, payload, observer)
+        return await self._deliver_invocation_result(
+            task,
+            definition,
+            result,
+            provider_observer,
+            on_result_url,
         )
-        try:
-            result = await run_fal_queue(
-                definition.id,
-                payload,
-                self.api_key,
-                self.queue_base_url,
-                observer=observer,
-                timeout_seconds=self.timeout_seconds,
-            )
-        except asyncio.CancelledError:
-            raise
-        except FalImageError as error:
-            code = 'video_provider_timeout' if 'timed out' in str(error).lower() else 'video_provider_failed'
-            raise VideoExecutionError(
-                code,
-                str(error),
-                provider_submitted=bool(getattr(error, 'provider_submitted', False)),
-                provider_completed=bool(getattr(error, 'provider_completed', False)),
-                retryable=code == 'video_provider_timeout' or _retryable_http_status(error.status_code),
-            ) from error
-        except Exception as error:
-            provider_submitted = bool(getattr(error, 'provider_submitted', False))
-            raise VideoExecutionError(
-                'video_provider_failed',
-                str(error),
-                provider_submitted=provider_submitted,
-                provider_completed=bool(getattr(error, 'provider_completed', False)),
-                retryable=provider_submitted,
-            ) from error
 
-        video_path: Path | None = None
+    async def _deliver_invocation_result(
+        self,
+        task: VideoTaskResponse,
+        definition: FalVideoModelDefinition,
+        result: object,
+        observer: DatabaseProviderInvocationObserver | None,
+        on_result_url: ProviderResultCallback | None,
+    ) -> VideoExecutionOutput:
+        """Map local delivery errors without losing the paid completion boundary."""
         try:
-            video_url = extract_fal_video_url(result, definition.output_field)
-            if video_url is None:
-                raise VideoExecutionError('video_result_missing')
-            if on_result_url is not None:
-                await on_result_url(video_url)
-            video_path, content_type = await download_fal_video_with_retry(
-                video_url,
-                max_bytes=self.result_max_bytes,
-            )
-            if content_type in {'application/octet-stream', 'video/mp4'}:
-                if not await asyncio.to_thread(_looks_like_mp4_file, video_path):
-                    raise VideoExecutionError('video_result_invalid_type')
-                content_type = 'video/mp4'
-            if content_type not in definition.output_mime_types:
-                raise VideoExecutionError('video_result_invalid_type')
-            actual_duration = await asyncio.to_thread(probe_video_duration, video_path)
-            return VideoExecutionOutput(
-                video_path=video_path,
-                content_type=content_type,
-                duration_seconds=actual_duration or _task_duration_seconds(task),
+            return await self._completed_provider_output(
+                task,
+                definition,
+                result,
+                observer,
+                on_result_url,
             )
         except asyncio.CancelledError as error:
             # Preserve asyncio cancellation while telling the billing layer that
             # FAL had already completed before local delivery was interrupted.
             setattr(error, 'provider_completed', True)
-            if video_path is not None:
-                await _remove_file(video_path)
             raise
         except VideoExecutionError as error:
-            if video_path is not None:
-                await _remove_file(video_path)
             raise VideoExecutionError(
                 error.code,
                 str(error),
@@ -250,15 +262,132 @@ class FalVideoExecutor:
                 retryable=error.retryable,
             ) from error
         except Exception as error:
-            if video_path is not None:
-                await _remove_file(video_path)
             raise VideoExecutionError(
                 'video_delivery_failed',
                 str(error),
                 provider_completed=True,
             ) from error
 
-    async def resume(  # noqa: C901 - recovery distinguishes provider polling, URL refresh, and delivery
+    async def _resume_video_url(
+        self,
+        context: ResumeContext,
+        task: VideoTaskResponse,
+        definition: FalVideoModelDefinition,
+        *,
+        status_url: str | None,
+        response_url: str | None,
+        result_url: str | None,
+        provider_request_id: str | None,
+        on_result_url: ProviderResultCallback | None,
+    ) -> str:
+        context.observer = (
+            await try_resume_provider_invocation(task_id=task.id, provider_request_id=provider_request_id)
+            if provider_request_id is not None
+            else None
+        )
+        if result_url is not None:
+            if context.observer is not None:
+                await context.observer.succeeded()
+                context.terminal_notified = True
+            return result_url
+        if response_url is None:
+            raise VideoExecutionError('video_recovery_state_missing')
+        try:
+            result = await resume_fal_queue(
+                status_url=status_url,
+                response_url=response_url,
+                api_key=self.api_key,
+                base_url=self.queue_base_url,
+                observer=context.observer,
+                timeout_seconds=self.timeout_seconds,
+            )
+        finally:
+            context.terminal_notified = True
+        video_url = extract_fal_video_url(result, definition.output_field)
+        if video_url is None:
+            raise VideoExecutionError('video_result_missing')
+        await record_provider_result_url(context.observer, on_result_url, video_url)
+        return video_url
+
+    async def _download_resumed_output(
+        self,
+        context: ResumeContext,
+        task: VideoTaskResponse,
+        definition: FalVideoModelDefinition,
+        video_url: str,
+        *,
+        response_url: str | None,
+        persisted_result_url: str | None,
+        on_result_url: ProviderResultCallback | None,
+    ) -> VideoExecutionOutput:
+        try:
+            return await self._download_output(task, definition, video_url)
+        except VideoExecutionError as error:
+            should_refresh = (
+                persisted_result_url is not None
+                and response_url is not None
+                and error.code == 'video_result_download_failed'
+            )
+            if not should_refresh:
+                raise
+        assert response_url is not None
+        try:
+            result = await resume_fal_queue(
+                status_url=None,
+                response_url=response_url,
+                api_key=self.api_key,
+                base_url=self.queue_base_url,
+                observer=context.observer,
+                timeout_seconds=self.timeout_seconds,
+            )
+        finally:
+            context.terminal_notified = True
+        refreshed_url = extract_fal_video_url(result, definition.output_field)
+        if refreshed_url is None:
+            raise VideoExecutionError('video_result_missing')
+        await record_provider_result_url(context.observer, on_result_url, refreshed_url)
+        return await self._download_output(task, definition, refreshed_url)
+
+    async def _raise_resume_error(
+        self,
+        context: ResumeContext,
+        error: BaseException,
+        *,
+        result_url: str | None,
+    ) -> None:
+        await mark_observer_failed_if_pending(
+            context.observer,
+            error,
+            terminal_notified=context.terminal_notified,
+        )
+        if isinstance(error, asyncio.CancelledError):
+            setattr(error, 'provider_submitted', True)
+            raise error
+        if isinstance(error, VideoExecutionError):
+            raise VideoExecutionError(
+                error.code,
+                str(error),
+                provider_submitted=True,
+                provider_completed=bool(result_url) or error.provider_completed,
+                retryable=error.retryable,
+            ) from error
+        if isinstance(error, FalImageError):
+            code = 'video_provider_timeout' if 'timed out' in str(error).lower() else 'video_provider_failed'
+            raise VideoExecutionError(
+                code,
+                str(error),
+                provider_submitted=True,
+                provider_completed=bool(getattr(error, 'provider_completed', False)),
+                retryable=code == 'video_provider_timeout' or _retryable_http_status(error.status_code),
+            ) from error
+        raise VideoExecutionError(
+            'video_delivery_failed',
+            str(error),
+            provider_submitted=True,
+            provider_completed=bool(result_url),
+        ) from error
+
+    async def resume(
         self,
         task: VideoTaskResponse,
         definition: FalVideoModelDefinition,
@@ -270,178 +399,33 @@ class FalVideoExecutor:
         on_result_url: ProviderResultCallback | None = None,
     ) -> VideoExecutionOutput:
         """Resume polling/delivery for a request that FAL already accepted."""
-        video_path: Path | None = None
-        observer: DatabaseProviderInvocationObserver | None = None
-        observer_terminal_notified = False
+        context = ResumeContext()
         try:
-            observer = (
-                await try_resume_provider_invocation(
-                    task_id=task.id,
-                    provider_request_id=provider_request_id,
-                )
-                if provider_request_id is not None
-                else None
+            video_url = await self._resume_video_url(
+                context,
+                task,
+                definition,
+                status_url=status_url,
+                response_url=response_url,
+                result_url=result_url,
+                provider_request_id=provider_request_id,
+                on_result_url=on_result_url,
             )
-            video_url = result_url
-            if video_url is None:
-                if response_url is None:
-                    raise VideoExecutionError('video_recovery_state_missing')
-                try:
-                    result = await resume_fal_queue(
-                        status_url=status_url,
-                        response_url=response_url,
-                        api_key=self.api_key,
-                        observer=observer,
-                        timeout_seconds=self.timeout_seconds,
-                    )
-                finally:
-                    # client 层对成功、失败与取消都会通知 observer 终态。
-                    observer_terminal_notified = True
-                video_url = extract_fal_video_url(result, definition.output_field)
-                if video_url is None:
-                    raise VideoExecutionError('video_result_missing')
-                if on_result_url is not None:
-                    await on_result_url(video_url)
-            elif observer is not None:
-                await observer.succeeded()
-                observer_terminal_notified = True
-            try:
-                video_path, content_type = await download_fal_video_with_retry(
-                    video_url,
-                    max_bytes=self.result_max_bytes,
-                )
-            except VideoExecutionError as error:
-                # A persisted signed media URL may expire while the service is
-                # offline. Re-fetch the existing response object for a fresh URL;
-                # this is still a GET-only recovery path, never a generation POST.
-                if result_url is None or response_url is None or error.code != 'video_result_download_failed':
-                    raise
-                result = await resume_fal_queue(
-                    status_url=None,
-                    response_url=response_url,
-                    api_key=self.api_key,
-                    observer=observer,
-                    timeout_seconds=self.timeout_seconds,
-                )
-                video_url = extract_fal_video_url(result, definition.output_field)
-                if video_url is None:
-                    raise VideoExecutionError('video_result_missing') from error
-                if on_result_url is not None:
-                    await on_result_url(video_url)
-                video_path, content_type = await download_fal_video_with_retry(
-                    video_url,
-                    max_bytes=self.result_max_bytes,
-                )
-            if content_type in {'application/octet-stream', 'video/mp4'}:
-                if not await asyncio.to_thread(_looks_like_mp4_file, video_path):
-                    raise VideoExecutionError('video_result_invalid_type')
-                content_type = 'video/mp4'
-            if content_type not in definition.output_mime_types:
-                raise VideoExecutionError('video_result_invalid_type')
-            actual_duration = await asyncio.to_thread(probe_video_duration, video_path)
-            return VideoExecutionOutput(
-                video_path=video_path,
-                content_type=content_type,
-                duration_seconds=actual_duration or _task_duration_seconds(task),
+            return await self._download_resumed_output(
+                context,
+                task,
+                definition,
+                video_url,
+                response_url=response_url,
+                persisted_result_url=result_url,
+                on_result_url=on_result_url,
             )
         except asyncio.CancelledError as error:
-            await _mark_observer_failed_if_pending(
-                observer, error, terminal_notified=observer_terminal_notified
-            )
-            setattr(error, 'provider_submitted', True)
-            if video_path is not None:
-                await _remove_file(video_path)
-            raise
-        except VideoExecutionError as error:
-            await _mark_observer_failed_if_pending(
-                observer, error, terminal_notified=observer_terminal_notified
-            )
-            if video_path is not None:
-                await _remove_file(video_path)
-            raise VideoExecutionError(
-                error.code,
-                str(error),
-                provider_submitted=True,
-                provider_completed=bool(result_url) or error.provider_completed,
-                retryable=error.retryable,
-            ) from error
-        except FalImageError as error:
-            await _mark_observer_failed_if_pending(
-                observer, error, terminal_notified=observer_terminal_notified
-            )
-            if video_path is not None:
-                await _remove_file(video_path)
-            code = 'video_provider_timeout' if 'timed out' in str(error).lower() else 'video_provider_failed'
-            raise VideoExecutionError(
-                code,
-                str(error),
-                provider_submitted=True,
-                provider_completed=bool(getattr(error, 'provider_completed', False)),
-                retryable=code == 'video_provider_timeout' or _retryable_http_status(error.status_code),
-            ) from error
+            await self._raise_resume_error(context, error, result_url=result_url)
+            raise AssertionError('unreachable')
         except Exception as error:
-            await _mark_observer_failed_if_pending(
-                observer, error, terminal_notified=observer_terminal_notified
-            )
-            if video_path is not None:
-                await _remove_file(video_path)
-            raise VideoExecutionError(
-                'video_delivery_failed',
-                str(error),
-                provider_submitted=True,
-                provider_completed=bool(result_url),
-            ) from error
-
-
-async def _mark_observer_failed_if_pending(
-    observer: DatabaseProviderInvocationObserver | None,
-    error: BaseException,
-    *,
-    terminal_notified: bool,
-) -> None:
-    """复盘 P1：恢复路径此前只在成功时通知 observer（快速路径 succeeded /
-    轮询路径由 resume_fal_queue 内部通知），executor 自身的失败——恢复状态
-    缺失、结果 URL 提取失败、下载与校验失败——全程不通知 failed，
-    provider_invocation 行停留无终态（在线路径 run_fal_queue 两个 except
-    都会通知）。供应商调用已成功（terminal_notified）后的平台侧交付失败
-    不属于供应商调用失败，不得覆盖 succeeded。"""
-    if observer is None or terminal_notified:
-        return
-    await observer.failed(error)
-
-
-def _positive_int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        parsed = int(value)
-    except ValueError:
-        log.warning('Ignoring invalid %s=%r', name, value)
-        return default
-    if parsed <= 0:
-        log.warning('Ignoring non-positive %s=%r', name, value)
-        return default
-    return parsed
-
-
-async def get_video_fal_settings() -> tuple[bool, str]:
-    """运营中心管理端 FAL 配置：返回 (mock 开关, 视频 API key)。
-
-    视频侧 key 为空时回落到图片生成侧 key，方便单一 key 的部署。
-    """
-    values = await Config.get_many(
-        _VIDEO_FAL_MOCK_ENABLED_KEY,
-        _VIDEO_FAL_API_KEY_KEY,
-        _IMAGE_FAL_API_KEY_KEY,
-    )
-    mock_enabled = bool(values.get(_VIDEO_FAL_MOCK_ENABLED_KEY, False))
-    video_key = values.get(_VIDEO_FAL_API_KEY_KEY)
-    image_key = values.get(_IMAGE_FAL_API_KEY_KEY)
-    api_key = video_key.strip() if isinstance(video_key, str) else ''
-    if not api_key and isinstance(image_key, str):
-        api_key = image_key.strip()
-    return mock_enabled, api_key
+            await self._raise_resume_error(context, error, result_url=result_url)
+            raise AssertionError('unreachable')
 
 
 async def resolve_video_executor() -> MockVideoExecutor | FalVideoExecutor:
@@ -465,27 +449,6 @@ async def resolve_video_executor() -> MockVideoExecutor | FalVideoExecutor:
             _DEFAULT_UPLOAD_LIFETIME_SECONDS,
         ),
     )
-
-
-def enforce_fal_video_policy(*, model_id: str, charged_credits: int) -> None:
-    """Apply optional server-side guards before a paid FAL task is queued."""
-    raw_allowlist = os.getenv('VIDEO_GENERATION_FAL_ALLOWED_MODELS', '').strip()
-    if raw_allowlist:
-        allowed = {item.strip() for item in raw_allowlist.split(',') if item.strip()}
-        if model_id not in allowed:
-            raise VideoExecutionError('video_fal_model_not_allowed')
-
-    raw_limit = os.getenv('VIDEO_GENERATION_FAL_MAX_CREDITS_PER_REQUEST', '').strip()
-    if not raw_limit:
-        return
-    try:
-        limit = int(raw_limit)
-    except ValueError as error:
-        raise VideoExecutionError('video_fal_policy_invalid') from error
-    if limit <= 0:
-        raise VideoExecutionError('video_fal_policy_invalid')
-    if charged_credits > limit:
-        raise VideoExecutionError('video_fal_cost_limit_exceeded')
 
 
 async def video_runtime_diagnostics(request: Request) -> dict[str, object]:
@@ -524,20 +487,6 @@ async def video_runtime_diagnostics(request: Request) -> dict[str, object]:
     }
 
 
-def extract_fal_video_url(result: object, output_field: str = 'video') -> str | None:
-    if isinstance(result, dict) and isinstance(result.get('data'), dict):
-        result = result['data']
-    if not isinstance(result, dict):
-        return None
-    candidate = result.get(output_field)
-    if isinstance(candidate, str) and candidate:
-        return candidate
-    if isinstance(candidate, dict) and isinstance(candidate.get('url'), str):
-        return candidate['url']
-    fallback = result.get('url')
-    return fallback if isinstance(fallback, str) and fallback else None
-
-
 def _transfer_session() -> aiohttp.ClientSession:
     """大文件传输专用一次性 session（复盘 P1）。
 
@@ -551,7 +500,9 @@ def _transfer_session() -> aiohttp.ClientSession:
         sock_connect=_TRANSFER_CONNECT_TIMEOUT_SECONDS,
         sock_read=_TRANSFER_READ_IDLE_TIMEOUT_SECONDS,
     )
-    return aiohttp.ClientSession(timeout=timeout, trust_env=True)
+    # Environment proxies resolve/fetch the target outside our guarded
+    # resolver, so untrusted signed/media URLs deliberately bypass them.
+    return get_ssrf_safe_session(timeout=timeout, trust_env=False)
 
 
 async def _initiate_fal_storage_upload(
@@ -571,14 +522,19 @@ async def _initiate_fal_storage_upload(
         'Content-Type': 'application/json',
         'X-Fal-Object-Lifecycle-Preference': lifecycle,
     }
-    initiate_url = f'{storage_base_url.rstrip("/")}/storage/upload/initiate?storage_type=gcs'
+    try:
+        storage_base_url = normalize_https_base_url(storage_base_url)
+    except ValueError as error:
+        raise VideoExecutionError('video_asset_upload_failed', 'invalid FAL storage base URL') from error
+    initiate_url = f'{storage_base_url}/storage/upload/initiate?storage_type=gcs'
     async with session.post(
         initiate_url,
         json={'file_name': filename, 'content_type': content_type},
         headers=headers,
         ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        allow_redirects=False,
     ) as response:
-        if response.status >= 400:
+        if response.status >= 300:
             detail = await response.text()
             raise VideoExecutionError(
                 'video_asset_upload_failed',
@@ -590,7 +546,7 @@ async def _initiate_fal_storage_upload(
     file_url = initiated.get('file_url') if isinstance(initiated, dict) else None
     if not isinstance(upload_url, str) or not isinstance(file_url, str):
         raise VideoExecutionError('video_asset_upload_failed', 'fal upload response is incomplete')
-    if not _is_safe_https_url(upload_url) or not _is_safe_https_url(file_url):
+    if not video_result.is_safe_https_url(upload_url) or not video_result.is_safe_https_url(file_url):
         raise VideoExecutionError('video_asset_upload_failed', 'fal upload response contains an invalid URL')
     return upload_url, file_url
 
@@ -614,20 +570,7 @@ async def _upload_file_to_fal_once(
             storage_base_url=storage_base_url,
             upload_lifetime_seconds=upload_lifetime_seconds,
         )
-        with path.open('rb') as source:
-            async with session.put(
-                upload_url,
-                data=source,
-                headers={'Content-Type': content_type},
-                ssl=AIOHTTP_CLIENT_SESSION_SSL,
-            ) as response:
-                if response.status >= 400:
-                    detail = await response.text()
-                    raise VideoExecutionError(
-                        'video_asset_upload_failed',
-                        detail,
-                        retryable=_retryable_http_status(response.status),
-                    )
+        await _put_file_to_fal(session, path, upload_url, content_type)
         return file_url
     except asyncio.CancelledError:
         raise
@@ -637,6 +580,29 @@ async def _upload_file_to_fal_once(
         raise VideoExecutionError('video_asset_upload_failed', str(error), retryable=True) from error
     finally:
         await session.close()
+
+
+async def _put_file_to_fal(
+    session: aiohttp.ClientSession,
+    path: Path,
+    upload_url: str,
+    content_type: str,
+) -> None:
+    with path.open('rb') as source:
+        async with session.put(
+            upload_url,
+            data=source,
+            headers={'Content-Type': content_type},
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+            allow_redirects=False,
+        ) as response:
+            if response.status >= 300:
+                detail = await response.text()
+                raise VideoExecutionError(
+                    'video_asset_upload_failed',
+                    detail,
+                    retryable=_retryable_http_status(response.status),
+                )
 
 
 async def upload_file_to_fal(
@@ -759,10 +725,10 @@ async def _drain_response_to_file(
 
 
 async def download_fal_video(url: str, *, max_bytes: int) -> tuple[Path, str]:
-    if not _is_safe_https_url(url):
+    if not video_result.is_safe_https_url(url):
         raise VideoExecutionError('video_result_invalid_url')
     session = _transfer_session()
-    fd, temporary_name = tempfile.mkstemp(prefix=_TEMP_FILE_PREFIX, suffix='.mp4')
+    fd, temporary_name = tempfile.mkstemp(prefix=TEMP_FILE_PREFIX, suffix='.mp4')
     os.close(fd)
     temporary_path = Path(temporary_name)
     try:
@@ -786,10 +752,10 @@ async def download_fal_video(url: str, *, max_bytes: int) -> tuple[Path, str]:
                 await _drain_response_to_file(response, target, max_bytes=max_bytes)
             return temporary_path, content_type
     except asyncio.CancelledError:
-        await _remove_file(temporary_path)
+        await video_result.remove_file(temporary_path)
         raise
     except Exception as error:
-        await _remove_file(temporary_path)
+        await video_result.remove_file(temporary_path)
         if isinstance(error, VideoExecutionError):
             raise
         raise VideoExecutionError('video_result_download_failed', str(error), retryable=True) from error
@@ -810,46 +776,7 @@ async def download_fal_video_with_retry(url: str, *, max_bytes: int) -> tuple[Pa
 
 
 async def cleanup_stale_fal_video_temp_files(*, max_age_seconds: int = _DEFAULT_TEMP_MAX_AGE_SECONDS) -> int:
-    cutoff = time.time() - max_age_seconds
-
-    def cleanup() -> int:
-        removed = 0
-        for path in Path(tempfile.gettempdir()).glob(f'{_TEMP_FILE_PREFIX}*.mp4'):
-            try:
-                if path.is_file() and path.stat().st_mtime < cutoff:
-                    path.unlink()
-                    removed += 1
-            except OSError:
-                log.exception('Could not inspect or remove stale FAL video temp file %s', path)
-        return removed
-
-    return await asyncio.to_thread(cleanup)
-
-
-def _task_duration_seconds(task: VideoTaskResponse) -> int | None:
-    value = task.params.get('duration')
-    try:
-        return max(1, round(float(value))) if value is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _looks_like_mp4_file(path: Path) -> bool:
-    with path.open('rb') as source:
-        header = source.read(12)
-    return len(header) >= 12 and header[4:8] == b'ftyp'
-
-
-async def _remove_file(path: Path) -> None:
-    try:
-        await asyncio.to_thread(path.unlink, missing_ok=True)
-    except Exception:
-        log.exception('Could not remove temporary FAL video %s', path)
-
-
-def _is_safe_https_url(value: str) -> bool:
-    parsed = urlparse(value)
-    return parsed.scheme == 'https' and bool(parsed.netloc) and parsed.username is None and parsed.password is None
+    return await _cleanup_stale_fal_video_temp_files(max_age_seconds=max_age_seconds)
 
 
 __all__ = [

@@ -11,6 +11,7 @@ from open_webui.extensions.creations.generation_tasks import (
     create_generation_task,
     delete_generation_task,
     get_generation_task,
+    get_generation_task_by_idempotency_key,
     list_generation_tasks,
     schedule_generation_task,
 )
@@ -82,6 +83,35 @@ async def test_generation_task_is_idempotent_and_user_scoped(creation_sessions) 
         listing = await list_generation_tasks(session, 'user-1', 20)
     assert own is not None and own.prompt == 'quiet lake'
     assert [item.id for item in listing.items] == [first.id]
+
+
+@pytest.mark.asyncio
+async def test_generation_task_idempotency_hash_covers_private_inputs(creation_sessions) -> None:
+    async with creation_sessions() as session:
+        edit, _ = await create_generation_task(
+            session,
+            user_id='user-1',
+            idempotency_key='private-input',
+            kind='image-to-image',
+            payload={'prompt': 'restyle', 'image': 'data:image/png;base64,first'},
+        )
+        edit_replay = await get_generation_task_by_idempotency_key(
+            session,
+            'user-1',
+            'private-input',
+            kind='image-to-image',
+            payload={'prompt': 'restyle', 'image': 'data:image/png;base64,first'},
+        )
+        with pytest.raises(IdempotencyPayloadConflictError):
+            await get_generation_task_by_idempotency_key(
+                session,
+                'user-1',
+                'private-input',
+                kind='image-to-image',
+                payload={'prompt': 'restyle', 'image': 'data:image/png;base64,second'},
+            )
+
+    assert edit_replay is not None and edit_replay.id == edit.id
 
 
 @pytest.mark.asyncio
@@ -303,6 +333,38 @@ async def test_cancelled_task_restores_succeeded_when_billing_already_committed(
 
 
 @pytest.mark.asyncio
+async def test_failed_return_path_restores_succeeded_when_billing_already_committed(monkeypatch) -> None:
+    """普通异常也不能覆盖已经与扣费同事务提交的作品成功终态。"""
+    from open_webui.routers import images
+
+    states: list[tuple[str, dict | None]] = []
+
+    async def set_state(_task_id, *, status, result=None, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+        states.append((status, result))
+
+    async def failed_after_commit(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError('response serialization failed')
+
+    async def committed_creations(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return [{'url': '/api/v1/files/file-1/content'}]
+
+    monkeypatch.setattr(generation_tasks, '_set_task_state', set_state)
+    monkeypatch.setattr(generation_tasks, '_publish_image_task_event', AsyncMock())
+    monkeypatch.setattr(generation_tasks, '_completed_result_from_creations', committed_creations)
+    monkeypatch.setattr(images, 'image_generations', failed_after_commit)
+
+    await generation_tasks.run_generation_task(
+        'task-1',
+        SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace())),
+        SimpleNamespace(id='user-1'),
+        object(),
+        'text-to-image',
+    )
+
+    assert states == [('running', None), ('succeeded', [{'url': '/api/v1/files/file-1/content'}])]
+
+
+@pytest.mark.asyncio
 async def test_delete_generation_task_soft_deletes_own_batch_only(creation_sessions) -> None:
     async with creation_sessions() as session:
         task, _ = await create_generation_task(
@@ -383,9 +445,7 @@ async def test_completed_result_from_creations_reads_captured_rows(creation_sess
         session.add(soft_deleted_row)
 
     monkeypatch.setattr(generation_tasks, 'creation_session', creation_sessions)
-    request = SimpleNamespace(
-        app=SimpleNamespace(url_path_for=lambda name, id: f'/api/v1/files/{id}/content')
-    )
+    request = SimpleNamespace(app=SimpleNamespace(url_path_for=lambda name, id: f'/api/v1/files/{id}/content'))
 
     result = await generation_tasks._completed_result_from_creations(request, 'task-1', 'user-1')
 

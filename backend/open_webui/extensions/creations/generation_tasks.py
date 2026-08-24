@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -15,13 +17,18 @@ from open_webui.extensions.creations.models import (
     CreationPostMedia,
     ImageGenerationTask,
 )
-from open_webui.extensions.creations.task_states import ACTIVE_GENERATION_TASK_STATUSES
 from open_webui.extensions.creations.schemas import (
     ImageGenerationTaskListResponse,
     ImageGenerationTaskResponse,
     decode_keyset_cursor,
     encode_keyset_cursor,
 )
+from open_webui.extensions.creations.task_runtime import (
+    publish_task_event_safely,
+    schedule_tracked_task,
+    task_state_values,
+)
+from open_webui.extensions.creations.task_states import ACTIVE_GENERATION_TASK_STATUSES
 from sqlalchemy import and_, delete, desc, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,24 +55,43 @@ def _safe_params(payload: dict[str, Any]) -> dict[str, object]:
     }
 
 
+def _payload_sha256(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
 def _task_matches_payload(task: ImageGenerationTask, *, kind: str, payload: dict[str, Any]) -> bool:
     """幂等重放校验：同键同载荷才复用既有任务。
 
     同键不同载荷说明客户端复用了键却修改了内容（如网络失败后改了提示词
-    重试）：静默复用旧任务会丢弃新载荷，必须由调用方拒绝。持久化行只存
-    prompt/model/safe_params/n，比对也只覆盖这些可复原字段（image 等
-    私有载荷不落库，无法比对）。
+    或参考图重试）：静默复用旧任务会丢弃新载荷，必须由调用方拒绝。只持久化
+    完整载荷摘要，不落库 image/mask 等私有原文。
     """
     if task.kind != kind:
         return False
-    if task.prompt != str(payload.get('prompt') or ''):
-        return False
-    model = payload.get('model') if isinstance(payload.get('model'), str) else None
-    if task.model_id != model:
-        return False
-    if (task.params_json or {}) != _safe_params(payload):
-        return False
-    return task.expected_count == max(1, int(payload.get('n') or 1))
+    return task.payload_sha256 == _payload_sha256(payload)
+
+
+async def get_generation_task_by_idempotency_key(
+    session: AsyncSession,
+    user_id: str,
+    idempotency_key: str,
+    *,
+    kind: str,
+    payload: dict[str, Any],
+) -> ImageGenerationTaskResponse | None:
+    """Return an exact idempotent replay before rate/concurrency admission."""
+    task = await session.scalar(
+        select(ImageGenerationTask).where(
+            ImageGenerationTask.user_id == user_id,
+            ImageGenerationTask.idempotency_key == idempotency_key,
+        )
+    )
+    if task is None:
+        return None
+    if not _task_matches_payload(task, kind=kind, payload=payload):
+        raise IdempotencyPayloadConflictError(idempotency_key)
+    return _response(task)
 
 
 def _response(task: ImageGenerationTask) -> ImageGenerationTaskResponse:
@@ -87,15 +113,12 @@ def _response(task: ImageGenerationTask) -> ImageGenerationTaskResponse:
     )
 
 
-async def create_generation_task(
+async def _task_by_idempotency_key(
     session: AsyncSession,
-    *,
     user_id: str,
     idempotency_key: str,
-    kind: str,
-    payload: dict[str, Any],
-) -> tuple[ImageGenerationTaskResponse, bool]:
-    existing = (
+) -> ImageGenerationTask | None:
+    return (
         await session.execute(
             select(ImageGenerationTask).where(
                 ImageGenerationTask.user_id == user_id,
@@ -103,16 +126,21 @@ async def create_generation_task(
             )
         )
     ).scalar_one_or_none()
-    if existing is not None:
-        if not _task_matches_payload(existing, kind=kind, payload=payload):
-            raise IdempotencyPayloadConflictError(idempotency_key)
-        return _response(existing), False
 
+
+def _new_generation_task(
+    *,
+    user_id: str,
+    idempotency_key: str,
+    kind: str,
+    payload: dict[str, Any],
+) -> ImageGenerationTask:
     now = _now()
-    task = ImageGenerationTask(
+    return ImageGenerationTask(
         id=str(uuid4()),
         user_id=user_id,
         idempotency_key=idempotency_key,
+        payload_sha256=_payload_sha256(payload),
         status='queued',
         kind=kind,
         prompt=str(payload.get('prompt') or ''),
@@ -121,24 +149,43 @@ async def create_generation_task(
         expected_count=max(1, int(payload.get('n') or 1)),
         result_json=[],
         error_code=None,
+        execution_mode=None,
+        delivery_attempts=0,
         created_at=now,
         started_at=None,
         completed_at=None,
         updated_at=now,
+    )
+
+
+async def create_generation_task(
+    session: AsyncSession,
+    *,
+    user_id: str,
+    idempotency_key: str,
+    kind: str,
+    payload: dict[str, Any],
+) -> tuple[ImageGenerationTaskResponse, bool]:
+    existing = await _task_by_idempotency_key(session, user_id, idempotency_key)
+    if existing is not None:
+        if not _task_matches_payload(existing, kind=kind, payload=payload):
+            raise IdempotencyPayloadConflictError(idempotency_key)
+        return _response(existing), False
+
+    task = _new_generation_task(
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        kind=kind,
+        payload=payload,
     )
     session.add(task)
     try:
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        raced = (
-            await session.execute(
-                select(ImageGenerationTask).where(
-                    ImageGenerationTask.user_id == user_id,
-                    ImageGenerationTask.idempotency_key == idempotency_key,
-                )
-            )
-        ).scalar_one()
+        raced = await _task_by_idempotency_key(session, user_id, idempotency_key)
+        if raced is None:
+            raise
         if not _task_matches_payload(raced, kind=kind, payload=payload):
             raise IdempotencyPayloadConflictError(idempotency_key) from None
         return _response(raced), False
@@ -248,16 +295,29 @@ async def _set_task_state(
     error_code: str | None = None,
 ) -> None:
     now = _now()
-    values: dict[str, object] = {'status': status, 'updated_at': now}
-    if status == 'running':
-        values['started_at'] = now
-    if status in {'succeeded', 'failed'}:
-        values['completed_at'] = now
-    if result is not None:
-        values['result_json'] = result
-    values['error_code'] = error_code
+    values = task_state_values(status, now=now, result=result, error_code=error_code)
     async with creation_session() as session:
         await session.execute(update(ImageGenerationTask).where(ImageGenerationTask.id == task_id).values(**values))
+        await session.commit()
+
+
+async def fail_generation_task_scheduling(app: object, task_id: str, user_id: str) -> None:
+    """Close a committed queued row when no worker could be scheduled."""
+    error_code = 'image_scheduling_failed'
+    await _set_task_state(task_id, status='failed', error_code=error_code)
+    await _publish_image_task_event(app, task_id, user_id, 'failed', error_code=error_code)
+
+
+async def set_image_task_execution_mode(task_id: str | None, mode: str) -> None:
+    """Persist the paid-provider boundary before the FAL request is submitted."""
+    if task_id is None:
+        return
+    async with creation_session() as session:
+        await session.execute(
+            update(ImageGenerationTask)
+            .where(ImageGenerationTask.id == task_id)
+            .values(execution_mode=mode, updated_at=_now())
+        )
         await session.commit()
 
 
@@ -270,23 +330,15 @@ async def _publish_image_task_event(
     error_code: str | None = None,
 ) -> None:
     """广播图片任务状态变更到 SSE 事件总线。无订阅者时安全跳过。"""
-    from open_webui.extensions.creations.events import publish_generation_event
-
-    payload: dict[str, object] = {'kind': 'image'}
-    if error_code is not None:
-        payload['error_code'] = error_code
-    try:
-        await publish_generation_event(
-            app,
-            kind='image',
-            task_id=task_id,
-            status=status,
-            user_id=user_id,
-            payload=payload if error_code is not None else None,
-        )
-    except Exception:
-        # SSE 是辅助通知通道，失败不能改变已经持久化的任务终态。
-        log.exception('Could not publish %s event for image task %s', status, task_id)
+    await publish_task_event_safely(
+        app,
+        kind='image',
+        task_id=task_id,
+        user_id=user_id,
+        status=status,
+        error_code=error_code,
+        logger=log,
+    )
 
 
 def _public_result(result: object) -> list[dict[str, object]]:
@@ -339,10 +391,7 @@ async def _completed_result_from_creations(
     app = getattr(request, 'app', None)
     if app is None:
         return None
-    return [
-        {'url': str(app.url_path_for('get_file_content_by_id', id=row.file_id))}
-        for row in rows
-    ]
+    return [{'url': str(app.url_path_for('get_file_content_by_id', id=row.file_id))} for row in rows]
 
 
 def _error_code(error: Exception) -> str:
@@ -350,6 +399,59 @@ def _error_code(error: Exception) -> str:
     if isinstance(code, str) and code:
         return code[:64]
     return 'image_generation_failed'
+
+
+async def _invoke_generation_provider(
+    task_id: str,
+    request: Request,
+    user: object,
+    form: object,
+    kind: str,
+) -> object:
+    from open_webui.routers.images import image_edits, image_generations
+
+    common = {
+        'metadata': {'generation_task_id': task_id},
+        'user': user,
+        'concurrency_slot_held_by_caller': True,
+    }
+    if kind == 'image-to-image':
+        return await image_edits(request, form, 'direct', **common)
+    return await image_generations(request, form, 'direct', **common)
+
+
+async def _restore_completed_image_task(
+    request: Request,
+    task_id: str,
+    user_id: str,
+    result: object | None,
+) -> bool:
+    completed = result
+    if completed is None:
+        completed = await _completed_result_from_creations(request, task_id, user_id)
+    if completed is None:
+        return False
+    try:
+        await _set_task_state(task_id, status='succeeded', result=_public_result(completed))
+    except Exception:
+        # A committed creation is irreversible success evidence. A task-row
+        # write failure must never overwrite that truth with failed/refunded.
+        log.exception('Could not restore succeeded state for image task %s', task_id)
+    await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
+    return True
+
+
+async def _fail_image_task_safely(
+    request: Request,
+    task_id: str,
+    user_id: str,
+    error_code: str,
+) -> None:
+    try:
+        await _set_task_state(task_id, status='failed', error_code=error_code)
+    except Exception:
+        log.exception('Could not persist failed image task %s', task_id)
+    await _publish_image_task_event(request.app, task_id, user_id, 'failed', error_code=error_code)
 
 
 async def run_generation_task(
@@ -364,122 +466,24 @@ async def run_generation_task(
     try:
         await _set_task_state(task_id, status='running')
         await _publish_image_task_event(request.app, task_id, user_id, 'running')
-        from open_webui.routers.images import image_edits, image_generations
-
         # 提交端（creations/router.py）已计入限流并占用任务全程的并发槽位，
         # 执行时显式声明跳过门禁，避免双重占用（复盘 P0-3 门禁下沉的配套）。
-        if kind == 'image-to-image':
-            result = await image_edits(
-                request,
-                form,
-                'direct',
-                metadata={'generation_task_id': task_id},
-                user=user,
-                concurrency_slot_held_by_caller=True,
-            )
-        else:
-            result = await image_generations(
-                request,
-                form,
-                'direct',
-                metadata={'generation_task_id': task_id},
-                user=user,
-                concurrency_slot_held_by_caller=True,
-            )
+        result = await _invoke_generation_provider(task_id, request, user, form, kind)
         await _set_task_state(task_id, status='succeeded', result=_public_result(result))
         await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
     except asyncio.CancelledError:
-        # The billed call already returned a terminal result. A cancellation
-        # arriving in the tiny window before the task-row update is too late;
-        # preserve the completed result rather than reporting a false refund.
-        # 复盘 P1：取消还可能落在计费 finalize 事务已提交、结果尚未返回的
-        # 窗口——以 creation 捕获行为准恢复终态（镜像视频路径的 usage 终态
-        # 核对），避免已扣费的任务被误标 failed。
-        if result is None:
-            result = await _completed_result_from_creations(request, task_id, user_id)
-        if result is not None:
-            try:
-                await _set_task_state(task_id, status='succeeded', result=_public_result(result))
-            except Exception:
-                log.exception('Could not restore succeeded state for interrupted image task %s', task_id)
-            try:
-                await _publish_image_task_event(request.app, task_id, user_id, 'succeeded')
-            except Exception:
-                log.exception('Could not publish succeeded state for interrupted image task %s', task_id)
+        if await _restore_completed_image_task(request, task_id, user_id, result):
             raise
-        error_code = 'server_shutdown'
-        try:
-            await _set_task_state(task_id, status='failed', error_code=error_code)
-        except Exception:
-            log.exception('Could not persist interrupted image task %s', task_id)
-        try:
-            await _publish_image_task_event(request.app, task_id, user_id, 'failed', error_code=error_code)
-        except Exception:
-            log.exception('Could not publish interrupted image task %s', task_id)
+        await _fail_image_task_safely(request, task_id, user_id, 'server_shutdown')
         raise
     except Exception as error:
         log.exception('Image generation task %s failed', task_id)
-        code = _error_code(error)
-        await _set_task_state(task_id, status='failed', error_code=code)
-        await _publish_image_task_event(request.app, task_id, user_id, 'failed', error_code=code)
-
-
-_FINISH_CALLBACK_MAX_ATTEMPTS = 3
-
-
-async def _safe_on_finished(on_finished: Callable[[], Awaitable[None]]) -> None:
-    """Retry transient cleanup failures and surface the final failure."""
-    for attempt in range(_FINISH_CALLBACK_MAX_ATTEMPTS):
-        try:
-            await on_finished()
+        # provider/billing 调用可能已在同一事务中完成扣费和作品捕获，随后仅在
+        # 返回结果或更新任务行时失败。此时 creation 行是不可逆成功证据；若
+        # 直接把任务覆盖为 failed，会诱导重试并造成二次扣费。
+        if await _restore_completed_image_task(request, task_id, user_id, result):
             return
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            if attempt + 1 >= _FINISH_CALLBACK_MAX_ATTEMPTS:
-                log.exception('on_finished callback failed after retries')
-                raise
-            log.warning(
-                'on_finished callback failed; retrying (%s/%s)',
-                attempt + 1,
-                _FINISH_CALLBACK_MAX_ATTEMPTS,
-                exc_info=True,
-            )
-            await asyncio.sleep(0)
-
-
-async def _run_generation_task_and_finish(
-    task_id: str,
-    request: Request,
-    user: object,
-    form: object,
-    kind: str,
-    on_finished: Callable[[], Awaitable[None]] | None,
-) -> None:
-    original_exc: BaseException | None = None
-    try:
-        await run_generation_task(task_id, request, user, form, kind)
-    except BaseException as error:
-        original_exc = error
-        raise
-    finally:
-        if on_finished is not None:
-            try:
-                await _safe_on_finished(on_finished)
-            except asyncio.CancelledError:
-                if original_exc is None:
-                    raise
-                log.warning(
-                    'on_finished cancelled for image task %s; original exception preserved',
-                    task_id,
-                )
-            except Exception:
-                if original_exc is None:
-                    raise
-                log.exception(
-                    'on_finished failed for image task %s; original exception preserved',
-                    task_id,
-                )
+        await _fail_image_task_safely(request, task_id, user_id, _error_code(error))
 
 
 def schedule_generation_task(
@@ -491,21 +495,15 @@ def schedule_generation_task(
     kind: str,
     on_finished: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
-    running: dict[str, asyncio.Task] = request.app.state.creation_generation_tasks
-    task = asyncio.create_task(
-        _run_generation_task_and_finish(task_id, request, user, form, kind, on_finished)
+    running: dict[str, asyncio.Task[None]] = request.app.state.creation_generation_tasks
+    schedule_tracked_task(
+        running,
+        task_id,
+        lambda: run_generation_task(task_id, request, user, form, kind),
+        kind='image',
+        logger=log,
+        on_finished=on_finished,
     )
-    running[task_id] = task
-
-    def discard_finished(finished: asyncio.Task) -> None:
-        if running.get(task_id) is finished:
-            running.pop(task_id, None)
-        if not finished.cancelled():
-            # Retrieve the exception so a final cleanup failure is logged by
-            # asyncio only once while remaining observable to explicit awaiters.
-            finished.exception()
-
-    task.add_done_callback(discard_finished)
 
 
 async def fail_incomplete_generation_tasks() -> int:
@@ -532,10 +530,13 @@ async def shutdown_generation_tasks(app) -> None:
 __all__ = [
     'create_generation_task',
     'delete_generation_task',
+    'get_generation_task_by_idempotency_key',
     'fail_incomplete_generation_tasks',
+    'fail_generation_task_scheduling',
     'get_generation_task',
     'list_generation_tasks',
     'run_generation_task',
     'schedule_generation_task',
+    'set_image_task_execution_mode',
     'shutdown_generation_tasks',
 ]

@@ -181,9 +181,7 @@ def _collect_file_ids(items: list[CreationMediaItem]) -> list[str]:
             file_ids.append(item.poster_file_id)
         raw_refs = item.reference_file_ids_json or []
         if isinstance(raw_refs, list):
-            for ref_id in raw_refs:
-                if isinstance(ref_id, str):
-                    file_ids.append(ref_id)
+            file_ids.extend(ref_id for ref_id in raw_refs if isinstance(ref_id, str))
     return file_ids
 
 
@@ -235,6 +233,44 @@ def _apply_cursor(stmt, cursor: str | None, sort: str = 'newest'):
     return stmt.where(comparator)
 
 
+def _creation_page(rows: list, limit: int) -> tuple[list, str | None]:
+    page = rows[:limit]
+    if len(rows) <= limit:
+        return page, None
+    boundary = page[-1][0]
+    return page, encode_keyset_cursor(boundary.created_at, boundary.id)
+
+
+def _apply_personal_filters(
+    stmt,
+    *,
+    search: str | None,
+    task: str | None,
+    publication_status: str | None,
+    kind: str | None,
+):
+    if kind is not None:
+        stmt = stmt.where(CreationMediaItem.kind == kind)
+    normalized_search = (search or '').strip()
+    if normalized_search:
+        pattern = f'%{normalized_search}%'
+        stmt = stmt.where(
+            or_(
+                CreationMediaItem.prompt.ilike(pattern),
+                CreationMediaItem.caption.ilike(pattern),
+                CreationMediaItem.model_name_snapshot.ilike(pattern),
+                CreationMediaItem.model_id.ilike(pattern),
+            )
+        )
+    if task:
+        stmt = stmt.where(CreationMediaItem.task == task)
+    if publication_status == 'published':
+        return stmt.where(CreationPost.status == 'published')
+    if publication_status == 'unpublished':
+        return stmt.where(or_(CreationPost.status.is_(None), CreationPost.status != 'published'))
+    return stmt
+
+
 async def list_personal_creations(
     session: AsyncSession,
     user_id: str,
@@ -255,25 +291,13 @@ async def list_personal_creations(
             CreationMediaItem.soft_deleted.is_(False),
         )
     )
-    normalized_search = (search or '').strip()
-    if kind is not None:
-        stmt = stmt.where(CreationMediaItem.kind == kind)
-    if normalized_search:
-        pattern = f'%{normalized_search}%'
-        stmt = stmt.where(
-            or_(
-                CreationMediaItem.prompt.ilike(pattern),
-                CreationMediaItem.caption.ilike(pattern),
-                CreationMediaItem.model_name_snapshot.ilike(pattern),
-                CreationMediaItem.model_id.ilike(pattern),
-            )
-        )
-    if task:
-        stmt = stmt.where(CreationMediaItem.task == task)
-    if publication_status == 'published':
-        stmt = stmt.where(CreationPost.status == 'published')
-    elif publication_status == 'unpublished':
-        stmt = stmt.where(or_(CreationPost.status.is_(None), CreationPost.status != 'published'))
+    stmt = _apply_personal_filters(
+        stmt,
+        search=search,
+        task=task,
+        publication_status=publication_status,
+        kind=kind,
+    )
     ordering = (
         (asc(CreationMediaItem.created_at), asc(CreationMediaItem.id))
         if sort == 'oldest'
@@ -282,14 +306,7 @@ async def list_personal_creations(
     stmt = stmt.order_by(*ordering).limit(limit + 1)
     stmt = _apply_cursor(stmt, cursor, sort)
     rows = (await session.execute(stmt)).all()
-    items = list(rows)
-    next_cursor = None
-    if len(items) > limit:
-        page = items[:limit]
-        boundary = page[-1][0]
-        next_cursor = encode_keyset_cursor(boundary.created_at, boundary.id)
-    else:
-        page = items
+    page, next_cursor = _creation_page(list(rows), limit)
     media_items = [item for item, _status in page]
     files_by_id = await _bulk_load_files(_collect_file_ids(media_items))
     summaries = tuple(
@@ -322,44 +339,38 @@ async def list_admin_creations(
         stmt = stmt.where(CreationMediaItem.kind == kind)
     stmt = _apply_cursor(stmt, cursor)
     rows = (await session.execute(stmt)).all()
-    items = list(rows)
-    next_cursor = None
-    if len(items) > limit:
-        page = items[:limit]
-        boundary = page[-1][0]
-        next_cursor = encode_keyset_cursor(boundary.created_at, boundary.id)
-    else:
-        page = items
+    page, next_cursor = _creation_page(list(rows), limit)
     media_items = [item for item, _status in page]
     files_by_id = await _bulk_load_files(_collect_file_ids(media_items))
     owners = await _owners_for_items(media_items)
-    summaries: list[AdminCreationSummary] = []
-    for item, publication_status in page:
-        content_url, mime_type, availability = _file_content_url_and_mime(files_by_id.get(item.file_id), item.user_id)
-        summaries.append(
-            AdminCreationSummary(
-                id=item.id,
-                kind=item.kind,
-                content_url=content_url,
-                poster_url=(
-                    _file_content_url_and_mime(files_by_id.get(item.poster_file_id), item.user_id)[0]
-                    if item.poster_file_id
-                    else None
-                ),
-                duration_seconds=item.duration_seconds,
-                availability=availability,
-                mime_type=mime_type,
-                caption=item.caption,
-                prompt_preview=_prompt_preview(item),
-                model_name=_model_display_name(item),
-                task=item.task,
-                publication_status=publication_status,
-                created_at=item.created_at,
-                updated_at=item.updated_at,
-                owner=owners[item.user_id],
-            )
-        )
+    summaries = [_admin_summary(item, status, files_by_id, owners) for item, status in page]
     return AdminCreationListResponse(items=tuple(summaries), next_cursor=next_cursor)
+
+
+def _admin_summary(item, publication_status, files_by_id: dict, owners: dict) -> AdminCreationSummary:
+    content_url, mime_type, availability = _file_content_url_and_mime(files_by_id.get(item.file_id), item.user_id)
+    poster_url = (
+        _file_content_url_and_mime(files_by_id.get(item.poster_file_id), item.user_id)[0]
+        if item.poster_file_id
+        else None
+    )
+    return AdminCreationSummary(
+        id=item.id,
+        kind=item.kind,
+        content_url=content_url,
+        poster_url=poster_url,
+        duration_seconds=item.duration_seconds,
+        availability=availability,
+        mime_type=mime_type,
+        caption=item.caption,
+        prompt_preview=_prompt_preview(item),
+        model_name=_model_display_name(item),
+        task=item.task,
+        publication_status=publication_status,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        owner=owners[item.user_id],
+    )
 
 
 async def _load_owned_item(session: AsyncSession, user_id: str | None, creation_id: str) -> CreationMediaItem | None:

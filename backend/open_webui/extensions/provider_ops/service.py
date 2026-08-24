@@ -6,6 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 from time import time
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from sqlalchemy import case, func, select, update
@@ -16,6 +17,8 @@ from .models import ProviderInvocation
 from .schemas import ProviderInvocationItem, ProviderInvocationList, ProviderModelSummary, ProviderModelSummaryList
 
 log = logging.getLogger(__name__)
+
+_MAX_PROVIDER_RECOVERY_URL_LENGTH = 4096
 
 
 def _now_ms() -> int:
@@ -97,6 +100,8 @@ class DatabaseProviderInvocationObserver:
                 'status': 'submitted',
                 'provider_request_id': _short_string(payload.get('request_id'), 128),
                 'provider_gateway_request_id': _short_string(payload.get('gateway_request_id'), 128),
+                'provider_status_url': _safe_recovery_url(payload.get('status_url')),
+                'provider_response_url': _safe_recovery_url(payload.get('response_url')),
                 'queue_position': queue_position if isinstance(queue_position, int) and queue_position >= 0 else None,
                 'submitted_at': now,
             }
@@ -136,6 +141,11 @@ class DatabaseProviderInvocationObserver:
     async def succeeded(self) -> None:
         await self._write({'status': 'succeeded', 'completed_at': _now_ms(), 'error_code': None})
 
+    async def result_available(self, result_url: str) -> None:
+        safe_url = _safe_recovery_url(result_url)
+        if safe_url is not None:
+            await self._write({'provider_result_url': safe_url})
+
     async def failed(self, error: BaseException) -> None:
         client_cancelled = isinstance(error, asyncio.CancelledError)
         provider_cancelled = not client_cancelled and 'cancelled' in str(error).lower()
@@ -159,6 +169,15 @@ class DatabaseProviderInvocationObserver:
 
 def _short_string(value: object, length: int) -> str | None:
     return value[:length] if isinstance(value, str) and value else None
+
+
+def _safe_recovery_url(value: object) -> str | None:
+    if not isinstance(value, str) or not value or len(value) > _MAX_PROVIDER_RECOVERY_URL_LENGTH:
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+        return None
+    return value
 
 
 def _provider_error_code(error: BaseException) -> str:
@@ -221,6 +240,49 @@ async def try_resume_provider_invocation(
     return DatabaseProviderInvocationObserver(invocation_id) if invocation_id else None
 
 
+@dataclass(frozen=True)
+class ProviderRecoveryState:
+    provider_request_id: str
+    status_url: str | None
+    response_url: str | None
+    result_url: str | None
+
+
+async def load_provider_recovery_state(
+    task_id: str,
+    provider_request_id: str | None = None,
+    *,
+    media_kind: str = 'video',
+) -> ProviderRecoveryState | None:
+    """Load the latest submitted FAL invocation for one persisted media task."""
+    if media_kind not in {'image', 'video'}:
+        raise ValueError('unsupported provider recovery media kind')
+    try:
+        async with provider_ops_session() as session:
+            statement = select(ProviderInvocation).where(
+                ProviderInvocation.task_id == task_id,
+                ProviderInvocation.provider == 'fal',
+                ProviderInvocation.media_kind == media_kind,
+                ProviderInvocation.provider_request_id.is_not(None),
+            )
+            if provider_request_id:
+                statement = statement.where(ProviderInvocation.provider_request_id == provider_request_id)
+            row = await session.scalar(
+                statement.order_by(ProviderInvocation.created_at.desc(), ProviderInvocation.id.desc()).limit(1)
+            )
+    except Exception:
+        log.exception('Failed to load provider recovery state for task %s', task_id)
+        return None
+    if row is None or not row.provider_request_id:
+        return None
+    return ProviderRecoveryState(
+        provider_request_id=row.provider_request_id,
+        status_url=_safe_recovery_url(row.provider_status_url),
+        response_url=_safe_recovery_url(row.provider_response_url),
+        result_url=_safe_recovery_url(row.provider_result_url),
+    )
+
+
 async def list_provider_invocations(
     session: AsyncSession,
     *,
@@ -253,7 +315,15 @@ async def summarize_provider_models(
     since_ms: int,
     provider: str | None = None,
 ) -> ProviderModelSummaryList:
-    query = (
+    query = _provider_summary_query(since_ms)
+    if provider:
+        query = query.where(ProviderInvocation.provider == provider)
+    rows = (await session.execute(query)).all()
+    return ProviderModelSummaryList(items=tuple(_provider_summary(row) for row in rows))
+
+
+def _provider_summary_query(since_ms: int):
+    return (
         select(
             ProviderInvocation.provider,
             ProviderInvocation.provider_model_id,
@@ -280,32 +350,29 @@ async def summarize_provider_models(
         )
         .order_by(func.count().desc(), ProviderInvocation.provider, ProviderInvocation.provider_model_id)
     )
-    if provider:
-        query = query.where(ProviderInvocation.provider == provider)
-    rows = (await session.execute(query)).all()
-    return ProviderModelSummaryList(
-        items=tuple(
-            ProviderModelSummary(
-                provider=row.provider,
-                provider_model_id=row.provider_model_id,
-                media_kind=row.media_kind,
-                request_count=row.request_count,
-                success_count=row.success_count,
-                failed_count=row.failed_count,
-                cancelled_count=row.cancelled_count,
-                unknown_count=row.unknown_count,
-                active_count=row.active_count,
-                average_execution_duration_ms=row.average_execution_duration_ms,
-                last_invocation_at=row.last_invocation_at,
-            )
-            for row in rows
-        )
+
+
+def _provider_summary(row: object) -> ProviderModelSummary:
+    return ProviderModelSummary(
+        provider=row.provider,
+        provider_model_id=row.provider_model_id,
+        media_kind=row.media_kind,
+        request_count=row.request_count,
+        success_count=row.success_count,
+        failed_count=row.failed_count,
+        cancelled_count=row.cancelled_count,
+        unknown_count=row.unknown_count,
+        active_count=row.active_count,
+        average_execution_duration_ms=row.average_execution_duration_ms,
+        last_invocation_at=row.last_invocation_at,
     )
 
 
 __all__ = [
     'DatabaseProviderInvocationObserver',
+    'ProviderRecoveryState',
     'list_provider_invocations',
+    'load_provider_recovery_state',
     'summarize_provider_models',
     'try_resume_provider_invocation',
     'try_start_provider_invocation',

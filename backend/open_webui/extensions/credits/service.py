@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from time import time
-from typing import Literal
-from urllib.parse import urlsplit
+from typing import Literal, Protocol
 from uuid import uuid4
 
 from open_webui.models.users import User
@@ -13,13 +12,10 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from .compat import ImageBillingContext
 from .constants import (
     MAX_IDEMPOTENCY_KEY_LENGTH,
     MAX_PROVIDER_ERROR_CODE_LENGTH,
     MAX_PROVIDER_ERROR_SUMMARY_LENGTH,
-    MAX_USAGE_RESULT_URL_LENGTH,
-    MAX_USAGE_RESULT_URLS,
 )
 from .db import credit_session
 from .errors import CreditError
@@ -37,6 +33,7 @@ from .repository import (
     list_ledger,
     update_account_balance,
 )
+from .result_validation import safe_result_urls as _safe_result_urls
 from .schemas import (
     AdjustmentRequest,
     AdminLedgerPage,
@@ -125,7 +122,18 @@ def _validate_idempotency_key(value: str) -> None:
         raise CreditError(code='invalid_adjustment', context={'reason': 'invalid_idempotency_key'})
 
 
-def _request_snapshot(context: ImageBillingContext) -> dict[str, object]:
+class GenerationBillingContext(Protocol):
+    """The minimal pricing contract shared by image and video generation."""
+
+    service_type: str
+    resource_id: str
+    action: str
+    channel: str
+    dimensions: Mapping[str, str | int]
+    request_hash: str
+
+
+def _request_snapshot(context: GenerationBillingContext) -> dict[str, object]:
     snapshot: dict[str, object] = {
         'request_hash': context.request_hash,
         'dimensions': dict(context.dimensions),
@@ -151,7 +159,7 @@ def _pricing_snapshot(quote: PriceQuote) -> dict[str, object]:
     }
 
 
-def _usage_metric_attributes(context: ImageBillingContext) -> dict[str, str]:
+def _usage_metric_attributes(context: GenerationBillingContext) -> dict[str, str]:
     return {
         'model': context.resource_id,
         'action': context.action,
@@ -173,94 +181,142 @@ def _existing_usage_result(usage: CreditUsage, request_hash: str) -> BeginUsageR
     return BeginUsageResult(usage=usage, outcome=outcome)
 
 
-async def begin_image_usage(
+def _usage_placeholder_values(
+    user: UserSnapshot,
+    context: GenerationBillingContext,
+    idempotency_key: str,
+    created_at: int,
+) -> dict[str, object]:
+    return {
+        'id': str(uuid4()),
+        'user_id': user.id,
+        'user_name_snapshot': user.name,
+        'user_email_snapshot': user.email,
+        'idempotency_key': idempotency_key,
+        'request_hash': context.request_hash,
+        'service_type': context.service_type,
+        'resource_id': context.resource_id,
+        'action': context.action,
+        'channel': context.channel,
+        'status': 'debited',
+        'exempt': False,
+        'charged_credits': 0,
+        'request_snapshot': _request_snapshot(context),
+        'created_at': created_at,
+        'updated_at': created_at,
+    }
+
+
+async def _price_and_debit_usage(
+    session: AsyncSession,
+    usage: CreditUsage,
+    user: UserSnapshot,
+    context: GenerationBillingContext,
+    idempotency_key: str,
+    created_at: int,
+):
+    try:
+        quote = compute_price(
+            await get_enabled_price(session, context.service_type, context.resource_id, context.action),
+            context.dimensions,
+        )
+    except CreditError as error:
+        credit_metrics.debit_failed(**_usage_metric_attributes(context), error_code=error.code)
+        raise
+    account = await get_or_create_account(session, user, now=created_at)
+    account = await _lock_and_verify_account_matches_ledger(session, account.id)
+    balance = await update_account_balance(session, account, -quote.charged_credits, now=created_at)
+    if balance is None:
+        credit_metrics.debit_insufficient(**_usage_metric_attributes(context))
+        raise CreditError(code='insufficient_credits', context={'required': quote.charged_credits})
+    balance_before, balance_after = balance
+    pricing_snapshot = _pricing_snapshot(quote)
+    ledger = await insert_ledger(
+        session,
+        _consumption_ledger_values(
+            usage,
+            user,
+            context,
+            account.id,
+            idempotency_key,
+            quote.charged_credits,
+            balance_before,
+            balance_after,
+            pricing_snapshot,
+            created_at,
+        ),
+    )
+    usage.ledger_id = ledger.id
+    usage.charged_credits = quote.charged_credits
+    usage.pricing_snapshot = pricing_snapshot
+    await session.flush()
+    return quote
+
+
+def _consumption_ledger_values(
+    usage: CreditUsage,
+    user: UserSnapshot,
+    context: GenerationBillingContext,
+    account_id: str,
+    idempotency_key: str,
+    charged_credits: int,
+    balance_before: int,
+    balance_after: int,
+    pricing_snapshot: dict[str, object],
+    created_at: int,
+) -> dict[str, object]:
+    return {
+        'id': str(uuid4()),
+        'account_id': account_id,
+        'usage_id': usage.id,
+        'user_id': user.id,
+        'user_name_snapshot': user.name,
+        'user_email_snapshot': user.email,
+        'amount': -charged_credits,
+        'balance_before': balance_before,
+        'balance_after': balance_after,
+        'entry_type': 'consumption',
+        'request_source': 'api' if context.channel == 'api' else 'web',
+        'request_id': idempotency_key,
+        'idempotency_key': idempotency_key,
+        'service_type': context.service_type,
+        'resource_id': context.resource_id,
+        'action': context.action,
+        'pricing_snapshot': pricing_snapshot,
+        'created_at': created_at,
+    }
+
+
+async def begin_generation_usage(
     session: AsyncSession,
     user: UserSnapshot,
-    context: ImageBillingContext,
+    context: GenerationBillingContext,
     idempotency_key: str,
 ) -> BeginUsageResult:
-    """Atomically claim an image request and record its prepaid credit consumption."""
+    """Atomically claim a media-generation request and record its prepaid credits."""
     _validate_idempotency_key(idempotency_key)
     created_at = _now()
 
     async with session.begin():
         current_user, _role = await _current_user_for_usage(session, user.id)
-        usage_values = {
-            'id': str(uuid4()),
-            'user_id': current_user.id,
-            'user_name_snapshot': current_user.name,
-            'user_email_snapshot': current_user.email,
-            'idempotency_key': idempotency_key,
-            'request_hash': context.request_hash,
-            'service_type': context.service_type,
-            'resource_id': context.resource_id,
-            'action': context.action,
-            'channel': context.channel,
-            'status': 'debited',
-            'exempt': False,
-            'charged_credits': 0,
-            'request_snapshot': _request_snapshot(context),
-            'created_at': created_at,
-            'updated_at': created_at,
-        }
-        usage = await claim_usage_placeholder(session, usage_values)
+        usage = await claim_usage_placeholder(
+            session,
+            _usage_placeholder_values(current_user, context, idempotency_key, created_at),
+        )
         if usage is None:
             existing = await get_usage_by_idempotency_key(session, current_user.id, idempotency_key)
             if existing is None:
                 raise RuntimeError('credit usage was not persisted after idempotency conflict')
             return _existing_usage_result(existing, context.request_hash)
 
-        try:
-            quote = compute_price(
-                await get_enabled_price(
-                    session,
-                    context.service_type,
-                    context.resource_id,
-                    context.action,
-                ),
-                context.dimensions,
-            )
-        except CreditError as error:
-            credit_metrics.debit_failed(
-                **_usage_metric_attributes(context),
-                error_code=error.code,
-            )
-            raise
-        account = await get_or_create_account(session, current_user, now=created_at)
-        account = await _lock_and_verify_account_matches_ledger(session, account.id)
-        balance = await update_account_balance(session, account, -quote.charged_credits, now=created_at)
-        if balance is None:
-            credit_metrics.debit_insufficient(**_usage_metric_attributes(context))
-            raise CreditError(code='insufficient_credits', context={'required': quote.charged_credits})
-        balance_before, balance_after = balance
-        pricing_snapshot = _pricing_snapshot(quote)
-        ledger = await insert_ledger(
+        quote = await _price_and_debit_usage(
             session,
-            {
-                'id': str(uuid4()),
-                'account_id': account.id,
-                'usage_id': usage.id,
-                'user_id': current_user.id,
-                'user_name_snapshot': current_user.name,
-                'user_email_snapshot': current_user.email,
-                'amount': -quote.charged_credits,
-                'balance_before': balance_before,
-                'balance_after': balance_after,
-                'entry_type': 'consumption',
-                'request_source': 'api' if context.channel == 'api' else 'web',
-                'request_id': idempotency_key,
-                'idempotency_key': idempotency_key,
-                'service_type': context.service_type,
-                'resource_id': context.resource_id,
-                'action': context.action,
-                'pricing_snapshot': pricing_snapshot,
-                'created_at': created_at,
-            },
+            usage,
+            current_user,
+            context,
+            idempotency_key,
+            created_at,
         )
-        usage.ledger_id = ledger.id
-        usage.charged_credits = quote.charged_credits
-        usage.pricing_snapshot = pricing_snapshot
-        await session.flush()
         result = BeginUsageResult(usage=usage, outcome='new')
     credit_metrics.debit_succeeded(
         **_usage_metric_attributes(context),
@@ -268,33 +324,6 @@ async def begin_image_usage(
     )
     credit_metrics.usage_status(status='debited', **_usage_metric_attributes(context))
     return result
-
-
-def _safe_result_urls(urls: Sequence[str]) -> list[str]:
-    if isinstance(urls, (str, bytes)) or not 1 <= len(urls) <= MAX_USAGE_RESULT_URLS:
-        raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-    normalized: list[str] = []
-    for url in urls:
-        if not isinstance(url, str) or not url or len(url) > MAX_USAGE_RESULT_URL_LENGTH:
-            raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-        if any(ord(char) < 32 or ord(char) == 127 for char in url) or '\\' in url or url.startswith('//'):
-            raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-        parsed = urlsplit(url)
-        file_id = url.removeprefix('/api/v1/files/').removesuffix('/content')
-        if (
-            not url.startswith('/api/v1/files/')
-            or not url.endswith('/content')
-            or re.fullmatch(r'[A-Za-z0-9_-]{1,128}', file_id) is None
-            or parsed.scheme
-            or parsed.netloc
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise CreditError(code='provider_failed', context={'reason': 'invalid_provider_result'})
-        normalized.append(url)
-    return normalized
 
 
 def _safe_error_snapshot(error: SafeProviderError) -> dict[str, str]:
@@ -373,18 +402,71 @@ async def mark_usage_succeeded(usage_id: str, urls: Sequence[str]) -> int:
     return changed
 
 
+def _restoration_ledger_values(
+    usage: CreditUsage,
+    account_id: str,
+    balance_before: int,
+    balance_after: int,
+    now: int,
+) -> dict[str, object]:
+    restoration_key = f'restore:{usage.id}'[:MAX_IDEMPOTENCY_KEY_LENGTH]
+    return {
+        'id': str(uuid4()),
+        'account_id': account_id,
+        'usage_id': usage.id,
+        'user_id': usage.user_id,
+        'user_name_snapshot': usage.user_name_snapshot,
+        'user_email_snapshot': usage.user_email_snapshot,
+        'amount': usage.charged_credits,
+        'balance_before': balance_before,
+        'balance_after': balance_after,
+        'entry_type': 'system_adjustment',
+        'reason_code': 'accounting_correction',
+        'note': 'Prepaid credits restored before provider acceptance',
+        'request_source': 'internal_admin',
+        'request_id': restoration_key,
+        'idempotency_key': restoration_key,
+        'service_type': usage.service_type,
+        'resource_id': usage.resource_id,
+        'action': usage.action,
+        'pricing_snapshot': usage.pricing_snapshot,
+        'metadata_snapshot': {'reason': 'prepaid_restored'},
+        'related_ledger_id': usage.ledger_id,
+        'created_at': now,
+    }
+
+
+async def _restore_usage_prepaid(session: AsyncSession, usage: CreditUsage, now: int) -> None:
+    if usage.exempt or usage.charged_credits <= 0 or not usage.ledger_id:
+        return
+    existing = await session.scalar(select(CreditLedger).where(CreditLedger.related_ledger_id == usage.ledger_id))
+    if existing is not None:
+        return
+    consumption = await session.scalar(select(CreditLedger).where(CreditLedger.id == usage.ledger_id))
+    if consumption is None:
+        credit_metrics.consistency_anomaly()
+        raise CreditError(code='credit_service_unavailable', context={'reason': 'consumption_ledger_missing'})
+    account = await _lock_and_verify_account_matches_ledger(session, consumption.account_id)
+    balance = await update_account_balance(session, account, usage.charged_credits, now=now)
+    if balance is None:
+        raise CreditError(code='credit_service_unavailable', context={'reason': 'refund_balance_limit_exceeded'})
+    await insert_ledger(
+        session,
+        _restoration_ledger_values(usage, account.id, balance[0], balance[1], now),
+    )
+
+
 async def mark_usage_failed(
     usage_id: str,
     error: SafeProviderError,
     *,
     restore_prepaid: bool = False,
 ) -> int:
-    """Fail an invoking usage and optionally restore its prepaid credits atomically.
+    """Fail an invoking usage and optionally restore prepaid credits atomically.
 
-    Provider failures remain prepaid by default for the existing reconciliation
-    workflow. An explicit user cancellation is different: no completed result is
-    delivered, so the cancellation path writes one idempotent compensating ledger
-    row in the same transaction as the terminal usage state.
+    Provider failures remain prepaid by default for reconciliation. Callers may
+    request restoration only when provider acceptance is known not to have
+    happened; the compensating ledger remains idempotent by related ledger id.
     """
     now = _now()
     async with credit_session() as session, session.begin():
@@ -392,59 +474,8 @@ async def mark_usage_failed(
         if usage is None or usage.status != 'invoking':
             return 0
 
-        if restore_prepaid and not usage.exempt and usage.charged_credits > 0 and usage.ledger_id:
-            existing_refund = await session.scalar(
-                select(CreditLedger).where(CreditLedger.related_ledger_id == usage.ledger_id)
-            )
-            if existing_refund is None:
-                consumption = await session.scalar(select(CreditLedger).where(CreditLedger.id == usage.ledger_id))
-                if consumption is None:
-                    credit_metrics.consistency_anomaly()
-                    raise CreditError(
-                        code='credit_service_unavailable',
-                        context={'reason': 'consumption_ledger_missing'},
-                    )
-                account = await _lock_and_verify_account_matches_ledger(session, consumption.account_id)
-                balance = await update_account_balance(
-                    session,
-                    account,
-                    usage.charged_credits,
-                    now=now,
-                )
-                if balance is None:
-                    raise CreditError(
-                        code='credit_service_unavailable',
-                        context={'reason': 'refund_balance_limit_exceeded'},
-                    )
-                balance_before, balance_after = balance
-                cancellation_key = f'cancel:{usage.id}'[:MAX_IDEMPOTENCY_KEY_LENGTH]
-                await insert_ledger(
-                    session,
-                    {
-                        'id': str(uuid4()),
-                        'account_id': account.id,
-                        'usage_id': usage.id,
-                        'user_id': usage.user_id,
-                        'user_name_snapshot': usage.user_name_snapshot,
-                        'user_email_snapshot': usage.user_email_snapshot,
-                        'amount': usage.charged_credits,
-                        'balance_before': balance_before,
-                        'balance_after': balance_after,
-                        'entry_type': 'system_adjustment',
-                        'reason_code': 'accounting_correction',
-                        'note': 'Generation cancelled before completion',
-                        'request_source': 'internal_admin',
-                        'request_id': cancellation_key,
-                        'idempotency_key': cancellation_key,
-                        'service_type': usage.service_type,
-                        'resource_id': usage.resource_id,
-                        'action': usage.action,
-                        'pricing_snapshot': usage.pricing_snapshot,
-                        'metadata_snapshot': {'reason': 'generation_cancelled'},
-                        'related_ledger_id': usage.ledger_id,
-                        'created_at': now,
-                    },
-                )
+        if restore_prepaid:
+            await _restore_usage_prepaid(session, usage, now)
 
         usage.status = 'failed'
         usage.error_snapshot = _safe_error_snapshot(error)
@@ -572,11 +603,7 @@ async def list_admin_credit_prices(
     return await list_credit_prices(session, query)
 
 
-async def list_reconciliation_cases(
-    session: AsyncSession,
-    query: ReconciliationQuery,
-) -> ReconciliationPage:
-    refund = aliased(CreditLedger)
+def _reconciliation_conditions(query: ReconciliationQuery, refund) -> list:
     conditions = [
         CreditUsage.status.in_(('failed', 'unknown')),
         CreditUsage.exempt.is_(False),
@@ -585,21 +612,45 @@ async def list_reconciliation_cases(
     ]
     if query.status is not None:
         conditions.append(CreditUsage.status == query.status)
-    # compensated 过滤依赖 outerjoin 的 refund 别名：refund.id 非空表示已存在
-    # manual_refund 补偿账本，为空则尚未补偿。True=只看已补偿，False=只看待补偿。
     if query.compensated is True:
         conditions.append(refund.id.is_not(None))
     elif query.compensated is False:
         conditions.append(refund.id.is_(None))
     if query.user_id is not None:
         conditions.append(CreditUsage.user_id == query.user_id)
+    return conditions
 
-    # compensated 过滤引用了 refund 别名；计数查询必须带上与行查询相同的 outerjoin，
-    # 否则 WHERE 中的 refund.id 会引用未连接的表。未筛选补偿状态时不加 join，
-    # 保持原有计数计划不变。
-    # Both automatic restoration (accounting_correction) and an administrator's
-    # manual refund compensate the original consumption. Treat either as
-    # compensated so mock/provider failures cannot appear eligible twice.
+
+def _reconciliation_item(usage: CreditUsage, refund_id: str | None) -> ReconciliationItem:
+    error = usage.error_snapshot if isinstance(usage.error_snapshot, dict) else {}
+    request_snapshot = usage.request_snapshot if isinstance(usage.request_snapshot, dict) else {}
+    execution_mode = request_snapshot.get('execution_mode')
+    return ReconciliationItem(
+        usage_id=usage.id,
+        user_id=usage.user_id,
+        user_name_snapshot=usage.user_name_snapshot,
+        user_email_snapshot=usage.user_email_snapshot,
+        status=usage.status,
+        charged_credits=usage.charged_credits,
+        resource_id=usage.resource_id,
+        action=usage.action,
+        channel=usage.channel,
+        execution_mode=execution_mode if execution_mode in {'mock', 'fal'} else None,
+        error_code=error.get('code') if isinstance(error.get('code'), str) else None,
+        error_summary=error.get('summary') if isinstance(error.get('summary'), str) else None,
+        consumption_ledger_id=usage.ledger_id,
+        compensation_ledger_id=refund_id,
+        created_at=usage.created_at,
+        completed_at=usage.completed_at,
+    )
+
+
+async def list_reconciliation_cases(
+    session: AsyncSession,
+    query: ReconciliationQuery,
+) -> ReconciliationPage:
+    refund = aliased(CreditLedger)
+    conditions = _reconciliation_conditions(query, refund)
     refund_join = and_(
         refund.related_ledger_id == CreditUsage.ledger_id,
         refund.amount > 0,
@@ -618,32 +669,56 @@ async def list_reconciliation_cases(
             .limit(query.limit)
         )
     ).all()
-    items = []
-    for usage, refund_id in rows:
-        error = usage.error_snapshot if isinstance(usage.error_snapshot, dict) else {}
-        request_snapshot = usage.request_snapshot if isinstance(usage.request_snapshot, dict) else {}
-        execution_mode = request_snapshot.get('execution_mode')
-        items.append(
-            ReconciliationItem(
-                usage_id=usage.id,
-                user_id=usage.user_id,
-                user_name_snapshot=usage.user_name_snapshot,
-                user_email_snapshot=usage.user_email_snapshot,
-                status=usage.status,
-                charged_credits=usage.charged_credits,
-                resource_id=usage.resource_id,
-                action=usage.action,
-                channel=usage.channel,
-                execution_mode=execution_mode if execution_mode in {'mock', 'fal'} else None,
-                error_code=error.get('code') if isinstance(error.get('code'), str) else None,
-                error_summary=error.get('summary') if isinstance(error.get('summary'), str) else None,
-                consumption_ledger_id=usage.ledger_id,
-                compensation_ledger_id=refund_id,
-                created_at=usage.created_at,
-                completed_at=usage.completed_at,
-            )
-        )
+    items = [_reconciliation_item(usage, refund_id) for usage, refund_id in rows]
     return ReconciliationPage(items=tuple(items), total=total)
+
+
+def _validate_reconcilable_usage(usage: CreditUsage | None) -> CreditUsage:
+    if usage is None:
+        raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_found'})
+    if usage.status not in {'failed', 'unknown'}:
+        raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_reconcilable'})
+    if usage.exempt or usage.charged_credits <= 0 or not usage.ledger_id:
+        raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_charged'})
+    return usage
+
+
+def _compensation_ledger_values(
+    usage: CreditUsage,
+    operator: UserSnapshot,
+    request: CompensationRequest,
+    audit: RequestAuditContext,
+    account_id: str,
+    balance: tuple[int, int],
+    now: int,
+) -> dict[str, object]:
+    return {
+        'id': str(uuid4()),
+        'account_id': account_id,
+        'usage_id': usage.id,
+        'user_id': usage.user_id,
+        'user_name_snapshot': usage.user_name_snapshot,
+        'user_email_snapshot': usage.user_email_snapshot,
+        'amount': usage.charged_credits,
+        'balance_before': balance[0],
+        'balance_after': balance[1],
+        'entry_type': 'admin_adjustment',
+        'reason_code': 'manual_refund',
+        'note': request.note,
+        'operator_id': operator.id,
+        'operator_name_snapshot': operator.name,
+        'operator_email_snapshot': operator.email,
+        'request_source': audit.source,
+        'request_id': audit.request_id,
+        'idempotency_key': f'reconciliation:{usage.id}',
+        'service_type': usage.service_type,
+        'resource_id': usage.resource_id,
+        'action': usage.action,
+        'pricing_snapshot': usage.pricing_snapshot,
+        'metadata_snapshot': {'reconciliation_usage_id': usage.id},
+        'related_ledger_id': usage.ledger_id,
+        'created_at': now,
+    }
 
 
 async def compensate_reconciliation_case(
@@ -655,13 +730,9 @@ async def compensate_reconciliation_case(
 ) -> tuple[CreditLedger, bool]:
     now = _now()
     async with session.begin():
-        usage = await session.scalar(select(CreditUsage).where(CreditUsage.id == usage_id).with_for_update())
-        if usage is None:
-            raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_found'})
-        if usage.status not in {'failed', 'unknown'}:
-            raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_reconcilable'})
-        if usage.exempt or usage.charged_credits <= 0 or not usage.ledger_id:
-            raise CreditError(code='invalid_adjustment', context={'reason': 'usage_not_charged'})
+        usage = _validate_reconcilable_usage(
+            await session.scalar(select(CreditUsage).where(CreditUsage.id == usage_id).with_for_update())
+        )
         existing = await session.scalar(select(CreditLedger).where(CreditLedger.related_ledger_id == usage.ledger_id))
         if existing is not None:
             return existing, False
@@ -676,46 +747,26 @@ async def compensate_reconciliation_case(
         balance = await update_account_balance(session, account, usage.charged_credits, now=now)
         if balance is None:
             raise CreditError(code='invalid_adjustment', context={'reason': 'balance_limit_exceeded'})
-        balance_before, balance_after = balance
         ledger = await insert_ledger(
             session,
-            {
-                'id': str(uuid4()),
-                'account_id': account.id,
-                'usage_id': usage.id,
-                'user_id': usage.user_id,
-                'user_name_snapshot': usage.user_name_snapshot,
-                'user_email_snapshot': usage.user_email_snapshot,
-                'amount': usage.charged_credits,
-                'balance_before': balance_before,
-                'balance_after': balance_after,
-                'entry_type': 'admin_adjustment',
-                'reason_code': 'manual_refund',
-                'note': request.note,
-                'operator_id': operator.id,
-                'operator_name_snapshot': operator.name,
-                'operator_email_snapshot': operator.email,
-                'request_source': audit.source,
-                'request_id': audit.request_id,
-                'idempotency_key': f'reconciliation:{usage.id}',
-                'service_type': usage.service_type,
-                'resource_id': usage.resource_id,
-                'action': usage.action,
-                'pricing_snapshot': usage.pricing_snapshot,
-                'metadata_snapshot': {'reconciliation_usage_id': usage.id},
-                'related_ledger_id': usage.ledger_id,
-                'created_at': now,
-            },
+            _compensation_ledger_values(usage, operator, request, audit, account.id, balance, now),
         )
     credit_metrics.admin_adjustment(amount=usage.charged_credits)
     return ledger, True
 
 
+# Compatibility for image adapters and third-party extension imports. New
+# cross-media callers must use the accurately named generic entry point above.
+begin_image_usage = begin_generation_usage
+
+
 __all__ = [
     'BeginUsageResult',
+    'GenerationBillingContext',
     'SafeProviderError',
     'adjust_balance',
     'begin_image_usage',
+    'begin_generation_usage',
     'get_balance',
     'list_admin_credit_prices',
     'list_admin_ledger',

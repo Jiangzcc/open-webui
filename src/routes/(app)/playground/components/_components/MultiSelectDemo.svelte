@@ -12,15 +12,14 @@
 
 <DemoCard
 	title="MultiSelect"
-	desc={$i18n.t('Multi-select dropdown. value is string[]. on:change has no payload, read bind:value.')}>
+	desc={$i18n.t(
+		'Multi-select dropdown. value is string[]. on:change has no payload, read bind:value.'
+	)}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<MultiSelect
 			bind:value={selected}
-			options={[
-				{ value: 'a', label: 'Apple' },
-				{ value: 'b', label: 'Banana' },
-				'cherry'
-			]}
+			options={[{ value: 'a', label: 'Apple' }, { value: 'b', label: 'Banana' }, 'cherry']}
 			placeholder={$i18n.t('Pick many')}
 			className="w-full h-9 flex items-center gap-2 rounded-lg px-3 text-sm bg-gray-50 dark:bg-gray-850 outline-hidden"
 			on:change={() => console.log('changed', selected)}

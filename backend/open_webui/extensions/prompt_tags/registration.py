@@ -4,9 +4,9 @@ import anyio
 from fastapi import FastAPI
 from open_webui.extensions.migration_kit import SchemaGuard, validate_schema
 
+from . import models  # noqa: F401 - 副作用导入：确保派生 _REQUIRED_TABLES 前表已注册到 metadata
 from .db import PromptTagBase
 from .migrations.runner import SPEC, run_prompt_tag_migrations
-from . import models  # noqa: F401 - 副作用导入：确保派生 _REQUIRED_TABLES 前表已注册到 metadata
 
 _REQUIRED_TABLES = frozenset(table.name for table in PromptTagBase.metadata.sorted_tables)
 _REQUIRED_UNIQUE = {

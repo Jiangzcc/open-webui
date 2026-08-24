@@ -11,14 +11,15 @@
 
 <DemoCard
 	title="Modal"
-	desc={$i18n.t('Centered modal with focus-trap. bind:show. Escape / backdrop click to close.')}>
+	desc={$i18n.t('Centered modal with focus-trap. bind:show. Escape / backdrop click to close.')}
+>
 	<button
 		class="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
 		on:click={() => (show = true)}
 	>
 		{$i18n.t('Open Modal')}
 	</button>
-	<Modal bind:show={show} size="md" className="bg-white dark:bg-gray-900 rounded-3xl">
+	<Modal bind:show size="md" className="bg-white dark:bg-gray-900 rounded-3xl">
 		<div class="p-6">
 			<h3 class="text-lg font-medium mb-2 text-gray-900 dark:text-gray-100">
 				{$i18n.t('Modal Title')}

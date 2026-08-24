@@ -179,6 +179,11 @@ class ImageGenerationTask(CreationBase):
             name='ck_ext_image_task_kind',
         ),
         CheckConstraint('expected_count >= 1', name='ck_ext_image_task_expected_count'),
+        CheckConstraint(
+            "execution_mode IS NULL OR execution_mode IN ('mock', 'fal')",
+            name='ck_ext_image_task_execution_mode',
+        ),
+        CheckConstraint('delivery_attempts >= 0', name='ck_ext_image_task_delivery_attempts'),
         Index('ix_ext_image_task_user_created', 'user_id', 'created_at', 'id'),
         Index('ix_ext_image_task_status_updated', 'status', 'updated_at', 'id'),
     )
@@ -186,6 +191,7 @@ class ImageGenerationTask(CreationBase):
     id = Column(String(128), primary_key=True)
     user_id = Column(String(128), nullable=False)
     idempotency_key = Column(String(128), nullable=False)
+    payload_sha256 = Column(String(64), nullable=False)
     status = Column(String(16), nullable=False)
     kind = Column(String(32), nullable=False)
     prompt = Column(Text, nullable=False)
@@ -194,6 +200,8 @@ class ImageGenerationTask(CreationBase):
     expected_count = Column(Integer, nullable=False)
     result_json = Column(JSONField, nullable=True)
     error_code = Column(String(64), nullable=True)
+    execution_mode = Column(String(16), nullable=True)
+    delivery_attempts = Column(Integer, nullable=False, default=0, server_default='0')
     created_at = Column(BigInteger, nullable=False)
     started_at = Column(BigInteger, nullable=True)
     completed_at = Column(BigInteger, nullable=True)
@@ -225,12 +233,15 @@ class VideoGenerationTask(CreationBase):
     id = Column(String(128), primary_key=True)
     user_id = Column(String(128), nullable=False)
     idempotency_key = Column(String(128), nullable=False)
+    payload_sha256 = Column(String(64), nullable=False)
     status = Column(String(16), nullable=False)
     task = Column(String(32), nullable=False)
     prompt = Column(Text, nullable=False)
     model_id = Column(String(256), nullable=False)
     params_json = Column(JSONField, nullable=True)
     assets_json = Column(JSONField, nullable=True)
+    provider_definition_json = Column(JSONField, nullable=False)
+    provider_payload_json = Column(JSONField, nullable=False)
     result_json = Column(JSONField, nullable=True)
     error_code = Column(String(64), nullable=True)
     usage_id = Column(String(128), nullable=True)

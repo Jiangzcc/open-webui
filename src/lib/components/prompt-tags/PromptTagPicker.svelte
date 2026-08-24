@@ -140,7 +140,7 @@
 >
 	<button
 		type="button"
-		class="inline-flex h-8 items-center gap-1.5 rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+		class="inline-flex h-11 items-center gap-1.5 rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 sm:h-8 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 		aria-expanded={show}
 		aria-haspopup="dialog"
 		aria-label={$i18n.t('promptTags.picker.label')}
@@ -168,7 +168,7 @@
 			<input
 				type="search"
 				bind:value={search}
-				class="min-h-9 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm outline-hidden focus:border-gray-400 focus:ring-2 focus:ring-gray-200 dark:border-gray-700 dark:bg-gray-950 dark:focus:border-gray-500 dark:focus:ring-gray-800"
+				class="min-h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm outline-hidden focus:border-gray-400 focus:ring-2 focus:ring-gray-200 sm:min-h-9 dark:border-gray-700 dark:bg-gray-950 dark:focus:border-gray-500 dark:focus:ring-gray-800"
 				placeholder={$i18n.t('promptTags.picker.search')}
 				aria-label={$i18n.t('promptTags.picker.search')}
 			/>
@@ -211,7 +211,7 @@
 							<button
 								type="button"
 								id={`prompt-tag-category-${category.id}`}
-								class="flex min-h-9 w-full items-center justify-between gap-1 rounded-xl px-2 py-1.5 text-left text-sm transition {activeCategoryId ===
+								class="flex min-h-11 w-full items-center justify-between gap-1 rounded-xl px-2 py-1.5 text-left text-sm transition sm:min-h-9 {activeCategoryId ===
 								category.id
 									? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
 									: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
@@ -235,7 +235,7 @@
 								{#each category.tags as tag (tag.id)}
 									<button
 										type="button"
-										class="inline-flex min-h-8 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700 transition select-none hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 dark:hover:bg-gray-800 {tag.is_negative
+										class="inline-flex min-h-11 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700 transition select-none hover:bg-gray-100 sm:min-h-8 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 dark:hover:bg-gray-800 {tag.is_negative
 											? 'ring-1 ring-amber-200 dark:ring-amber-800'
 											: ''}"
 										title={tag.insert_text}

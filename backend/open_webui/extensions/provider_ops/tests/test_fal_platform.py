@@ -2,21 +2,7 @@ from __future__ import annotations
 
 import pytest
 from open_webui.extensions.provider_ops.providers.fal_platform import FalPlatformClient, FalPlatformError
-
-
-class _Response:
-    def __init__(self, payload, status=200):
-        self.payload = payload
-        self.status = status
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_args):
-        return None
-
-    async def json(self, content_type=None):
-        return self.payload
+from open_webui.extensions.tests.http_test_support import AsyncJsonResponse as _Response
 
 
 class _Session:
@@ -166,3 +152,114 @@ async def test_requests_use_endpoint_batches_without_request_payload_expansion(m
     assert ('endpoint_id', 'fal-ai/example') in params
     assert ('limit', '100') in params
     assert not any(name == 'expand' for name, _value in params)
+
+
+@pytest.mark.asyncio
+async def test_usage_and_analytics_paginate_and_preserve_decimal_metrics(monkeypatch) -> None:
+    import open_webui.extensions.provider_ops.providers.fal_platform as platform
+
+    usage_session = _Session(
+        [
+            {
+                'time_series': [
+                    {
+                        'bucket': '2026-08-13T10:00:00Z',
+                        'results': [
+                            {
+                                'endpoint_id': 'fal-ai/example',
+                                'unit': 'image',
+                                'quantity': 2,
+                                'unit_price': '0.1',
+                                'cost_subtotal': '0.2',
+                                'cost_discount': '0',
+                                'cost_total': '0.2',
+                                'currency': 'USD',
+                            }
+                        ],
+                    }
+                ],
+                'next_cursor': 'next',
+            },
+            {'time_series': [], 'next_cursor': None},
+        ]
+    )
+    monkeypatch.setattr(platform, 'get_session', lambda: _value(usage_session))
+    usage = await FalPlatformClient('api-key').usage(start='start', end='end', timeframe='hour')
+    assert len(usage) == 1
+    assert usage_session.calls[1][1]['params'][-1] == ('cursor', 'next')
+
+    analytics_session = _Session(
+        [
+            {
+                'time_series': [
+                    {
+                        'bucket': '2026-08-13T10:00:00Z',
+                        'results': [
+                            {
+                                'endpoint_id': 'fal-ai/example',
+                                'request_count': 3,
+                                'success_count': 2,
+                            }
+                        ],
+                    }
+                ],
+                'next_cursor': None,
+            }
+        ]
+    )
+    monkeypatch.setattr(platform, 'get_session', lambda: _value(analytics_session))
+    analytics = await FalPlatformClient('api-key').analytics(
+        ('fal-ai/example',),
+        start='start',
+        end='end',
+        timeframe='hour',
+    )
+    assert analytics[0].results[0].request_count == 3
+    assert ('expand', 'request_count') in analytics_session.calls[0][1]['params']
+
+
+@pytest.mark.asyncio
+async def test_platform_rejects_bad_credentials_payloads_and_cursor_loops(monkeypatch) -> None:
+    import open_webui.extensions.provider_ops.providers.fal_platform as platform
+
+    with pytest.raises(FalPlatformError) as missing:
+        FalPlatformClient('')
+    assert missing.value.code == 'provider_credentials_missing'
+
+    monkeypatch.setattr(platform, 'get_session', lambda: _value(_Session([['not', 'mapping']])))
+    with pytest.raises(FalPlatformError) as invalid_payload:
+        await FalPlatformClient('key')._get('/path', [])
+    assert invalid_payload.value.code == 'provider_platform_invalid_response'
+
+    loop_pages = [
+        {'billing_events': [], 'next_cursor': 'same'},
+        {'billing_events': [], 'next_cursor': 'same'},
+    ]
+    monkeypatch.setattr(platform, 'get_session', lambda: _value(_Session(loop_pages)))
+    with pytest.raises(FalPlatformError) as loop:
+        await FalPlatformClient('key').billing_events(start='start', end='end')
+    assert loop.value.code == 'provider_platform_cursor_loop'
+
+    monkeypatch.setattr(platform, '_MAX_PAGES', 1)
+    monkeypatch.setattr(
+        platform,
+        'get_session',
+        lambda: _value(_Session([{'items': [], 'next_cursor': 'more'}])),
+    )
+    with pytest.raises(FalPlatformError) as limit:
+        await FalPlatformClient('key').requests(('model',), start='start', end='end')
+    assert limit.value.code == 'provider_platform_page_limit'
+
+
+@pytest.mark.asyncio
+async def test_invalid_platform_models_map_to_stable_error(monkeypatch) -> None:
+    import open_webui.extensions.provider_ops.providers.fal_platform as platform
+
+    monkeypatch.setattr(
+        platform,
+        'get_session',
+        lambda: _value(_Session([{'prices': [{'endpoint_id': None}]}])),
+    )
+    with pytest.raises(FalPlatformError) as invalid:
+        await FalPlatformClient('key').prices(('model',))
+    assert invalid.value.code == 'provider_platform_invalid_response'

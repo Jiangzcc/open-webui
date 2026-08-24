@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from open_webui.extensions.creations.schemas import (
     CaptionUpdateForm,
     CapturedImageBatch,
@@ -14,6 +12,7 @@ from open_webui.extensions.creations.schemas import (
     decode_keyset_cursor,
     encode_keyset_cursor,
 )
+from pydantic import ValidationError
 
 
 def test_cursor_round_trip_is_versioned_and_opaque() -> None:

@@ -207,9 +207,8 @@ async def test_export_import_roundtrip_through_endpoints(prompt_tag_sessions, tm
     assert document.categories and document.tags
 
     # 导入目标是独立空库（fixture 工厂指向导出源库，直接导入必然 slug 冲突）。
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
     from open_webui.extensions.prompt_tags.db import PromptTagBase
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     engine = create_async_engine(f'sqlite+aiosqlite:///{tmp_path / "import-target.sqlite"}')
     async with engine.begin() as connection:

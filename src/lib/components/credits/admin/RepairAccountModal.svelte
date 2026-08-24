@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { repairCreditAccount, type CreditAccount } from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 
 	export let show = false;
 	export let account: CreditAccount | null = null;
@@ -126,7 +126,7 @@
 					class="mt-1.5 w-full rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
 					bind:value={note}
 					rows="3"
-				/>
+				></textarea>
 			</label>
 
 			<label class="flex items-center gap-2 text-sm dark:text-gray-200">

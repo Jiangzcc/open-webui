@@ -9,7 +9,8 @@
 
 <DemoCard
 	title="DropdownSub"
-	desc={$i18n.t('Nested submenu. Hover / Enter / ArrowRight to open. No show prop, self-managed.')}>
+	desc={$i18n.t('Nested submenu. Hover / Enter / ArrowRight to open. No show prop, self-managed.')}
+>
 	<div class="w-full">
 		<DropdownSub
 			contentClass="rounded-2xl p-1 bg-white dark:bg-gray-850 shadow-lg border border-gray-100 dark:border-gray-800"

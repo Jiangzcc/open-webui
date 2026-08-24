@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, onDestroy, onMount, tick } from 'svelte';
+	import { getContext, onDestroy, onMount } from 'svelte';
 	import type { i18n as I18n } from 'i18next';
 	import type { Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
@@ -19,14 +19,12 @@
 		type VideoModel,
 		type VideoTask
 	} from '$lib/apis/videos';
-	import { WEBUI_NAME, mobile, showSidebar, user } from '$lib/stores';
+	import { WEBUI_NAME, showSidebar, user } from '$lib/stores';
 	import CreationDetailsModal from '$lib/components/images/CreationDetailsModal.svelte';
 	import CreationsLibrary from '$lib/components/images/CreationsLibrary.svelte';
 	import type { ImageQuoteState } from '$lib/components/credits/quote-state';
 	import Loader from '$lib/components/common/Loader.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
 	import { downloadBlob } from '$lib/utils/download';
@@ -40,6 +38,15 @@
 	import { appendPromptText } from '$lib/components/prompt-tags/tagToggle';
 	import VideoTaskCard from './VideoTaskCard.svelte';
 	import VideoPromptForm from './VideoPromptForm.svelte';
+	import VideoPageNavigation from './VideoPageNavigation.svelte';
+	import {
+		defaultVideoParams,
+		imageQuoteStateFromVideoQuote,
+		preferredVideoModelId,
+		prepareVideoSubmission,
+		videoQuoteDimensions,
+		type VideoSubmissionError
+	} from './videoPageState';
 	import {
 		videoAdvancedFieldLabels,
 		videoAssetLabels,
@@ -124,36 +131,22 @@
 		: '';
 	$: if (!loading && quoteKey) scheduleQuote();
 
-	const quoteDimensions = (): Record<string, string | number> => ({
-		duration: String(params.duration ?? selectedModel?.default_duration ?? '1'),
-		resolution: String(params.resolution ?? selectedModel?.default_resolution ?? 'default'),
-		aspect_ratio: String(params.aspect_ratio ?? selectedModel?.default_aspect_ratio ?? 'default'),
-		audio_mode: String(params.audio_mode ?? selectedModel?.default_audio_mode ?? 'default'),
-		...(params.fps !== null && params.fps !== undefined && { fps: String(params.fps) }),
-		...(params.output_quality !== null &&
-			params.output_quality !== undefined && { output_quality: String(params.output_quality) })
-	});
+	const quoteDimensions = () => videoQuoteDimensions(params, selectedModel);
 
-	const refreshQuote = async (): Promise<VideoQuote | null> => {
-		if (!selectedModel) return null;
+	const refreshQuote = async (
+		model: VideoModel | null = selectedModel,
+		dimensions: Record<string, string | number> = quoteDimensions(),
+		action: VideoTask = task
+	): Promise<VideoQuote | null> => {
+		if (!model) return null;
 		const generation = ++quoteGeneration;
 		try {
 			const next = await quoteVideoCredits(localStorage.token, {
-				resource_id: selectedModel.id,
-				action: task,
-				dimensions: quoteDimensions()
+				resource_id: model.id,
+				action,
+				dimensions
 			});
-			if (generation === quoteGeneration) {
-				quoteState = next.exempt
-					? { status: 'exempt', chargedCredits: 0 }
-					: !next.configured
-						? { status: 'unconfigured', errorCode: next.error ?? undefined }
-						: !next.sufficient
-							? { status: 'insufficient', chargedCredits: next.charged_credits ?? undefined }
-							: next.charged_credits === null
-								? { status: 'error' }
-								: { status: 'ready', chargedCredits: next.charged_credits };
-			}
+			if (generation === quoteGeneration) quoteState = imageQuoteStateFromVideoQuote(next);
 			return next;
 		} catch {
 			if (generation === quoteGeneration) {
@@ -174,34 +167,31 @@
 	const videoTaskErrorMessage = (record: VideoGenerationTask) =>
 		$i18n.t(videoTaskErrorI18nKey[record.error_code ?? ''] ?? 'Generation failed');
 
+	const showSubmissionError = (failure: VideoSubmissionError) => {
+		if (failure.kind === 'prompt') return toast.error($i18n.t('Please enter a prompt'));
+		if (failure.kind === 'asset')
+			return toast.error(`${$i18n.t(videoAssetLabels[failure.role])} ${$i18n.t('is required')}`);
+		if (failure.kind === 'negative_prompt')
+			return toast.error(
+				$i18n.t('This model does not support negative prompts; remove it or pick another model.')
+			);
+		const { field, error } = failure.error;
+		toast.error(
+			`${$i18n.t(videoAdvancedFieldLabels[field.key])}: ${$i18n.t(
+				error.key,
+				error.value === undefined ? {} : { value: error.value }
+			)}`
+		);
+	};
+
 	const resetForModel = (model: VideoModel | null) => {
-		const next: Record<string, string | number | boolean | null> = {};
 		assets = {};
 		showAdvanced = false;
-		if (!model) {
-			params = next;
-			return;
-		}
-		if (model.default_duration) next.duration = model.default_duration;
-		if (model.default_aspect_ratio) next.aspect_ratio = model.default_aspect_ratio;
-		if (model.default_resolution) next.resolution = model.default_resolution;
-		if (model.default_audio_mode) next.audio_mode = model.default_audio_mode;
-		params = normalizeVideoParamsForModel(model, next);
+		params = defaultVideoParams(model);
 	};
 
 	const preferredModelId = (nextTask: VideoTask, preferred?: string | null) =>
-		models.find(
-			(model) =>
-				model.task === nextTask &&
-				model.id === preferred &&
-				model.visible !== false &&
-				model.enabled !== false
-		)?.id ??
-		models.find(
-			(model) => model.task === nextTask && model.visible !== false && model.enabled !== false
-		)?.id ??
-		models.find((model) => model.task === nextTask && model.visible !== false)?.id ??
-		'';
+		preferredVideoModelId(models, nextTask, preferred);
 
 	const changeTask = (next: VideoTask) => {
 		task = next;
@@ -350,23 +340,6 @@
 		assets = { ...assets, [role]: current.filter((item) => item.id !== id) };
 	};
 
-	// 视频页 tablist 键盘导航：对齐 Images.svelte 的 handleTabKeydown（WAI-ARIA Tab 模式）。
-	// ←/→ 在 create/mine/(all) 之间循环，焦点跟随选中 tab（roving tabindex）。
-	const handleVideoTabKeydown = (event: KeyboardEvent) => {
-		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-		const order: Array<'generate' | 'mine' | 'all'> = isAdmin
-			? ['generate', 'mine', 'all']
-			: ['generate', 'mine'];
-		const idx = order.indexOf(selection);
-		if (idx === -1) return;
-		event.preventDefault();
-		const dir = event.key === 'ArrowRight' ? 1 : -1;
-		const next = order[(idx + dir + order.length) % order.length];
-		selection = next;
-		void tick();
-		document.getElementById(`videos-tab-${next}`)?.focus();
-	};
-
 	const applyVideoTaskUpdate = (next: VideoGenerationTask) => {
 		const previous = history.find((item) => item.id === next.id);
 		history = [next, ...history.filter((item) => item.id !== next.id)];
@@ -398,45 +371,50 @@
 
 	const generate = async () => {
 		if (!selectedModel || submitting) return;
+		const submittedTask = task;
+		const submitModel = models.find(
+			(model) =>
+				model.id === selectedModel?.id &&
+				model.task === submittedTask &&
+				model.visible !== false &&
+				model.enabled !== false
+		);
+		if (!submitModel) {
+			toast.error($i18n.t('This model is temporarily unavailable.'));
+			return;
+		}
 		// 复盘：submitting 必须先于任何 await 置位——原先在 refreshQuote() 之后，
 		// 报价请求的网络往返期间二次点击会重入提交流程（首单成功清理幂等键后，
 		// 第二次点击拿到新键即产生真实的重复扣费请求）。
 		submitting = true;
 		try {
-			if (selectedModel.prompt_required && !prompt.trim()) {
-				toast.error($i18n.t('Please enter a prompt'));
+			const prepared = prepareVideoSubmission(
+				submittedTask,
+				submitModel,
+				prompt,
+				params,
+				assets,
+				advancedError
+			);
+			if (prepared.ok === false) {
+				showSubmissionError(prepared.error);
 				return;
 			}
-			for (const capability of selectedModel.asset_inputs ?? []) {
-				if (capability.required && !(assets[capability.role]?.length ?? 0)) {
-					toast.error(`${$i18n.t(videoAssetLabels[capability.role])} ${$i18n.t('is required')}`);
-					return;
-				}
-			}
-			if (advancedError) {
-				const error = advancedError.error;
-				toast.error(
-					`${$i18n.t(videoAdvancedFieldLabels[advancedError.field.key])}: ${$i18n.t(
-						error.key,
-						error.value === undefined ? {} : { value: error.value }
-					)}`
-				);
+			const latestQuote = await refreshQuote(submitModel, quoteDimensions(), submittedTask);
+			if (
+				task !== submittedTask ||
+				selectedModel?.id !== submitModel.id ||
+				!models.some(
+					(model) =>
+						model.id === submitModel.id &&
+						model.task === submittedTask &&
+						model.visible !== false &&
+						model.enabled !== false
+				)
+			) {
+				toast.error($i18n.t('This model is temporarily unavailable.'));
 				return;
 			}
-			const negativePromptText = String(params['negative_prompt'] ?? '');
-			const submittedParams = normalizeVideoParamsForModel(selectedModel, {
-				...params,
-				...(negativePromptText ? { negative_prompt: negativePromptText } : {})
-			});
-			// 用户已填写的负面提示词被模型参数归一化丢弃时明确提示，不得静默（审查发现 #6）。
-			const submittedNegative = negativePromptText.trim();
-			if (submittedNegative && !('negative_prompt' in submittedParams)) {
-				toast.error(
-					$i18n.t('This model does not support negative prompts; remove it or pick another model.')
-				);
-				return;
-			}
-			const latestQuote = await refreshQuote();
 			if (!latestQuote?.configured) {
 				toast.error($i18n.t('Video price is not configured'));
 				return;
@@ -445,17 +423,7 @@
 				toast.error($i18n.t('Insufficient credits'));
 				return;
 			}
-			const submission = {
-				task,
-				model: selectedModel.id,
-				prompt: prompt.trim(),
-				assets: Object.entries(assets).flatMap(([role, items]) =>
-					(items ?? []).map((item) => ({ role: role as VideoAssetRole, file_id: item.id }))
-				),
-				params: submittedParams
-				// 提示词是所见即所得的纯文本（点击标签直接插入 insert_text），
-				// 没有服务端 token 解析层。
-			};
+			const submission = prepared.value;
 			const idempotencyKey = await videoSubmissionIdempotency.idempotencyKeyFor(submission);
 			const created = await submitVideoTask(localStorage.token, submission, idempotencyKey);
 			videoSubmissionIdempotency.clearPendingSubmission();
@@ -606,81 +574,7 @@
 		? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 		: ''}"
 >
-	{#snippet videoTabs()}
-		<div
-			class="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-lg shadow-black/10 backdrop-blur-xl dark:border-gray-700/80 dark:bg-gray-900/80 dark:shadow-black/30"
-			role="tablist"
-			tabindex="-1"
-			aria-label={$i18n.t('Videos')}
-			on:keydown={handleVideoTabKeydown}
-		>
-			{#each [['generate', 'Create art'], ['mine', 'My creations']] as tab}
-				<button
-					type="button"
-					role="tab"
-					id="videos-tab-{tab[0]}"
-					aria-controls="videos-{tab[0] === 'generate' ? 'generate' : 'library'}-panel"
-					tabindex={selection === tab[0] ? 0 : -1}
-					aria-selected={selection === tab[0]}
-					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
-					tab[0]
-						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
-						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-					on:click={() => (selection = tab[0] as 'generate' | 'mine')}
-				>
-					{$i18n.t(tab[1])}
-				</button>
-			{/each}
-			{#if isAdmin}<button
-					type="button"
-					role="tab"
-					id="videos-tab-all"
-					aria-controls="videos-library-panel"
-					tabindex={selection === 'all' ? 0 : -1}
-					aria-selected={selection === 'all'}
-					class="min-h-11 shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-all sm:min-h-10 {selection ===
-					'all'
-						? 'bg-gray-900 text-white shadow-sm dark:bg-white dark:text-gray-900'
-						: 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}"
-					on:click={() => (selection = 'all')}>{$i18n.t('All creations')}</button
-				>{/if}
-		</div>
-	{/snippet}
-
-	{#if $mobile}
-		<!-- 移动端：sidebar 图标与创作/我的作品 tab 同处顶部一行，顶到页面最上面。
-		     tab 用绝对定位相对整行居中，不被左侧 sidebar 按钮挤偏右，垂直也随行高居中。 -->
-		<nav
-			class="relative z-40 flex h-14 shrink-0 items-center px-3 backdrop-blur-xl drag-region select-none"
-		>
-			<div class="relative z-10 flex flex-none items-center">
-				<Tooltip
-					content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
-					interactive={true}
-				>
-					<button
-						id="sidebar-toggle-button"
-						type="button"
-						class="flex min-h-10 min-w-10 cursor-pointer items-center justify-center rounded-lg transition hover:bg-gray-100 dark:hover:bg-gray-850"
-						on:click={() => showSidebar.set(!$showSidebar)}
-						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
-					>
-						<SidebarIcon />
-					</button>
-				</Tooltip>
-			</div>
-			<div
-				class="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center justify-center"
-			>
-				{@render videoTabs()}
-			</div>
-		</nav>
-	{:else}
-		<!-- 桌面端：nav 不渲染，tab pill 浮动在内容区顶部。 -->
-		<div class="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-3 pt-2">
-			{@render videoTabs()}
-		</div>
-	{/if}
+	<VideoPageNavigation {selection} {isAdmin} onSelect={(next) => (selection = next)} />
 
 	<!-- 两面板同时渲染，用 hidden 控制可见性，避免切换时 DOM 状态丢失（对齐 Images.svelte tabpanel 模式） -->
 	<!-- 面板自身必须是 flex-1 + min-h-0 的 flex 列，否则内部 <main class="overflow-y-auto">
@@ -767,31 +661,31 @@
 							</section>
 						{/if}
 
-								<VideoPromptForm
-									bind:task
-									bind:modelId
-									bind:selectedVendor
-									bind:prompt
-									bind:params
-									bind:assets
-									bind:showAdvanced
-									bind:showModelSelector
-									bind:showVideoOptions
-									{selectedModel}
-									{modelVendors}
-									{vendorModels}
-									{advancedFields}
-									{durationChoices}
-									{quoteState}
-									{submitting}
-									{advancedError}
-									onTaskChange={changeTask}
-									onModelChange={changeModel}
-									onUploadAsset={uploadAsset}
-									onRemoveAsset={removeAsset}
-									onPromptTagInsert={handlePromptTagInsert}
-									onSubmit={generate}
-								/>
+						<VideoPromptForm
+							bind:task
+							bind:modelId
+							bind:selectedVendor
+							bind:prompt
+							bind:params
+							bind:assets
+							bind:showAdvanced
+							bind:showModelSelector
+							bind:showVideoOptions
+							{selectedModel}
+							{modelVendors}
+							{vendorModels}
+							{advancedFields}
+							{durationChoices}
+							{quoteState}
+							{submitting}
+							{advancedError}
+							onTaskChange={changeTask}
+							onModelChange={changeModel}
+							onUploadAsset={uploadAsset}
+							onRemoveAsset={removeAsset}
+							onPromptTagInsert={handlePromptTagInsert}
+							onSubmit={generate}
+						/>
 					</div>
 				</main>
 			</div>

@@ -11,7 +11,8 @@
 
 <DemoCard
 	title="Sidebar"
-	desc={$i18n.t('Slide-in sidebar from left/right. bind:show. Needs relative parent with height.')}>
+	desc={$i18n.t('Slide-in sidebar from left/right. bind:show. Needs relative parent with height.')}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<button
 			class="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
@@ -20,7 +21,9 @@
 			{show ? $i18n.t('Hide Sidebar') : $i18n.t('Show Sidebar')}
 		</button>
 		<!-- Sidebar 自身是 absolute，父容器必须 relative + 固定高度 -->
-		<div class="relative h-40 w-full rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+		<div
+			class="relative h-40 w-full rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden"
+		>
 			<Sidebar bind:show side="right" width="200px" duration={100}>
 				<div class="p-3 text-sm text-gray-700 dark:text-gray-200">
 					{$i18n.t('Sidebar content')}

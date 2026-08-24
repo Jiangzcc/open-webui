@@ -31,8 +31,10 @@
 
 	export let onPreview: (image: GeneratedImage) => void = () => {};
 	export let onDownloadImage: (image: GeneratedImage, index: number) => void = () => {};
-	export let onReuseAsReference: (batch: ImageGenerationBatch, image: GeneratedImage) => void =
-		() => {};
+	export let onReuseAsReference: (
+		batch: ImageGenerationBatch,
+		image: GeneratedImage
+	) => void = () => {};
 	export let onRemix: (batch: ImageGenerationBatch, image: GeneratedImage) => void = () => {};
 	export let onEditAgain: (batch: ImageGenerationBatch) => void = () => {};
 	export let onRegenerate: (batch: ImageGenerationBatch) => void = () => {};
@@ -99,10 +101,7 @@
 
 	// pill 参数：基础尺寸参数后追加用户实际提交的高级参数，便于复现。
 	const getBatchMetaPills = (task: ImageGenerationBatch) => {
-		const pills = [
-			getBatchModelLabel(task),
-			imageAspectRatioLabel(task.aspectRatio)
-		];
+		const pills = [getBatchModelLabel(task), imageAspectRatioLabel(task.aspectRatio)];
 		if (task.resolution) pills.push($i18n.t(imageResolutionLabelKey(task.resolution)));
 		pills.push(String(task.expectedCount));
 		const q = task.quality?.trim();
@@ -150,7 +149,10 @@
 	<!-- 消息头：厂商图标 + 模型短名 + 时间 -->
 	<div class="flex items-center gap-2">
 		{#if batchModel?.provider}
-			<VendorLogo provider={batchModel.provider} className="size-5 shrink-0 rounded-full object-cover" />
+			<VendorLogo
+				provider={batchModel.provider}
+				className="size-5 shrink-0 rounded-full object-cover"
+			/>
 		{:else}
 			<span
 				class="size-5 shrink-0 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 dark:from-gray-600 dark:to-gray-700"
@@ -165,7 +167,9 @@
 	</div>
 
 	<!-- prompt：全展开，不折叠；就是用户输入的纯文本 -->
-	<p class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+	<p
+		class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200"
+	>
 		{batch.prompt}
 	</p>
 
@@ -216,7 +220,7 @@
 						>
 							<button
 								type="button"
-								class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
+								class="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-7 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
 								on:click|stopPropagation={() => onDownloadImage(image, index)}
 								aria-label={$i18n.t('Download')}
 							>
@@ -228,14 +232,13 @@
 									stroke-width="2"
 									stroke-linecap="round"
 									stroke-linejoin="round"
-									aria-hidden="true"
-									><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+									aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
 								>
 							</button>
 							{#if supportsEditing}
 								<button
 									type="button"
-									class="pointer-events-auto inline-flex size-7 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
+									class="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-7 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
 									on:click|stopPropagation={() => onReuseAsReference(batch, image)}
 									aria-label={$i18n.t('Use as reference')}
 								>
@@ -261,7 +264,7 @@
 						{#if image.prompt}
 							<button
 								type="button"
-								class="pointer-events-auto absolute bottom-1.5 left-1.5 inline-flex h-6 items-center gap-1 rounded-full bg-black/60 px-2 text-[10px] font-medium text-white backdrop-blur transition hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white {canHover
+								class="pointer-events-auto absolute bottom-1.5 left-1.5 inline-flex min-h-11 items-center gap-1 rounded-full bg-black/60 px-2 text-[10px] font-medium text-white backdrop-blur transition hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-6 sm:min-h-0 {canHover
 									? 'opacity-0 group-hover:opacity-100'
 									: 'opacity-100'}"
 								on:click|stopPropagation={() => onRemix(batch, image)}
@@ -275,8 +278,7 @@
 									stroke-width="2"
 									stroke-linecap="round"
 									stroke-linejoin="round"
-									aria-hidden="true"
-									><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
+									aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
 								>
 								{$i18n.t('Remix')}
 							</button>
@@ -325,7 +327,7 @@
 		{#if isGenerationTaskTerminal(batch.status)}
 			<button
 				type="button"
-				class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onEditAgain(batch)}
 				disabled={batch.images.length === 0}
 			>
@@ -344,7 +346,7 @@
 			</button>
 			<button
 				type="button"
-				class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onRegenerate(batch)}
 			>
 				<svg
@@ -363,7 +365,7 @@
 				<!-- 本批批量下载：打包成 ZIP，复用 $lib/utils/download 的共享方案 -->
 				<button
 					type="button"
-					class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+					class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 					on:click={() => onDownloadBatch(batch)}
 					disabled={downloading}
 				>
@@ -386,7 +388,7 @@
 			{/if}
 			<button
 				type="button"
-				class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onRemove(batch)}
 				disabled={deleting}
 				aria-label={$i18n.t('Remove record')}
@@ -402,8 +404,7 @@
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round"
-						aria-hidden="true"
-						><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
+						aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
 					>
 				{/if}
 				{$i18n.t('Remove')}

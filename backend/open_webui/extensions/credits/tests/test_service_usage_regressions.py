@@ -21,12 +21,14 @@ from open_webui.internal.db import JSONField
 from open_webui.models.users import User
 from sqlalchemy import event, func, select, update
 
-from .test_service import (
+from .service_test_support import (
     add_price,
     create_user,
-    credit_session_for_test,
     credit_user,
     image_context,
+)
+from .test_service import (
+    credit_session_for_test,
 )
 from .test_service import (
     service_database as _service_database,

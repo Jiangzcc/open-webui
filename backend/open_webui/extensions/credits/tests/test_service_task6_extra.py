@@ -7,7 +7,6 @@ from pathlib import Path
 import open_webui.extensions.credits.service as credit_service
 import pytest
 import pytest_asyncio
-from open_webui.extensions.credits.compat import ImageBillingContext
 from open_webui.extensions.credits.db import CreditBase
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
@@ -21,19 +20,8 @@ from open_webui.extensions.credits.service import (
     mark_usage_succeeded,
 )
 from open_webui.models.users import User
-from sqlalchemy import event, func, insert, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-
-async def create_user(sessions, user_id: str, *, name: str | None = None, email: str | None = None) -> UserSnapshot:
-    snapshot = UserSnapshot(
-        id=user_id,
-        name=name or f'Name {user_id}',
-        email=email or f'{user_id}@example.test',
-    )
-    async with sessions() as session, session.begin():
-        await session.execute(insert(User).values(id=snapshot.id, name=snapshot.name, email=snapshot.email))
-    return snapshot
 
 
 def audit(request_id: str = 'request-1') -> RequestAuditContext:
@@ -44,46 +32,7 @@ def adjustment(direction: str, amount: int) -> AdjustmentRequest:
     return AdjustmentRequest(direction=direction, amount=amount, reason_code='accounting_correction')
 
 
-def image_context(*, resource_id: str = 'model-a') -> ImageBillingContext:
-    return ImageBillingContext(
-        service_type='image',
-        resource_id=resource_id,
-        action='text-to-image',
-        channel='web',
-        dimensions={'size': '512x512', 'image_count': 1},
-        prompt_hash='a' * 64,
-        reference_hashes=(),
-        request_hash='b' * 64,
-    )
-
-
-async def add_price(sessions, *, resource_id: str = 'model-a', enabled: bool = True, base_price: str = '3') -> None:
-    now = int(time.time())
-    async with sessions() as session, session.begin():
-        session.add(
-            CreditPrice(
-                id=f'price-{resource_id}',
-                service_type='image',
-                resource_id=resource_id,
-                action='text-to-image',
-                base_price=base_price,
-                rules={'schema_version': 1, 'dimensions': []},
-                enabled=enabled,
-                created_at=now,
-                updated_at=now,
-            )
-        )
-
-
-async def credit_user(sessions, user: UserSnapshot, amount: int = 10) -> None:
-    async with sessions() as session:
-        await credit_service.adjust_balance(
-            session,
-            user,
-            UserSnapshot(id='admin-1', name='Admin', email='admin@example.test'),
-            adjustment('increase', amount),
-            audit('seed'),
-        )
+from .service_test_support import add_price, create_user, credit_user, image_context
 
 
 @pytest_asyncio.fixture

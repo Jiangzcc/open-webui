@@ -14,7 +14,7 @@ from open_webui.extensions.credits.repository import get_balance_if_exists, get_
 from open_webui.extensions.credits.schemas import UserSnapshot
 from open_webui.extensions.credits.service import (
     SafeProviderError,
-    begin_image_usage,
+    begin_generation_usage,
     mark_usage_failed,
     mark_usage_invoking,
     mark_usage_succeeded_in_session,
@@ -171,7 +171,7 @@ async def begin_video_usage(user: object, task: VideoTaskResponse, *, execution_
         email=getattr(user, 'email', None),
     )
     async with credit_session() as session:
-        return await begin_image_usage(
+        return await begin_generation_usage(
             session,
             snapshot,
             video_billing_context(task, execution_mode=execution_mode),

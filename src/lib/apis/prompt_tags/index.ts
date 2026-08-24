@@ -212,8 +212,18 @@ export const getAdminPromptTagCatalog = (token: string, signal?: AbortSignal) =>
 
 /* ---------- admin: categories ---------- */
 
-export const createPromptTagCategory = (token: string, body: PromptTagCategoryCreate, signal?: AbortSignal) =>
-	request<PromptTagCategoryItem>({ method: 'POST', path: '/admin/categories', token, body, signal });
+export const createPromptTagCategory = (
+	token: string,
+	body: PromptTagCategoryCreate,
+	signal?: AbortSignal
+) =>
+	request<PromptTagCategoryItem>({
+		method: 'POST',
+		path: '/admin/categories',
+		token,
+		body,
+		signal
+	});
 
 export const updatePromptTagCategory = (
 	token: string,
@@ -229,7 +239,12 @@ export const updatePromptTagCategory = (
 		signal
 	});
 
-export const deletePromptTagCategory = (token: string, categoryId: string, cascade = false, signal?: AbortSignal) =>
+export const deletePromptTagCategory = (
+	token: string,
+	categoryId: string,
+	cascade = false,
+	signal?: AbortSignal
+) =>
 	request<void>({
 		method: 'DELETE',
 		path: `/admin/categories/${encodeURIComponent(categoryId)}`,
@@ -243,7 +258,12 @@ export const deletePromptTagCategory = (token: string, categoryId: string, casca
 export const createPromptTag = (token: string, body: PromptTagCreate, signal?: AbortSignal) =>
 	request<PromptTagItem>({ method: 'POST', path: '/admin/tags', token, body, signal });
 
-export const updatePromptTag = (token: string, tagId: string, body: PromptTagUpdate, signal?: AbortSignal) =>
+export const updatePromptTag = (
+	token: string,
+	tagId: string,
+	body: PromptTagUpdate,
+	signal?: AbortSignal
+) =>
 	request<PromptTagItem>({
 		method: 'PATCH',
 		path: `/admin/tags/${encodeURIComponent(tagId)}`,
@@ -253,7 +273,12 @@ export const updatePromptTag = (token: string, tagId: string, body: PromptTagUpd
 	});
 
 export const deletePromptTag = (token: string, tagId: string, signal?: AbortSignal) =>
-	request<void>({ method: 'DELETE', path: `/admin/tags/${encodeURIComponent(tagId)}`, token, signal });
+	request<void>({
+		method: 'DELETE',
+		path: `/admin/tags/${encodeURIComponent(tagId)}`,
+		token,
+		signal
+	});
 
 /* ---------- admin: import / export ---------- */
 

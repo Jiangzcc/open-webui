@@ -100,6 +100,80 @@ async def _existing_evidence(session: AsyncSession, account_id: str, request_id:
     )
 
 
+async def _verified_ledger_total(session: AsyncSession, account: CreditAccount, expected_balance: int) -> int:
+    ledger_total = await _ledger_total(session, account.id)
+    if not 0 <= ledger_total <= MAX_CREDIT_VALUE:
+        raise CreditRepairError('ledger total is outside the supported non-negative credit balance range')
+    if ledger_total != expected_balance:
+        raise CreditRepairError('expected_balance does not match the current full ledger sum')
+    return ledger_total
+
+
+async def _calibrate_account(
+    session: AsyncSession,
+    account: CreditAccount,
+    ledger_total: int,
+    repaired_at: int,
+) -> int:
+    difference = account.balance - ledger_total
+    if difference:
+        result = await session.execute(
+            update(CreditAccount)
+            .where(CreditAccount.id == account.id)
+            .values(balance=ledger_total, updated_at=repaired_at)
+        )
+        if result.rowcount != 1:
+            raise CreditRepairError('account could not be calibrated')
+    return difference
+
+
+def _repair_evidence_values(
+    account: CreditAccount,
+    operator: UserSnapshot,
+    *,
+    incident_id: str,
+    request_id: str,
+    note: str,
+    ledger_total: int,
+    observed_balance: int,
+    difference: int,
+    repaired_at: int,
+) -> dict[str, object]:
+    return {
+        'id': str(uuid4()),
+        'account_id': account.id,
+        'user_id': account.user_id,
+        'user_name_snapshot': account.user_name_snapshot,
+        'user_email_snapshot': account.user_email_snapshot,
+        'amount': 0,
+        'balance_before': ledger_total,
+        'balance_after': ledger_total,
+        'entry_type': _REPAIR_ENTRY_TYPE,
+        'reason_code': 'accounting_correction',
+        'note': note,
+        'operator_id': operator.id,
+        'operator_name_snapshot': operator.name,
+        'operator_email_snapshot': operator.email,
+        'request_source': _REPAIR_SOURCE,
+        'request_id': request_id,
+        'metadata_snapshot': {
+            'incident_id': incident_id.strip(),
+            'observed_account_balance': observed_balance,
+            'difference': difference,
+            'operator': {'id': operator.id, 'name': operator.name, 'email': operator.email},
+            'reason': _REPAIR_REASON,
+            'repaired_at': repaired_at,
+        },
+        'created_at': repaired_at,
+    }
+
+
+async def _verify_repair(session: AsyncSession, account_id: str) -> None:
+    account_balance = await session.scalar(select(CreditAccount.balance).where(CreditAccount.id == account_id))
+    if account_balance != await _ledger_total(session, account_id):
+        raise CreditRepairError('post-repair verification failed; transaction was rolled back')
+
+
 async def repair_account_from_ledger(
     session: AsyncSession,
     user_id: str,
@@ -110,13 +184,7 @@ async def repair_account_from_ledger(
     *,
     backup_confirmed: bool = False,
 ) -> CreditLedger:
-    """Calibrate one account to its ledger total after a verified database backup.
-
-    This non-HTTP operational entry point is intentionally not exported by the credits router.
-    An operator must take and verify a database backup before passing ``backup_confirmed=True``.
-    The provided ``expected_balance`` must equal the freshly calculated full ledger sum, so a
-    stale investigation cannot alter an account. The operation is idempotent for an incident ID.
-    """
+    """Idempotently calibrate one account after a verified backup and fresh ledger check."""
     request_id = _repair_request_id(incident_id)
     normalized_note = _validate_repair_inputs(expected_balance, note, backup_confirmed)
     _validate_operator(operator)
@@ -124,12 +192,7 @@ async def repair_account_from_ledger(
 
     async with session.begin():
         account = await _locked_account(session, user_id)
-        ledger_total = await _ledger_total(session, account.id)
-        if not 0 <= ledger_total <= MAX_CREDIT_VALUE:
-            raise CreditRepairError('ledger total is outside the supported non-negative credit balance range')
-        if ledger_total != expected_balance:
-            raise CreditRepairError('expected_balance does not match the current full ledger sum')
-
+        ledger_total = await _verified_ledger_total(session, account, expected_balance)
         existing = await _existing_evidence(session, account.id, request_id)
         if existing is not None:
             if account.balance != ledger_total:
@@ -137,53 +200,22 @@ async def repair_account_from_ledger(
             return existing
 
         observed_account_balance = account.balance
-        difference = observed_account_balance - ledger_total
-        if difference:
-            result = await session.execute(
-                update(CreditAccount)
-                .where(CreditAccount.id == account.id)
-                .values(balance=ledger_total, updated_at=repaired_at)
-            )
-            if result.rowcount != 1:
-                raise CreditRepairError('account could not be calibrated')
-
+        difference = await _calibrate_account(session, account, ledger_total, repaired_at)
         evidence = await insert_ledger(
             session,
-            {
-                'id': str(uuid4()),
-                'account_id': account.id,
-                'user_id': account.user_id,
-                'user_name_snapshot': account.user_name_snapshot,
-                'user_email_snapshot': account.user_email_snapshot,
-                'amount': 0,
-                'balance_before': ledger_total,
-                'balance_after': ledger_total,
-                'entry_type': _REPAIR_ENTRY_TYPE,
-                'reason_code': 'accounting_correction',
-                'note': normalized_note,
-                'operator_id': operator.id,
-                'operator_name_snapshot': operator.name,
-                'operator_email_snapshot': operator.email,
-                'request_source': _REPAIR_SOURCE,
-                'request_id': request_id,
-                'metadata_snapshot': {
-                    'incident_id': incident_id.strip(),
-                    'observed_account_balance': observed_account_balance,
-                    'difference': difference,
-                    'operator': {'id': operator.id, 'name': operator.name, 'email': operator.email},
-                    'reason': _REPAIR_REASON,
-                    'repaired_at': repaired_at,
-                },
-                'created_at': repaired_at,
-            },
+            _repair_evidence_values(
+                account,
+                operator,
+                incident_id=incident_id,
+                request_id=request_id,
+                note=normalized_note,
+                ledger_total=ledger_total,
+                observed_balance=observed_account_balance,
+                difference=difference,
+                repaired_at=repaired_at,
+            ),
         )
-
-        verified_account_balance = await session.scalar(
-            select(CreditAccount.balance).where(CreditAccount.id == account.id)
-        )
-        verified_ledger_total = await _ledger_total(session, account.id)
-        if verified_account_balance != verified_ledger_total:
-            raise CreditRepairError('post-repair verification failed; transaction was rolled back')
+        await _verify_repair(session, account.id)
         if difference:
             credit_metrics.consistency_anomaly()
         return evidence

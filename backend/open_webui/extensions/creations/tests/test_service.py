@@ -12,23 +12,13 @@ from open_webui.extensions.creations.service import (
     soft_delete_many,
     update_caption,
 )
+from open_webui.extensions.creations.tests.conftest import (
+    FakeFiles as _FakeFiles,
+)
+from open_webui.extensions.creations.tests.conftest import (
+    FakeUsers as _FakeUsers,
+)
 from open_webui.extensions.creations.tests.conftest import make_file, make_user
-
-
-class _FakeFiles:
-    def __init__(self, files):
-        self._files = {f.id: f for f in files}
-
-    async def get_files_by_ids(self, ids):
-        return [self._files[i] for i in ids if i in self._files]
-
-
-class _FakeUsers:
-    def __init__(self, users):
-        self._users = {u.id: u for u in users}
-
-    async def get_users_by_ids(self, ids):
-        return [self._users[i] for i in ids if i in self._users]
 
 
 class _CountingUsers(_FakeUsers):

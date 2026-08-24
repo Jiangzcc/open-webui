@@ -30,7 +30,8 @@ describe('CreationDetailsModal source contract', () => {
 	});
 
 	test('opens the result image in the existing preview and download surface', () => {
-		expect(source).toContain('openPreview(detail.content_url as string');
+		expect(source).toContain('if (detail?.content_url)');
+		expect(source).toContain('openPreview(detail.content_url, detail.caption ?? detail.prompt)');
 		expect(source).toContain('<ImagePreview');
 	});
 
@@ -101,8 +102,8 @@ describe('CreationDetailsModal source contract', () => {
 			'utf-8'
 		);
 		expect(source).toContain('<ArtworkViewerShell');
-		expect(source).toContain('mediaLabel={$i18n.t(\'Artwork\')}');
-		expect(source).toContain("detailsClassName=\"lg:w-[22rem]\"");
+		expect(source).toContain("mediaLabel={$i18n.t('Artwork')}");
+		expect(source).toContain('detailsClassName="lg:w-[22rem]"');
 		expect(source).toContain('object-contain');
 		expect(source).not.toContain('max-h-[40vh]');
 		// 布局结构类在 shell 中。
@@ -193,8 +194,17 @@ describe('CreationDetailsModal source contract', () => {
 			fileURLToPath(new URL('./Images.svelte', import.meta.url)),
 			'utf-8'
 		);
-		expect(imagesSource).toContain('resolveDraftReferenceImage');
-		expect(imagesSource).toContain('authorization: `Bearer ${localStorage.token}`');
+		const referenceFilesSource = readFileSync(
+			fileURLToPath(new URL('./imageReferenceFiles.ts', import.meta.url)),
+			'utf-8'
+		);
+		const draftStateSource = readFileSync(
+			fileURLToPath(new URL('./imageDraftState.ts', import.meta.url)),
+			'utf-8'
+		);
+		expect(imagesSource).toContain('prepareImageDraft');
+		expect(draftStateSource).toContain('resolveDraftReferenceImage');
+		expect(referenceFilesSource).toContain('authorization: `Bearer ${token}`');
 		expect(imagesSource).toContain("$i18n.t('Failed to load reference image')");
 	});
 });

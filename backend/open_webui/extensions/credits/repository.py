@@ -274,23 +274,9 @@ async def list_ledger(
     if user_id is not None:
         conditions.append(CreditLedger.user_id == user_id)
     if isinstance(query, UserLedgerQuery):
-        if query.category == 'income':
-            conditions.append(CreditLedger.amount > 0)
-        elif query.category == 'consumption':
-            conditions.append(CreditLedger.entry_type == 'consumption')
-        elif query.category == 'adjustment':
-            conditions.append(CreditLedger.entry_type.in_(('admin_adjustment', 'system_adjustment')))
+        conditions.extend(_user_ledger_conditions(query))
     if isinstance(query, AdminLedgerQuery):
-        for column, value in (
-            (CreditLedger.user_id, query.user_id),
-            (CreditLedger.entry_type, query.entry_type),
-            (CreditLedger.reason_code, query.reason_code),
-            (CreditLedger.service_type, query.service_type),
-            (CreditLedger.resource_id, query.resource_id),
-            (CreditLedger.action, query.action),
-        ):
-            if value is not None:
-                conditions.append(column == value)
+        conditions.extend(_admin_ledger_conditions(query))
 
     statement = (
         select(CreditLedger, CreditUsage.status)
@@ -307,6 +293,28 @@ async def list_ledger(
         last = page_rows[-1][0]
         next_cursor = LedgerCursor(created_at=last.created_at, id=last.id)
     return tuple(_ledger_item(ledger, usage_status) for ledger, usage_status in page_rows), next_cursor
+
+
+def _user_ledger_conditions(query: UserLedgerQuery) -> list:
+    if query.category == 'income':
+        return [CreditLedger.amount > 0]
+    if query.category == 'consumption':
+        return [CreditLedger.entry_type == 'consumption']
+    if query.category == 'adjustment':
+        return [CreditLedger.entry_type.in_(('admin_adjustment', 'system_adjustment'))]
+    return []
+
+
+def _admin_ledger_conditions(query: AdminLedgerQuery) -> list:
+    filters = (
+        (CreditLedger.user_id, query.user_id),
+        (CreditLedger.entry_type, query.entry_type),
+        (CreditLedger.reason_code, query.reason_code),
+        (CreditLedger.service_type, query.service_type),
+        (CreditLedger.resource_id, query.resource_id),
+        (CreditLedger.action, query.action),
+    )
+    return [column == value for column, value in filters if value is not None]
 
 
 async def list_admin_ledger_page(

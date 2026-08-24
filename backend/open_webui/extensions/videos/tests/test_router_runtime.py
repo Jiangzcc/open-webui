@@ -6,13 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.videos import router
-from open_webui.extensions.videos.catalog import VideoInputError
+from open_webui.extensions.videos.catalog import VideoInputError, build_video_provider_payload
 from open_webui.extensions.videos.executor import VideoExecutionError
+from open_webui.extensions.videos.queries import submission_payload_sha256
 from open_webui.extensions.videos.schemas import VideoTaskResponse, VideoTaskSubmitForm
-from open_webui.extensions.videos.service import build_video_provider_payload
+
+from .task_test_support import video_task as _task
 
 
 def _submission() -> VideoTaskSubmitForm:
@@ -34,22 +35,6 @@ def _submission_with_params() -> VideoTaskSubmitForm:
         prompt='A paper boat, cinematic lighting',
         assets=(),
         params={'duration': '5', 'negative_prompt': 'black and white, blurry'},
-    )
-
-
-def _task() -> VideoTaskResponse:
-    return VideoTaskResponse(
-        id='task-1',
-        status='running',
-        task='text-to-video',
-        prompt='A paper boat',
-        model_id='kling-video-v3-pro',
-        params={'duration': '5'},
-        assets=(),
-        result=None,
-        error_code=None,
-        created_at=1,
-        updated_at=1,
     )
 
 
@@ -241,6 +226,7 @@ def test_tag_placeholder_retry_matches_token_stored_task(monkeypatch) -> None:
         _definition, _provider_payload, safe_params = build_video_provider_payload(submission)
         stored_task = VideoTaskResponse(
             id='task-1',
+            payload_sha256=submission_payload_sha256(submission),
             status='running',
             task='text-to-video',
             prompt=submission.prompt,
@@ -287,6 +273,7 @@ def test_tag_placeholder_retry_with_different_prompt_returns_conflict(monkeypatc
         _definition, _provider_payload, safe_params = build_video_provider_payload(submission)
         stored_task = VideoTaskResponse(
             id='task-1',
+            payload_sha256=submission_payload_sha256(submission),
             status='running',
             task='text-to-video',
             prompt=submission.prompt,

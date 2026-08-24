@@ -15,11 +15,18 @@
 
 <DemoCard
 	title="PanzoomContainer"
-	desc={$i18n.t('Generic pan/zoom wrapper. Drag to pan, wheel to zoom. Reset button calls reset().')}
+	desc={$i18n.t(
+		'Generic pan/zoom wrapper. Drag to pan, wheel to zoom. Reset button calls reset().'
+	)}
 >
-	<div class="w-full h-52 rounded-lg overflow-hidden border border-gray-100 dark:border-gray-850 bg-gray-50 dark:bg-gray-900 relative">
+	<div
+		class="w-full h-52 rounded-lg overflow-hidden border border-gray-100 dark:border-gray-850 bg-gray-50 dark:bg-gray-900 relative"
+	>
 		<!-- 这里放任意可缩放内容，演示用一张大图 -->
-		<PanzoomContainer className="flex h-full max-h-full justify-center items-center z-0" bind:this={panzoom}>
+		<PanzoomContainer
+			className="flex h-full max-h-full justify-center items-center z-0"
+			bind:this={panzoom}
+		>
 			<img
 				src="/assets/welcome.webp"
 				alt="panzoom target"

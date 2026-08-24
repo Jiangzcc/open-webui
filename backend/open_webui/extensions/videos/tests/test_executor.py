@@ -4,10 +4,12 @@ import asyncio
 import os
 import time
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from open_webui.extensions.fal_catalog.video_schemas import FalVideoModelDefinition, VideoAssetInput
-from open_webui.extensions.videos import delivery, executor, service
+from open_webui.extensions.tests.async_test_support import SelfTransactionalContext
+from open_webui.extensions.videos import delivery, executor, service, video_result
 from open_webui.extensions.videos.executor import (
     FalVideoExecutor,
     MockVideoExecutor,
@@ -62,6 +64,8 @@ def _row_of(task: VideoTaskResponse):
         model_id=task.model_id,
         params_json=dict(task.params),
         assets_json=[asset.model_dump() for asset in task.assets],
+        provider_definition_json=_definition(task=task.task).model_dump(mode='json'),
+        provider_payload_json={'prompt': task.prompt, **dict(task.params)},
         result_json=None,
         error_code=task.error_code,
         created_at=task.created_at,
@@ -95,6 +99,21 @@ def _fal_settings(mock_enabled: bool = False, api_key: str = ''):
         return mock_enabled, api_key
 
     return fake
+
+
+def _install_resolved_executor(monkeypatch, resolved) -> None:
+    async def resolve_executor():
+        return resolved
+
+    monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
+
+
+def _install_asset_file_lookup(monkeypatch, files) -> None:
+    async def get_file(file_id, user_id):
+        assert user_id == 'user-1'
+        return files[file_id]
+
+    monkeypatch.setattr(executor.Files, 'get_file_by_id_and_user_id', get_file)
 
 
 @pytest.mark.asyncio
@@ -194,17 +213,13 @@ async def test_asset_files_are_uploaded_and_injected_into_provider_payload(monke
         'last': SimpleNamespace(path=str(last), filename='last.png', meta={'content_type': 'image/png'}),
     }
 
-    async def get_file(file_id, user_id):
-        assert user_id == 'user-1'
-        return files[file_id]
-
     uploaded: list[str] = []
 
     async def upload(**kwargs):
         uploaded.append(kwargs['filename'])
         return f'https://fal.media/{kwargs["filename"]}'
 
-    monkeypatch.setattr(executor.Files, 'get_file_by_id_and_user_id', get_file)
+    _install_asset_file_lookup(monkeypatch, files)
     monkeypatch.setattr(executor.Storage, 'get_file', lambda value: value)
     monkeypatch.setattr(executor, 'upload_file_to_fal', upload)
     definition = _definition(
@@ -261,10 +276,6 @@ async def test_asset_uploads_run_concurrently(monkeypatch, tmp_path) -> None:
         'last': SimpleNamespace(path=str(last), filename='last.png', meta={'content_type': 'image/png'}),
     }
 
-    async def get_file(file_id, user_id):
-        assert user_id == 'user-1'
-        return files[file_id]
-
     both_started = asyncio.Event()
     started = 0
 
@@ -276,7 +287,7 @@ async def test_asset_uploads_run_concurrently(monkeypatch, tmp_path) -> None:
         await both_started.wait()
         return f'https://fal.media/{kwargs["filename"]}'
 
-    monkeypatch.setattr(executor.Files, 'get_file_by_id_and_user_id', get_file)
+    _install_asset_file_lookup(monkeypatch, files)
     monkeypatch.setattr(executor.Storage, 'get_file', lambda value: value)
     monkeypatch.setattr(executor, 'upload_file_to_fal', upload)
     definition = _definition(
@@ -324,7 +335,7 @@ async def test_asset_uploads_run_concurrently(monkeypatch, tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_real_executor_records_invocation_and_downloads_result(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {}
-    observer = object()
+    observer = SimpleNamespace(result_available=AsyncMock())
 
     async def start(**kwargs):
         calls['invocation'] = kwargs
@@ -351,6 +362,7 @@ async def test_real_executor_records_invocation_and_downloads_result(monkeypatch
     assert result.duration_seconds == 5
     assert calls['invocation']['task_id'] == 'task-1'
     assert calls['queue'][4] == {'observer': observer, 'timeout_seconds': 900}
+    observer.result_available.assert_awaited_once_with('https://fal.media/result.mp4')
 
 
 @pytest.mark.asyncio
@@ -365,7 +377,7 @@ async def test_real_executor_maps_provider_timeout(monkeypatch) -> None:
 
     monkeypatch.setattr(executor, 'try_start_provider_invocation', start)
     monkeypatch.setattr(executor, 'run_fal_queue', timeout)
-    real = FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+    real = FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
     with pytest.raises(VideoExecutionError) as captured:
         await real.invoke(_request(), SimpleNamespace(id='user-1'), _task(), _definition(), {})
     assert captured.value.code == 'video_provider_timeout'
@@ -387,7 +399,7 @@ async def test_real_executor_preserves_completed_provider_error_state(monkeypatc
 
     monkeypatch.setattr(executor, 'try_start_provider_invocation', start)
     monkeypatch.setattr(executor, 'run_fal_queue', completed_result_failure)
-    real = FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+    real = FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
 
     with pytest.raises(VideoExecutionError) as captured:
         await real.invoke(_request(), SimpleNamespace(id='user-1'), _task(), _definition(), {})
@@ -412,7 +424,7 @@ async def test_real_executor_marks_post_provider_download_failure_as_completed(m
     monkeypatch.setattr(executor, 'try_start_provider_invocation', start)
     monkeypatch.setattr(executor, 'run_fal_queue', run)
     monkeypatch.setattr(executor, 'download_fal_video', download)
-    real = FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+    real = FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
 
     with pytest.raises(VideoExecutionError) as captured:
         await real.invoke(_request(), SimpleNamespace(id='user-1'), _task(), _definition(), {})
@@ -477,7 +489,7 @@ async def test_real_executor_preserves_shutdown_cancellation(monkeypatch) -> Non
 
     monkeypatch.setattr(executor, 'try_start_provider_invocation', start)
     monkeypatch.setattr(executor, 'run_fal_queue', cancel)
-    real = FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+    real = FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
     with pytest.raises(asyncio.CancelledError):
         await real.invoke(_request(), SimpleNamespace(id='user-1'), _task(), _definition(), {})
 
@@ -571,17 +583,7 @@ async def test_run_video_task_dispatches_to_real_executor(monkeypatch, tmp_path)
     states: list[str] = []
     invoked = False
 
-    class Context:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        def begin(self):
-            return self
-
-    real = FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+    real = FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
     result_path = tmp_path / 'result.mp4'
     result_path.write_bytes(b'video')
 
@@ -608,19 +610,15 @@ async def test_run_video_task_dispatches_to_real_executor(monkeypatch, tmp_path)
         return 1
 
     monkeypatch.setattr(FalVideoExecutor, 'invoke', invoke)
-    async def resolve_executor():
-        return real
-
-    monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
+    _install_resolved_executor(monkeypatch, real)
     monkeypatch.setattr(service, '_set_task_state', set_state)
     monkeypatch.setattr(service, '_publish_video_task_event', no_op)
     monkeypatch.setattr(service, 'creation_session', lambda: RowContext(_row_of(task)))
-    monkeypatch.setattr(service, 'credit_session', lambda: Context())
+    monkeypatch.setattr(service, 'credit_session', SelfTransactionalContext)
     monkeypatch.setattr(service, 'begin_video_usage', begin_usage)
     monkeypatch.setattr(service, '_set_task_usage_id', no_op)
     monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
     monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
-    monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission, **_kwargs: (_definition(), {}, {}))
     monkeypatch.setattr(service, '_finalize_real_video', finalize)
     monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
     await service.run_video_task('task-1', _request(), SimpleNamespace(id='user-1'))
@@ -636,17 +634,7 @@ async def test_real_delivery_failure_keeps_prepaid_charge_for_reconciliation(  #
     states: list[tuple[str, str | None]] = []
     failure: dict[str, object] = {}
 
-    class Context:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        def begin(self):
-            return self
-
-    real = FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+    real = FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
     result_path = tmp_path / 'result.mp4'
     result_path.write_bytes(b'video')
 
@@ -671,19 +659,15 @@ async def test_real_delivery_failure_keeps_prepaid_charge_for_reconciliation(  #
         failure.update(usage_id=usage_id, code=code, restore_prepaid=restore_prepaid)
 
     monkeypatch.setattr(FalVideoExecutor, 'invoke', invoke)
-    async def resolve_executor():
-        return real
-
-    monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
+    _install_resolved_executor(monkeypatch, real)
     monkeypatch.setattr(service, '_set_task_state', set_state)
     monkeypatch.setattr(service, '_publish_video_task_event', no_op)
     monkeypatch.setattr(service, 'creation_session', lambda: RowContext(_row_of(task)))
-    monkeypatch.setattr(service, 'credit_session', lambda: Context())
+    monkeypatch.setattr(service, 'credit_session', SelfTransactionalContext)
     monkeypatch.setattr(service, 'begin_video_usage', begin_usage)
     monkeypatch.setattr(service, '_set_task_usage_id', no_op)
     monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
     monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
-    monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission, **_kwargs: (_definition(), {}, {}))
     monkeypatch.setattr(service, '_finalize_real_video', fail_delivery)
     monkeypatch.setattr(service, 'mark_video_usage_failed', mark_failed)
 
@@ -700,22 +684,134 @@ async def test_real_delivery_failure_keeps_prepaid_charge_for_reconciliation(  #
 
 @pytest.mark.asyncio
 async def test_orphan_cleanup_removes_storage_payload_and_file_row(monkeypatch) -> None:
+    from open_webui.extensions.creations import file_cleanup
+
     deleted_payloads: list[str] = []
     deleted_rows: list[str] = []
     file = SimpleNamespace(id='file-1', path='generated/file-1.mp4')
 
-    monkeypatch.setattr(delivery.Storage, 'delete_file', deleted_payloads.append)
+    monkeypatch.setattr(file_cleanup.Storage, 'delete_file', deleted_payloads.append)
 
     async def delete_row(file_id):
         deleted_rows.append(file_id)
         return True
 
-    monkeypatch.setattr(delivery.Files, 'delete_file_by_id', delete_row)
+    monkeypatch.setattr(file_cleanup.Files, 'delete_file_by_id', delete_row)
 
     await delivery._cleanup_generated_files([file])
 
     assert deleted_payloads == ['generated/file-1.mp4']
     assert deleted_rows == ['file-1']
+
+
+def test_executor_pure_edge_helpers_fail_closed(tmp_path) -> None:
+    with pytest.raises(VideoExecutionError):
+        FalVideoExecutor('key', 'http://queue.test', 'https://storage.test', 1, 1, 1)
+    assert executor._retryable_http_status(None) is False
+    assert executor._retryable_http_status(429) is True
+    assert executor._retryable_http_status(400) is False
+    assert video_result.task_duration_seconds(_task()) == 5
+    invalid_duration = _task().model_copy(update={'params': {'duration': 'invalid'}})
+    assert video_result.task_duration_seconds(invalid_duration) is None
+    assert video_result.is_safe_https_url('https://media.test/video.mp4') is True
+    assert video_result.is_safe_https_url('http://unsafe.test/video.mp4') is False
+
+    valid = tmp_path / 'valid.mp4'
+    valid.write_bytes(b'\x00\x00\x00\x18ftypisom')
+    invalid = tmp_path / 'invalid.mp4'
+    invalid.write_bytes(b'not-video')
+    assert video_result.looks_like_mp4_file(valid) is True
+    assert video_result.looks_like_mp4_file(invalid) is False
+
+
+@pytest.mark.asyncio
+async def test_stream_drain_rejects_empty_and_oversized_payloads() -> None:
+    class Content:
+        def __init__(self, chunks):
+            self.chunks = chunks
+
+        async def iter_chunked(self, _size):
+            for chunk in self.chunks:
+                yield chunk
+
+    target = SimpleNamespace(write=AsyncMock())
+    with pytest.raises(VideoExecutionError) as empty:
+        await executor._drain_response_to_file(SimpleNamespace(content=Content([])), target, max_bytes=10)
+    assert empty.value.code == 'video_result_download_failed'
+    with pytest.raises(VideoExecutionError) as large:
+        await executor._drain_response_to_file(SimpleNamespace(content=Content([b'123456'])), target, max_bytes=5)
+    assert large.value.code == 'video_result_too_large'
+    await executor._drain_response_to_file(SimpleNamespace(content=Content([b'123'])), target, max_bytes=5)
+    target.write.assert_awaited_once_with(b'123')
+
+
+@pytest.mark.asyncio
+async def test_asset_reference_validation_maps_each_boundary(monkeypatch, tmp_path) -> None:
+    constraint = VideoAssetInput(
+        role='start_image',
+        field='image_url',
+        required=True,
+        mime_types=['image/png'],
+        max_bytes=4,
+    )
+    reference = VideoAssetReference(role='start_image', file_id='file')
+    with pytest.raises(VideoExecutionError) as unknown:
+        await executor._validate_asset_reference(reference, {}, user_id='user-1')
+    assert unknown.value.code == 'video_asset_invalid'
+
+    lookup = AsyncMock(return_value=None)
+    monkeypatch.setattr(executor.Files, 'get_file_by_id_and_user_id', lookup)
+    with pytest.raises(VideoExecutionError) as missing:
+        await executor._validate_asset_reference(reference, {'start_image': constraint}, user_id='user-1')
+    assert missing.value.code == 'video_asset_not_found'
+
+    lookup.return_value = SimpleNamespace(path='file', filename='image.png', meta={'content_type': 'text/plain'})
+    with pytest.raises(VideoExecutionError) as invalid_type:
+        await executor._validate_asset_reference(reference, {'start_image': constraint}, user_id='user-1')
+    assert invalid_type.value.code == 'video_asset_invalid_type'
+
+    path = tmp_path / 'image.png'
+    path.write_bytes(b'12345')
+    lookup.return_value = SimpleNamespace(path='file', filename='image.png', meta={'content_type': 'image/png'})
+    monkeypatch.setattr(executor.Storage, 'get_file', lambda _path: path)
+    with pytest.raises(VideoExecutionError) as too_large:
+        await executor._validate_asset_reference(reference, {'start_image': constraint}, user_id='user-1')
+    assert too_large.value.code == 'video_asset_too_large'
+
+
+@pytest.mark.asyncio
+async def test_storage_initiation_rejects_invalid_base_before_network() -> None:
+    with pytest.raises(VideoExecutionError) as invalid:
+        await executor._initiate_fal_storage_upload(
+            object(),
+            filename='image.png',
+            content_type='image/png',
+            api_key='fake',
+            storage_base_url='http://unsafe.test',
+            upload_lifetime_seconds=60,
+        )
+    assert invalid.value.code == 'video_asset_upload_failed'
+
+
+@pytest.mark.asyncio
+async def test_mock_pair_cleans_video_when_poster_upload_fails(monkeypatch) -> None:
+    video_file = SimpleNamespace(id='video-1', path='video-1.mp4')
+    cleanup = AsyncMock()
+    upload = AsyncMock(side_effect=[video_file, RuntimeError('poster upload failed')])
+    monkeypatch.setattr(delivery, '_upload_mock_file', upload)
+    monkeypatch.setattr(delivery, '_cleanup_generated_files', cleanup)
+
+    with pytest.raises(RuntimeError, match='poster upload failed'):
+        await delivery._upload_mock_pair(
+            _request(),
+            SimpleNamespace(id='user-1'),
+            b'video',
+            b'poster',
+            'poster.webp',
+            'image/webp',
+        )
+
+    cleanup.assert_awaited_once_with([video_file])
 
 
 @pytest.mark.asyncio

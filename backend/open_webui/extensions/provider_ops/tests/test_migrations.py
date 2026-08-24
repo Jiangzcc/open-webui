@@ -32,6 +32,9 @@ def test_provider_ops_migration_creates_all_tables(tmp_path) -> None:
                 'actual_cost_currency',
                 'cost_accuracy',
                 'billing_event_at',
+                'provider_status_url',
+                'provider_response_url',
+                'provider_result_url',
             } <= invocation_columns
             sync_run_columns = {item['name'] for item in inspector.get_columns('ext_provider_sync_run')}
             assert 'heartbeat_at' in sync_run_columns

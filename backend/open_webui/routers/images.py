@@ -8,10 +8,8 @@ import logging
 import mimetypes
 import re
 import uuid
-from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 import aiofiles
 import aiohttp
@@ -41,21 +39,24 @@ from open_webui.extensions.credits.http import public_credit_error_response
 from open_webui.extensions.credits.image_billing import bill_image_call
 from open_webui.extensions.credits.pricing import attach_model_base_prices
 from open_webui.extensions.credits.repository import get_enabled_prices
+from open_webui.extensions.images.fal_bridge import (
+    capture_fal_image_result,
+    ensure_fal_image_admission,
+    run_fal_image_pipeline,
+)
 
-# EXT: 二开新增 —— 并发槽位控制、操作韧性重试、provider 调用追踪
+# EXT: 二开新增 —— 并发槽位控制、操作韧性保护、provider 调用追踪
 from open_webui.extensions.images.limits import (
     acquire_image_generation_slot,
     enforce_image_generation_rate,
     release_image_generation_slot,
 )
 from open_webui.extensions.images.resilience import run_image_operation
-from open_webui.extensions.provider_ops.service import try_start_provider_invocation
 from open_webui.internal.db import get_async_session
 from open_webui.models.chats import Chats
 from open_webui.models.config import Config
 from open_webui.retrieval.web.utils import get_ssrf_safe_session, validate_url
 from open_webui.routers.files import get_file_content_by_id, upload_file_handler
-from open_webui.utils.access_control import has_permission
 from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.headers import include_user_info_headers
 from open_webui.utils.images.comfyui import (
@@ -66,23 +67,16 @@ from open_webui.utils.images.comfyui import (
     comfyui_edit_image,
     comfyui_upload_image,
 )
-from open_webui.extensions.fal_images.client import (
+from open_webui.utils.images.fal import (
     FAL_DEFAULT_IMAGE_MODEL,
-    # EXT: 二开新增 —— 自定义尺寸校验
-    FalImageSizeError,
     build_fal_image_payload,
-    extract_fal_image_urls,
     get_fal_edit_model,
     get_fal_generation_model,
     get_fal_image_models,
-    get_mock_fal_image_result,
-    run_fal_queue,
-    # EXT: 二开新增 —— 自定义尺寸校验入口
-    validate_fal_image_size,
 )
 
 # EXT: 二开新增 —— 暴露高级参数字段给管理端模型列表
-from open_webui.extensions.fal_images.models import public_fal_image_advanced_fields, public_fal_image_models
+from open_webui.utils.images.fal_models import public_fal_image_advanced_fields, public_fal_image_models
 from open_webui.utils.session_pool import get_session
 from PIL import Image, ImageOps
 from pydantic import BaseModel
@@ -658,11 +652,9 @@ async def upload_image(request, image_data, content_type, metadata, user, db=Non
 
 @router.post('/generations')
 async def generate_images(request: Request, form_data: CreateImageForm, user=Depends(get_verified_user)):
-    # The direct HTTP endpoint trusts the credits layer's `direct` authorization
-    # scope: verified users may call it regardless of the image feature switches
-    # or per-user image_generation permission. Rate limiting and per-user
-    # concurrency slots are enforced inside image_generations() for every call
-    # path (direct endpoint, chat middleware, builtin tools).
+    # Authorization is enforced centrally by the credits layer for direct,
+    # chat, and tool callers. Rate limiting and per-user concurrency slots are
+    # enforced inside image_generations() for every call path.
     try:
         result = await image_generations(request, form_data, 'direct', user=user)
     except CreditError as error:
@@ -722,7 +714,7 @@ def invoke_edit_creations_factory(request: Request, metadata, user):
 
     async def invoke_edit_creations(prepared, provider_form):
         image_config = await get_image_config()
-        # EXT: 二开新增 —— 通过 resilience 层包装编辑操作，支持超时重试
+        # EXT: 二开新增 —— 通过 resilience 层统一超时和并发保护（不自动重试付费请求）
         internal_result = await run_image_operation(
             image_config.IMAGE_EDIT_ENGINE,
             lambda: _invoke_image_edits(request, provider_form, metadata, user),
@@ -742,77 +734,23 @@ def invoke_edit_creations_factory(request: Request, metadata, user):
     return invoke_edit_creations
 
 
-async def _ensure_fal_image_admission(candidate: str, form_data) -> None:
-    """EXT: 二开新增 —— FAL 引擎前置校验：自定义尺寸约束 + 模型运营状态检查。
-
-    generations/edits 两处原先逐字重复（复盘 P2 收敛）；异常统一转 CreditError
-    以便计费层给出用户可见错误。"""
-    from open_webui.extensions.model_ops.db import model_ops_session
-    from open_webui.extensions.model_ops.service import ensure_model_enabled
-
-    try:
-        validate_fal_image_size(candidate, form_data)
-    except FalImageSizeError as error:
-        raise CreditError(
-            code='invalid_image_size',
-            context={'reason': 'custom_size_constraints'},
-        ) from error
-    try:
-        async with model_ops_session() as model_session:
-            await ensure_model_enabled(model_session, candidate)
-    except HTTPException as error:
-        detail = getattr(error, 'detail', None)
-        message = detail.get('message') if isinstance(detail, dict) else None
-        raise CreditError(
-            code='provider_failed',
-            context={'reason': 'model_disabled', 'message': message or 'Image model is unavailable'},
-        ) from error
-
-
-async def _run_fal_image_pipeline(
+async def _capture_fal_image_result(
     request: Request,
-    form_data,
-    metadata: dict,
-    user,
-    image_config,
-    *,
-    fal_model: str,
+    result: object,
     payload: dict,
-    api_key: str,
-    api_base_url: str,
+    metadata: dict,
+    user: object,
 ) -> CapturedImageBatch:
-    """EXT: 二开新增 —— FAL 图片管线：mock 分流 → provider 观察者 → 真实队列
-    → 产物下载落盘并捕获。generations/edits 的 fal 分支原先逐字重复
-    （复盘 P2 收敛）；模型解析与 payload 构建含编辑差异，由调用方完成。"""
-    # EXT: 二开新增 —— mock 仅在管理端开关显式开启时生效，默认走真实 FAL 队列。
-    if image_config.FAL_MOCK_ENABLED:
-        log.info(f'Using mocked fal.ai image result for {fal_model}')
-        res = get_mock_fal_image_result(fal_model, form_data)
-    else:
-        # EXT: 二开新增 —— 启动 provider 调用追踪观察者
-        observer = await try_start_provider_invocation(
-            task_id=metadata.get('generation_task_id'),
-            user_id=str(user.id),
-            media_kind='image',
-            provider='fal',
-            provider_model_id=fal_model,
-            payload=payload,
-        )
-        res = await run_fal_queue(fal_model, payload, api_key, api_base_url, observer=observer)
-    images = []
-    for image_url in extract_fal_image_urls(res):
-        image_data, content_type = await get_image_data(image_url)
-        file_item, url = await upload_image(request, image_data, content_type, {**payload, **metadata}, user)
-        images.append(
-            CapturedImageResult(
-                url=str(url),
-                file_id=file_item.id,
-                file_user_id=file_item.user_id,
-                file_created_at=file_item.created_at,
-                mime_type=content_type,
-            )
-        )
-    return CapturedImageBatch(images=tuple(images))
+    """Compatibility hook for recovery; implementation stays in the extension."""
+    return await capture_fal_image_result(
+        request,
+        result,
+        payload,
+        metadata,
+        user,
+        download_image=get_image_data,
+        upload_image=upload_image,
+    )
 
 
 async def image_generations(
@@ -853,7 +791,7 @@ async def _image_generations_core(
     image_config = await get_image_config()
     # EXT: 二开新增 —— FAL 引擎前置校验（尺寸约束 + 模型运营状态）
     if image_config.IMAGE_GENERATION_ENGINE == 'fal':
-        await _ensure_fal_image_admission(form_data.model or await get_image_model(request), form_data)
+        await ensure_fal_image_admission(form_data.model or await get_image_model(request), form_data)
     return await bill_image_call(
         request=request,
         raw_form_data=form_data,
@@ -861,7 +799,7 @@ async def _image_generations_core(
         raw_user=user,
         action='text-to-image',
         authorization_scope=authorization_scope,
-        # EXT: 二开修改 —— invoke 通过 resilience 层包装支持超时重试；finalize 透传 metadata
+        # EXT: 二开修改 —— invoke 通过 resilience 层统一超时和并发保护；finalize 透传 metadata
         invoke=lambda _prepared, provider_form: run_image_operation(
             image_config.IMAGE_GENERATION_ENGINE,
             lambda: _invoke_image_generations(request, provider_form, metadata, user),
@@ -1038,16 +976,18 @@ async def _invoke_image_generations(
         elif image_config.IMAGE_GENERATION_ENGINE == 'fal':
             fal_model = get_fal_generation_model(form_data.model or model)
             data = build_fal_image_payload(form_data, fal_model)
-            return await _run_fal_image_pipeline(
+            return await run_fal_image_pipeline(
                 request,
                 form_data,
                 metadata,
                 user,
-                image_config,
                 fal_model=fal_model,
                 payload=data,
                 api_key=image_config.FAL_API_KEY,
                 api_base_url=image_config.FAL_API_BASE_URL,
+                mock_enabled=image_config.FAL_MOCK_ENABLED,
+                download_image=get_image_data,
+                upload_image=upload_image,
             )
 
         elif image_config.IMAGE_GENERATION_ENGINE == 'comfyui':
@@ -1208,9 +1148,9 @@ class EditImageForm(BaseModel):
 
 @router.post('/edit')
 async def edit_images(request: Request, form_data: EditImageForm, user=Depends(get_verified_user)):
-    # Like /generations, the direct edit endpoint trusts the credits layer's
-    # `direct` authorization scope. Rate limiting and per-user concurrency
-    # slots are enforced inside image_edits() for every call path.
+    # Like /generations, authorization is enforced centrally by the credits
+    # layer. Rate limiting and per-user concurrency slots are enforced inside
+    # image_edits() for every call path.
     try:
         result = await image_edits(request, form_data, 'direct', user=user)
     except CreditError as error:
@@ -1268,7 +1208,7 @@ async def _image_edits_core(
     image_config = await get_image_config()
     # EXT: 二开新增 —— FAL 引擎前置校验（尺寸约束 + 模型运营状态）
     if image_config.IMAGE_EDIT_ENGINE == 'fal':
-        await _ensure_fal_image_admission(
+        await ensure_fal_image_admission(
             form_data.model if form_data.model else image_config.IMAGE_EDIT_MODEL, form_data
         )
     return await bill_image_call(
@@ -1517,16 +1457,18 @@ async def _invoke_image_edits(
             edit_model = get_fal_edit_model(model)
             image_urls = form_data.image if isinstance(form_data.image, list) else [form_data.image]
             data = build_fal_image_payload(form_data, edit_model, image_urls)
-            return await _run_fal_image_pipeline(
+            return await run_fal_image_pipeline(
                 request,
                 form_data,
                 metadata,
                 user,
-                image_config,
                 fal_model=edit_model,
                 payload=data,
                 api_key=image_config.IMAGES_EDIT_FAL_API_KEY or image_config.FAL_API_KEY,
                 api_base_url=image_config.IMAGES_EDIT_FAL_API_BASE_URL or image_config.FAL_API_BASE_URL,
+                mock_enabled=image_config.FAL_MOCK_ENABLED,
+                download_image=get_image_data,
+                upload_image=upload_image,
             )
 
         elif image_config.IMAGE_EDIT_ENGINE == 'comfyui':

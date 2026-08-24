@@ -7,16 +7,15 @@ import time
 from pathlib import Path
 from typing import Any
 
+import open_webui.env
 from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
-import open_webui.env
 from open_webui.env import DATABASE_SCHEMA
 from sqlalchemy import Connection, text
 
-from .context import migration_context_options
 from .spec import MigrationSpec
 
 _LOCK_TIMEOUT_SECONDS = 10.0

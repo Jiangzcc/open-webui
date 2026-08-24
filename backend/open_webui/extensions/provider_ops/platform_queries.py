@@ -76,15 +76,9 @@ async def list_provider_prices(session: AsyncSession, *, provider: str, limit: i
     )
 
 
-async def get_provider_overview(
-    session: AsyncSession,
-    *,
-    provider: str,
-    since_ms: int,
-    until_ms: int,
-) -> ProviderOverview:
+async def _invocation_stats(session: AsyncSession, provider: str, since_ms: int, until_ms: int):
     active_statuses = ('created', 'submitted', 'queued', 'running')
-    invocation_stats = (
+    return (
         await session.execute(
             select(
                 func.count(ProviderInvocation.id),
@@ -100,17 +94,14 @@ async def get_provider_overview(
         )
     ).one()
 
-    matched_request_ids = _matched_request_ids(provider)
-    provider_request_stats = (
+
+async def _request_stats(session: AsyncSession, provider: str, since_ms: int, until_ms: int):
+    matched_ids = _matched_request_ids(provider)
+    return (
         await session.execute(
             select(
                 func.count(ProviderRequestRecord.id),
-                func.sum(
-                    case(
-                        (ProviderRequestRecord.provider_request_id.in_(matched_request_ids), 1),
-                        else_=0,
-                    )
-                ),
+                func.sum(case((ProviderRequestRecord.provider_request_id.in_(matched_ids), 1), else_=0)),
             ).where(
                 ProviderRequestRecord.provider == provider,
                 ProviderRequestRecord.started_at >= since_ms,
@@ -119,39 +110,50 @@ async def get_provider_overview(
         )
     ).one()
 
-    billing_result = await session.stream(
+
+async def _billing_summary(
+    session: AsyncSession,
+    provider: str,
+    since_ms: int,
+    until_ms: int,
+) -> tuple[int, int, dict[str, str], dict[str, str]]:
+    result = await session.stream(
         select(
             ProviderBillingEvent.currency,
             ProviderBillingEvent.cost_total,
-            ProviderBillingEvent.provider_request_id.in_(matched_request_ids).label('matched'),
+            ProviderBillingEvent.provider_request_id.in_(_matched_request_ids(provider)).label('matched'),
         ).where(
             ProviderBillingEvent.provider == provider,
             ProviderBillingEvent.event_at >= since_ms,
             ProviderBillingEvent.event_at < until_ms,
         )
     )
-    exact_cost_values: dict[str, Decimal] = {}
-    matched_cost_values: dict[str, Decimal] = {}
-    billing_event_count = 0
-    matched_billing_event_count = 0
-    async for currency, cost_total, matched in billing_result:
+    exact: dict[str, Decimal] = {}
+    matched_exact: dict[str, Decimal] = {}
+    count = matched_count = 0
+    async for currency, cost_total, matched in result:
         cost = Decimal(cost_total)
-        exact_cost_values[currency] = exact_cost_values.get(currency, Decimal(0)) + cost
-        billing_event_count += 1
+        exact[currency] = exact.get(currency, Decimal(0)) + cost
+        count += 1
         if matched:
-            matched_cost_values[currency] = matched_cost_values.get(currency, Decimal(0)) + cost
-            matched_billing_event_count += 1
-    last_sync = await session.scalar(
+            matched_exact[currency] = matched_exact.get(currency, Decimal(0)) + cost
+            matched_count += 1
+    exact_text = {currency: _decimal(total) for currency, total in exact.items()}
+    matched_text = {currency: _decimal(matched_exact.get(currency, Decimal(0))) for currency in exact}
+    return count, matched_count, exact_text, matched_text
+
+
+async def _latest_sync(session: AsyncSession, provider: str) -> ProviderSyncRun | None:
+    return await session.scalar(
         select(ProviderSyncRun)
         .where(ProviderSyncRun.provider == provider)
         .order_by(ProviderSyncRun.started_at.desc(), ProviderSyncRun.id.desc())
         .limit(1)
     )
-    exact_costs = {currency: _decimal(total) for currency, total in exact_cost_values.items()}
-    matched_exact_costs = {
-        currency: _decimal(matched_cost_values.get(currency, Decimal(0))) for currency in exact_cost_values
-    }
-    unbilled_success_count = int(
+
+
+async def _unbilled_success_count(session: AsyncSession, provider: str, since_ms: int, until_ms: int) -> int:
+    return int(
         await session.scalar(
             select(func.count(ProviderInvocation.id)).where(
                 ProviderInvocation.provider == provider,
@@ -163,6 +165,24 @@ async def get_provider_overview(
         )
         or 0
     )
+
+
+async def get_provider_overview(
+    session: AsyncSession,
+    *,
+    provider: str,
+    since_ms: int,
+    until_ms: int,
+) -> ProviderOverview:
+    invocation_stats, provider_request_stats = (
+        await _invocation_stats(session, provider, since_ms, until_ms),
+        await _request_stats(session, provider, since_ms, until_ms),
+    )
+    billing_event_count, matched_billing_event_count, exact_costs, matched_exact_costs = await _billing_summary(
+        session, provider, since_ms, until_ms
+    )
+    last_sync = await _latest_sync(session, provider)
+    unbilled_success_count = await _unbilled_success_count(session, provider, since_ms, until_ms)
     return ProviderOverview(
         provider=provider,
         window_start_at=since_ms,

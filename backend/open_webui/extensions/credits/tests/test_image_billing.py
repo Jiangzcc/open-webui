@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock
 
@@ -12,11 +11,7 @@ from fastapi import HTTPException
 from open_webui.extensions.credits.compat import BillingIdentity
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.credits.image_billing import bill_image_call
-
-
-@dataclass
-class Request:
-    headers: dict[str, object]
+from open_webui.extensions.credits.tests.service_test_support import HeaderRequest as Request
 
 
 class FakeTxSession:
@@ -75,7 +70,6 @@ def billing_module(monkeypatch):
     monkeypatch.setattr(module, '_to_provider_form', lambda _prepared, _action: provider_form)
     monkeypatch.setattr(module, 'credit_session', fake_credit_session)
     monkeypatch.setattr(module, 'mark_usage_invoking', AsyncMock(return_value=1))
-    monkeypatch.setattr(module, 'mark_usage_succeeded', AsyncMock(return_value=1))
     monkeypatch.setattr(module, 'mark_usage_succeeded_in_session', AsyncMock(return_value=1))
     monkeypatch.setattr(module, 'mark_usage_failed', AsyncMock(return_value=1))
     return module, identity, prepared, provider_form
@@ -126,28 +120,34 @@ async def test_terminal_finalize_and_success_share_one_transaction(billing_modul
     invoke.assert_awaited_once_with(prepared, provider_form)
     finalize.assert_awaited_once_with(ANY, prepared, internal_result, 'usage-1')
     module.mark_usage_succeeded_in_session.assert_awaited_once_with(ANY, 'usage-1', ['/api/v1/files/result-1/content'])
-    module.mark_usage_succeeded.assert_not_awaited()
     module._authorize_image_call.assert_awaited_once_with(identity, 'text-to-image', 'direct')
 
 
 @pytest.mark.asyncio
-async def test_direct_scope_skips_feature_switch_and_permission(monkeypatch) -> None:
+async def test_direct_scope_enforces_feature_switch_and_permission(monkeypatch) -> None:
     import open_webui.extensions.credits.image_billing as module
 
     current_user = SimpleNamespace(id='user-1', name='User', email='user@example.test', role='user')
     identity = BillingIdentity(user_id='user-1', name='User', email='user@example.test', role='user')
     session = AuthorizationSession(current_user)
     monkeypatch.setattr(module, 'credit_session', lambda: authorization_session(session))
-    config = AsyncMock()
+    config = AsyncMock(
+        return_value=SimpleNamespace(
+            ENABLE_IMAGE_GENERATION=True,
+            ENABLE_IMAGE_EDIT=True,
+            USER_PERMISSIONS={'features': {'image_generation': True}},
+        )
+    )
     monkeypatch.setattr(module.compat, 'get_runtime_image_config', config)
-    permission = AsyncMock()
+    permission = AsyncMock(return_value=True)
     monkeypatch.setattr(module, 'has_permission', permission)
 
     snapshot = await module._authorize_image_call(identity, 'text-to-image', 'direct')
 
     assert snapshot.id == 'user-1'
-    config.assert_not_awaited()
-    permission.assert_not_awaited()
+    config.assert_awaited_once()
+    permission.assert_awaited_once()
+    assert permission.await_args.kwargs['db'] is session
 
 
 @pytest.mark.asyncio
@@ -161,11 +161,7 @@ async def test_finalize_failure_leaves_usage_invoking_and_never_marks_provider_f
         AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
     )
     module.mark_usage_failed.reset_mock()
-    invoke = AsyncMock(
-        return_value=SimpleNamespace(
-            images=(SimpleNamespace(url='/api/v1/files/result-1/content'),)
-        )
-    )
+    invoke = AsyncMock(return_value=SimpleNamespace(images=(SimpleNamespace(url='/api/v1/files/result-1/content'),)))
     finalize = AsyncMock(side_effect=RuntimeError('db died'))
 
     with pytest.raises(CreditError) as raised:
@@ -317,6 +313,45 @@ async def test_provider_failure_is_persisted_without_exception_text(billing_modu
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(('submitted', 'restore_prepaid'), [(False, True), (True, False)])
+async def test_provider_acceptance_boundary_controls_prepaid_restore(
+    billing_module, monkeypatch, submitted, restore_prepaid
+) -> None:
+    module, _, _, _ = billing_module
+    monkeypatch.setattr(
+        module,
+        'begin_image_usage',
+        AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
+    )
+    error = RuntimeError('provider failed')
+    error.provider_submitted = submitted
+
+    with pytest.raises(CreditError) as raised:
+        await call_bill(invoke=AsyncMock(side_effect=error))
+
+    assert raised.value.code == 'provider_failed'
+    assert module.mark_usage_failed.await_args.kwargs['restore_prepaid'] is restore_prepaid
+
+
+@pytest.mark.asyncio
+async def test_empty_provider_result_is_failed_and_never_finalized(billing_module, monkeypatch) -> None:
+    module, _, _, _ = billing_module
+    monkeypatch.setattr(
+        module,
+        'begin_image_usage',
+        AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
+    )
+    finalize = AsyncMock()
+
+    with pytest.raises(CreditError) as raised:
+        await call_bill(invoke=AsyncMock(return_value=SimpleNamespace(images=())), finalize=finalize)
+
+    assert raised.value.code == 'provider_failed'
+    finalize.assert_not_awaited()
+    assert module.mark_usage_failed.await_args.kwargs['restore_prepaid'] is False
+
+
+@pytest.mark.asyncio
 async def test_cancelled_provider_call_propagates_without_failed_transition(billing_module, monkeypatch) -> None:
     module, _, _, _ = billing_module
     monkeypatch.setattr(
@@ -333,7 +368,7 @@ async def test_cancelled_provider_call_propagates_without_failed_transition(bill
 
 
 @pytest.mark.asyncio
-async def test_user_cancelled_provider_call_restores_prepaid_usage(billing_module, monkeypatch) -> None:
+async def test_named_cancelled_provider_call_does_not_infer_a_refund(billing_module, monkeypatch) -> None:
     module, _, _, _ = billing_module
     monkeypatch.setattr(
         module,
@@ -345,13 +380,7 @@ async def test_user_cancelled_provider_call_restores_prepaid_usage(billing_modul
     with pytest.raises(asyncio.CancelledError):
         await call_bill(invoke=invoke)
 
-    safe_error = module.mark_usage_failed.await_args.args[1]
-    assert safe_error.code == 'generation_cancelled'
-    module.mark_usage_failed.assert_awaited_once_with(
-        'usage-1',
-        safe_error,
-        restore_prepaid=True,
-    )
+    module.mark_usage_failed.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -468,9 +497,7 @@ async def test_success_status_failure_does_not_reinvoke_provider(billing_module,
         AsyncMock(return_value=SimpleNamespace(usage=usage(), outcome='new')),
     )
     module.mark_usage_succeeded_in_session.return_value = 0
-    invoke = AsyncMock(
-        return_value=SimpleNamespace(images=(SimpleNamespace(url='/api/v1/files/result-1/content'),))
-    )
+    invoke = AsyncMock(return_value=SimpleNamespace(images=(SimpleNamespace(url='/api/v1/files/result-1/content'),)))
 
     with pytest.raises(CreditError) as raised:
         await call_bill(invoke=invoke)
@@ -519,7 +546,7 @@ async def test_authorization_rejects_missing_pending_and_spoofed_roles(
     monkeypatch.setattr(module, 'credit_session', lambda: authorization_session(session))
 
     with pytest.raises(HTTPException) as raised:
-        await module._authorize_image_call(identity, 'text-to-image')
+        await module._authorize_image_call(identity, 'text-to-image', 'direct')
 
     assert raised.value.status_code == 403
 
@@ -569,7 +596,7 @@ async def test_authorization_denies_disabled_feature_before_permission(monkeypat
     monkeypatch.setattr(module, 'has_permission', permission)
 
     with pytest.raises(HTTPException) as raised:
-        await module._authorize_image_call(identity, 'text-to-image')
+        await module._authorize_image_call(identity, 'text-to-image', 'direct')
 
     assert raised.value.status_code == 403
     permission.assert_not_awaited()
@@ -635,11 +662,9 @@ async def test_lazy_service_proxies_preserve_import_direction(monkeypatch) -> No
     marker = object()
     begin = AsyncMock(return_value=marker)
     invoking = AsyncMock(return_value=1)
-    succeeded = AsyncMock(return_value=1)
     failed = AsyncMock(return_value=1)
     monkeypatch.setattr(service, 'begin_image_usage', begin)
     monkeypatch.setattr(service, 'mark_usage_invoking', invoking)
-    monkeypatch.setattr(service, 'mark_usage_succeeded', succeeded)
     monkeypatch.setattr(service, 'mark_usage_failed', failed)
     monkeypatch.setattr(credit_db, 'credit_session', fake_credit_session)
     user = SimpleNamespace(id='user-1')
@@ -650,12 +675,10 @@ async def test_lazy_service_proxies_preserve_import_direction(monkeypatch) -> No
         assert session is not None
     assert await module.begin_image_usage(object(), user, context, 'request-key') is marker
     assert await module.mark_usage_invoking('usage-1') == 1
-    assert await module.mark_usage_succeeded('usage-1', ['/api/v1/files/result/content']) == 1
     assert await module.mark_usage_failed('usage-1', safe_error) == 1
 
     begin.assert_awaited_once()
     invoking.assert_awaited_once_with('usage-1')
-    succeeded.assert_awaited_once()
     failed.assert_awaited_once_with('usage-1', safe_error, restore_prepaid=False)
 
 

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import hmac
 import logging
+from asyncio import to_thread
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from hashlib import sha256
 from uuid import uuid4
 
@@ -29,7 +31,6 @@ from open_webui.extensions.credits.schemas import RequestAuditContext, UserSnaps
 from open_webui.utils.rate_limit import RateLimiter
 from open_webui.utils.redis import get_redis_client
 from opentelemetry import metrics
-
 
 log = logging.getLogger(__name__)
 _rate_limit_fallback_counter = metrics.get_meter(__name__).create_counter(
@@ -107,7 +108,15 @@ def _rate_limit_operation(key: str) -> str:
 
 def _record_rate_limit_fallback(key: str) -> None:
     _rate_limit_fallback_counter.add(1, {'credit.rate_limit.operation': _rate_limit_operation(key)})
-    log.warning('Credit rate limiting is using single-process fallback', extra={'credit_rate_limit_fallback': True})
+    _log_rate_limit_fallback_once(_rate_limit_operation(key))
+
+
+@lru_cache(maxsize=32)
+def _log_rate_limit_fallback_once(operation: str) -> None:
+    log.warning(
+        'Credit rate limiting is using single-process fallback',
+        extra={'credit_rate_limit_fallback': True, 'credit_rate_limit_operation': operation},
+    )
 
 
 _sync_redis = get_redis_client(async_mode=False)
@@ -137,8 +146,11 @@ _redeem_admin_limiter = CreditRateLimiter(
     window=CREDIT_RATE_LIMIT_WINDOW_SECONDS,
 )
 
-def _enforce_rate_limit(limiter: RateLimiter, key: str) -> None:
-    if limiter.is_limited(key):
+async def _enforce_rate_limit(limiter: RateLimiter, key: str) -> None:
+    # RateLimiter and its Redis client are synchronous upstream APIs. Running
+    # them on the event loop can stall every request in this single-worker
+    # deployment when Redis is slow, so isolate the entire check in a thread.
+    if await to_thread(limiter.is_limited, key):
         raise HTTPException(status_code=429, detail={'code': 'rate_limit_exceeded'})
 
 
@@ -226,10 +238,10 @@ def _request_id(request: Request) -> str:
 def _request_source(request: Request, credentials: str) -> str:
     if credentials.startswith('sk-'):
         return 'api_key'
-    if request.headers.get('authorization'):
-        return 'api'
     if request.cookies.get('token'):
         return 'web'
+    if request.headers.get('authorization'):
+        return 'api'
     return 'internal_admin'
 
 

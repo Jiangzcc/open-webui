@@ -124,7 +124,11 @@ async def test_regular_adjustment_preserves_an_existing_account_ledger_differenc
                 target,
                 operator,
                 AdjustmentRequest(direction='increase', amount=2, reason_code='accounting_correction'),
-                RequestAuditContext(source='internal_admin', request_id='ordinary-adjustment', remote_address_hash=None),
+                RequestAuditContext(
+                    source='internal_admin',
+                    request_id='ordinary-adjustment',
+                    remote_address_hash=None,
+                ),
             )
     assert raised.value.code == 'credit_service_unavailable'
     assert raised.value.context.get('reason') == 'account_ledger_mismatch'

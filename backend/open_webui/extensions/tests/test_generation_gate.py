@@ -4,8 +4,8 @@ import asyncio
 import time
 
 import pytest
-from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions import generation_gate
+from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.generation_gate import GenerationGate
 
 
@@ -16,6 +16,13 @@ def _gate(max_concurrent: int = 2, limit: int = 10) -> GenerationGate:
         window_seconds=60,
         max_concurrent_per_user=max_concurrent,
     )
+
+
+async def _assert_third_rate_limited(gate: GenerationGate) -> None:
+    await gate.enforce_rate('user-1')
+    await gate.enforce_rate('user-1')
+    with pytest.raises(CreditError):
+        await gate.enforce_rate('user-1')
 
 
 class _FakeAsyncRedis:
@@ -168,13 +175,7 @@ def test_rate_check_redis_error_falls_back_to_memory(monkeypatch) -> None:
 
     monkeypatch.setattr(gate._fallback_limiter, 'is_limited', fake_fallback)
 
-    async def scenario() -> None:
-        await gate.enforce_rate('user-1')
-        await gate.enforce_rate('user-1')
-        with pytest.raises(CreditError):
-            await gate.enforce_rate('user-1')
-
-    asyncio.run(scenario())
+    asyncio.run(_assert_third_rate_limited(gate))
     assert len(fallback_calls) == 3
 
 
@@ -201,10 +202,4 @@ def test_rate_check_without_redis_uses_memory_limiter(monkeypatch) -> None:
     gate = _gate(limit=2)
     monkeypatch.setattr(gate, '_redis', None)
 
-    async def scenario() -> None:
-        await gate.enforce_rate('user-1')
-        await gate.enforce_rate('user-1')
-        with pytest.raises(CreditError):
-            await gate.enforce_rate('user-1')
-
-    asyncio.run(scenario())
+    asyncio.run(_assert_third_rate_limited(gate))

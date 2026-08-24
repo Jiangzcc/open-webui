@@ -17,7 +17,6 @@ def _admin_app(credits_router, session):
 
 def test_adjustment_rejects_oversized_target_id_before_database_access() -> None:
     from open_webui.extensions.credits import router as credits_router
-    from open_webui.extensions.credits import router_admin
 
     response = TestClient(_admin_app(credits_router, object()), raise_server_exceptions=False).post(
         f'/api/v1/credits/admin/accounts/{"u" * 129}/adjustments',

@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
+from open_webui.extensions.schema import StrictFrozenModel as StrictModel
+from pydantic import Field, field_validator, model_validator
 
 
 class ModelOperationUpdate(StrictModel):

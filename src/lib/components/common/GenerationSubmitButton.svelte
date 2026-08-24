@@ -9,7 +9,7 @@
 
 <button
 	type="submit"
-	class="flex size-8 shrink-0 items-center justify-center rounded-full transition {disabled
+	class="flex size-11 shrink-0 items-center justify-center rounded-full transition sm:size-8 {disabled
 		? 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-500'
 		: 'bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100'}"
 	{disabled}

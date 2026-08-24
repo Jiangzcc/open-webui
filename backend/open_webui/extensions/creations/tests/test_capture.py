@@ -4,12 +4,10 @@ import base64
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from open_webui.extensions.creations import capture
 from open_webui.extensions.creations.capture import (
     build_creation_capture_context,
@@ -26,6 +24,8 @@ from open_webui.extensions.creations.schemas import (
     CreationCaptureContext,
     ReusedImageResult,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
 JPEG_MAGIC = b'\xff\xd8\xff\xe0'
@@ -585,6 +585,41 @@ async def test_capture_reference_snapshots_propagates_upload_failure(monkeypatch
             ),
             user=SimpleNamespace(id='user-1'),
         )
+
+
+@pytest.mark.asyncio
+async def test_capture_reference_snapshots_cleans_prior_upload_on_later_failure(monkeypatch) -> None:
+    first = PNG_MAGIC + b'first'
+    second = PNG_MAGIC + b'second'
+    uploaded = SimpleNamespace(id='snap-1', user_id='user-1', created_at=42, path='snap-1.png')
+    cleanup = AsyncMock()
+    attempts = 0
+
+    async def upload(_request, file, metadata, process, user):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            raise RuntimeError('second upload failed')
+        return uploaded
+
+    monkeypatch.setattr(capture, 'upload_file_handler', upload)
+    monkeypatch.setattr(capture, 'cleanup_uploaded_files', cleanup)
+
+    with pytest.raises(RuntimeError, match='second upload failed'):
+        await capture_reference_snapshots(
+            request=object(),
+            references=decode_prepared_references(
+                SimpleNamespace(
+                    provider_input=SimpleNamespace(
+                        image=[_data_url(first, 'image/png'), _data_url(second, 'image/png')]
+                    ),
+                    billing=SimpleNamespace(reference_hashes=(_sha(first), _sha(second))),
+                )
+            ),
+            user=SimpleNamespace(id='user-1'),
+        )
+
+    cleanup.assert_awaited_once_with([uploaded])
 
 
 @pytest.mark.asyncio

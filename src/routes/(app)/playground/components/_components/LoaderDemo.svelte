@@ -29,7 +29,8 @@
 			</Loader>
 		</div>
 		<span class="text-[11px] text-gray-400">
-			{$i18n.t('visible fired')}: {triggerCount} {$i18n.t('times')}
+			{$i18n.t('visible fired')}: {triggerCount}
+			{$i18n.t('times')}
 		</span>
 	</div>
 </DemoCard>

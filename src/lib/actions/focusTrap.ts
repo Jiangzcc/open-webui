@@ -3,7 +3,7 @@
  * 打开时将焦点移至弹窗内首个可聚焦元素，Tab/Shift+Tab 在弹窗内循环，
  * 关闭后焦点恢复到触发元素。
  */
-export function trapFocus(node: HTMLElement) {
+export function trapFocus(node: HTMLElement, close?: () => void) {
 	// 记录触发元素，弹窗关闭后恢复焦点
 	const previouslyFocused = document.activeElement as HTMLElement | null;
 
@@ -11,9 +11,19 @@ export function trapFocus(node: HTMLElement) {
 		'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 	const getFocusable = () =>
-		Array.from(node.querySelectorAll<HTMLElement>(focusableSelector));
+		Array.from(node.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+			(element) =>
+				element.isConnected &&
+				!element.closest('[inert]') &&
+				element.getClientRects().length > 0 &&
+				getComputedStyle(element).visibility !== 'hidden'
+		);
 
 	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			close?.();
+			return;
+		}
 		if (e.key !== 'Tab') return;
 		const elements = getFocusable();
 		if (elements.length === 0) return;
@@ -31,21 +41,30 @@ export function trapFocus(node: HTMLElement) {
 	node.addEventListener('keydown', handleKeydown);
 
 	// 初始焦点：移至弹窗内首个可聚焦元素
-	requestAnimationFrame(() => {
+	let addedNodeTabIndex = false;
+	const focusFrame = requestAnimationFrame(() => {
 		const elements = getFocusable();
 		if (elements.length > 0) {
 			elements[0].focus();
 		} else {
 			node.setAttribute('tabindex', '-1');
+			addedNodeTabIndex = true;
 			node.focus();
 		}
 	});
 
 	return {
+		update(nextClose?: () => void) {
+			close = nextClose;
+		},
 		destroy() {
+			cancelAnimationFrame(focusFrame);
 			node.removeEventListener('keydown', handleKeydown);
+			if (addedNodeTabIndex) node.removeAttribute('tabindex');
 			// 恢复焦点到触发元素
-			previouslyFocused?.focus?.();
+			if (previouslyFocused?.isConnected && !previouslyFocused.closest('[inert]')) {
+				previouslyFocused.focus();
+			}
 		}
 	};
 }

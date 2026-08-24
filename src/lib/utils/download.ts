@@ -15,8 +15,7 @@ export const blobExtension = (blob: Blob): string => {
 };
 
 // 从文件名中提取纯文件名部分，阻止路径遍历（zip-slip / 路径穿越）。
-const sanitizeFilename = (filename: string): string =>
-	filename.split(/[/\\]/).pop() || 'file';
+const sanitizeFilename = (filename: string): string => filename.split(/[/\\]/).pop() || 'file';
 
 export const downloadBlob = (blob: Blob, filename: string) => {
 	const url = URL.createObjectURL(blob);

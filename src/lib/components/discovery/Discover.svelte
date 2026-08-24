@@ -240,6 +240,7 @@
 				<div
 					class="grid min-h-11 grid-cols-4 rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-900/80"
 					role="tablist"
+					tabindex="-1"
 					aria-label={$i18n.t('Discovery feed')}
 					on:keydown={handleFeedTabKeydown}
 				>
@@ -320,9 +321,7 @@
 						aria-hidden="true"
 					>
 						{#each Array(10) as _, index (index)}
-							<div
-								class="aspect-[3/4] overflow-hidden rounded-xl bg-stone-100 dark:bg-gray-900/40"
-							>
+							<div class="aspect-[3/4] overflow-hidden rounded-xl bg-stone-100 dark:bg-gray-900/40">
 								<div
 									class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
 								></div>

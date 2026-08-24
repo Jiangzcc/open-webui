@@ -53,7 +53,9 @@
 
 <DemoCard
 	title="ToolCallDisplay"
-	desc={$i18n.t('Tool-call row: executing (spinner) / done (check). Expand to see Input/Output. Mock data.')}
+	desc={$i18n.t(
+		'Tool-call row: executing (spinner) / done (check). Expand to see Input/Output. Mock data.'
+	)}
 >
 	<div class="w-full flex flex-col gap-1">
 		<ToolCallDisplay id="pg-tcd-executing" attributes={executing} />

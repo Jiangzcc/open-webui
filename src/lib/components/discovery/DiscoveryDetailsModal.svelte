@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
@@ -14,13 +13,14 @@
 	import Heart from '$lib/components/icons/Heart.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import ArtworkViewerShell from '$lib/components/images/ArtworkViewerShell.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 
 	export let show = false;
 	export let postId: string | null = null;
 	export let onReaction: (reaction: ReactionState) => void = () => {};
 	export let onReuse: (draft: ImageCreationDraft) => void = () => {};
 
-	const i18n: any = getContext('i18n');
+	const i18n = getI18nContext();
 
 	let detail: DiscoveryPostDetail | null = null;
 	let loading = false;
@@ -114,7 +114,7 @@
 		show = false;
 	};
 
-	const PARAM_LABELS: Record<ParamTag['key'], string> = {
+	const PARAM_LABELS: Partial<Record<ParamTag['key'], string>> = {
 		size: $i18n.t('Size'),
 		resolution: $i18n.t('Resolution'),
 		aspect_ratio: $i18n.t('Aspect ratio'),
@@ -149,6 +149,8 @@
 	<svelte:fragment slot="media">
 		{#if detail}
 			{#if detail.content_url && detail.kind === 'video'}
+				<!-- Generated discovery videos do not provide a separate caption track. -->
+				<!-- svelte-ignore a11y_media_has_caption -->
 				<video
 					src={detail.content_url}
 					poster={detail.poster_url ?? undefined}

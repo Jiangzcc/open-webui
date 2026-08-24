@@ -50,9 +50,11 @@
 		},
 		required: ['api_key', 'model']
 	};
+	// Upstream Valves.svelte is still JavaScript and infers its default-null prop too narrowly.
+	const valvesProps: Record<string, unknown> = { valvesSpec };
 
 	let valves: Record<string, any> = {
-		api_key: 'sk-demo-xxxx',
+		api_key: 'demo',
 		model: 'gpt-4o',
 		enabled: true,
 		tools: ['search', 'vision'],
@@ -67,10 +69,17 @@
 	desc={$i18n.t('JSON-Schema-driven form. password/enum/multiselect/boolean/map. dispatch change.')}
 >
 	<div class="w-full flex flex-col gap-2">
-		<Valves {valvesSpec} bind:valves on:change={() => (changeCount += 1)} />
+		<Valves {...valvesProps} bind:valves on:change={() => (changeCount += 1)} />
 		<details class="text-[11px] text-gray-400">
-			<summary class="cursor-pointer select-none">{$i18n.t('Source')} (valves) · {$i18n.t('Changes')}: {changeCount}</summary>
-			<pre class="mt-1 whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-850 p-2 rounded">{JSON.stringify(valves, null, 2)}</pre>
+			<summary class="cursor-pointer select-none"
+				>{$i18n.t('Source')} (valves) · {$i18n.t('Changes')}: {changeCount}</summary
+			>
+			<pre
+				class="mt-1 whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-850 p-2 rounded">{JSON.stringify(
+					valves,
+					null,
+					2
+				)}</pre>
 		</details>
 	</div>
 </DemoCard>

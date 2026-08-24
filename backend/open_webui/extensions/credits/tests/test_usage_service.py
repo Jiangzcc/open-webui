@@ -18,7 +18,6 @@ from open_webui.extensions.credits.models import CreditAccount, CreditLedger, Cr
 from open_webui.extensions.credits.schemas import AdjustmentRequest, RequestAuditContext, UserSnapshot
 from open_webui.extensions.credits.service import (
     SafeProviderError,
-    adjust_balance,
     begin_image_usage,
     mark_stale_usage_unknown,
     mark_usage_failed,
@@ -27,7 +26,7 @@ from open_webui.extensions.credits.service import (
 )
 from open_webui.internal.db import _make_async_url
 from open_webui.models.users import User
-from sqlalchemy import event, func, insert, select
+from sqlalchemy import event, func, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -52,17 +51,6 @@ async def service_database(tmp_path: Path):
         await engine.dispose()
 
 
-async def create_user(sessions, user_id: str, *, name: str | None = None, email: str | None = None) -> UserSnapshot:
-    snapshot = UserSnapshot(
-        id=user_id,
-        name=name or f'Name {user_id}',
-        email=email or f'{user_id}@example.test',
-    )
-    async with sessions() as session, session.begin():
-        await session.execute(insert(User).values(id=snapshot.id, name=snapshot.name, email=snapshot.email))
-    return snapshot
-
-
 def audit(request_id: str = 'request-1') -> RequestAuditContext:
     return RequestAuditContext(source='internal_admin', request_id=request_id, remote_address_hash='a0' * 32)
 
@@ -71,52 +59,13 @@ def adjustment(direction: str, amount: int) -> AdjustmentRequest:
     return AdjustmentRequest(direction=direction, amount=amount, reason_code='accounting_correction')
 
 
-def image_context(*, resource_id: str = 'model-a') -> ImageBillingContext:
-    return ImageBillingContext(
-        service_type='image',
-        resource_id=resource_id,
-        action='text-to-image',
-        channel='web',
-        dimensions={'size': '512x512', 'image_count': 1},
-        prompt_hash='a' * 64,
-        reference_hashes=(),
-        request_hash='b' * 64,
-    )
-
-
 @asynccontextmanager
 async def credit_session_for_test(sessions):
     async with sessions() as session:
         yield session
 
 
-async def add_price(sessions, *, resource_id: str = 'model-a', enabled: bool = True, base_price: str = '3') -> None:
-    now = int(time.time())
-    async with sessions() as session, session.begin():
-        session.add(
-            CreditPrice(
-                id=f'price-{resource_id}',
-                service_type='image',
-                resource_id=resource_id,
-                action='text-to-image',
-                base_price=base_price,
-                rules={'schema_version': 1, 'dimensions': []},
-                enabled=enabled,
-                created_at=now,
-                updated_at=now,
-            )
-        )
-
-
-async def credit_user(sessions, user: UserSnapshot, amount: int = 10) -> None:
-    async with sessions() as session:
-        await adjust_balance(
-            session,
-            user,
-            UserSnapshot(id='admin-1', name='Admin', email='admin@example.test'),
-            adjustment('increase', amount),
-            audit('seed'),
-        )
+from .service_test_support import add_price, create_user, credit_user, image_context
 
 
 @pytest.mark.asyncio
@@ -372,7 +321,9 @@ async def test_usage_state_transitions_are_conditional_and_sanitize_results(serv
 
 
 @pytest.mark.asyncio
-async def test_user_cancellation_atomically_restores_prepaid_credits(service_database, monkeypatch) -> None:
+async def test_known_pre_provider_failure_atomically_restores_prepaid_credits(
+    service_database, monkeypatch
+) -> None:
     user = await create_user(service_database, 'user-cancel')
     await credit_user(service_database, user)
     await add_price(service_database)
@@ -381,13 +332,13 @@ async def test_user_cancellation_atomically_restores_prepaid_credits(service_dat
         result = await begin_image_usage(session, user, image_context(), 'cancel-key')
 
     assert await mark_usage_invoking(result.usage.id) == 1
-    cancelled = SafeProviderError(
-        code='generation_cancelled',
+    pre_provider_failure = SafeProviderError(
+        code='video_fal_not_configured',
         summary='Image provider request failed',
     )
-    assert await mark_usage_failed(result.usage.id, cancelled, restore_prepaid=True) == 1
-    # A repeated cancel cannot create another refund ledger row.
-    assert await mark_usage_failed(result.usage.id, cancelled, restore_prepaid=True) == 0
+    assert await mark_usage_failed(result.usage.id, pre_provider_failure, restore_prepaid=True) == 1
+    # A repeated restoration cannot create another compensating ledger row.
+    assert await mark_usage_failed(result.usage.id, pre_provider_failure, restore_prepaid=True) == 0
 
     async with service_database() as session:
         usage = await session.get(CreditUsage, result.usage.id)
@@ -403,12 +354,14 @@ async def test_user_cancellation_atomically_restores_prepaid_credits(service_dat
         )
 
     assert usage is not None and usage.status == 'failed'
-    assert usage.error_snapshot['code'] == 'generation_cancelled'
+    assert usage.error_snapshot['code'] == 'video_fal_not_configured'
     assert account is not None and account.balance == 10
     assert sorted(ledger.amount for ledger in ledgers) == [-3, 3]
     refund = next(ledger for ledger in ledgers if ledger.amount > 0)
     assert refund.entry_type == 'system_adjustment'
     assert refund.related_ledger_id == result.usage.ledger_id
+    assert refund.idempotency_key == f'restore:{result.usage.id}'
+    assert refund.metadata_snapshot == {'reason': 'prepaid_restored'}
 
 
 @pytest.mark.asyncio

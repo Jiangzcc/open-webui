@@ -94,7 +94,7 @@ export type LedgerQuery = {
 export type AdminLedgerQuery = {
 	user_id?: string;
 	entry_type?: 'consumption' | 'admin_adjustment' | 'system_adjustment';
-	reason_code?: AdjustmentReason;
+	reason_code?: LedgerReason;
 	service_type?: string;
 	resource_id?: string;
 	action?: string;
@@ -129,6 +129,8 @@ export type AdjustmentReason =
 	| 'accounting_correction'
 	| 'violation_deduction'
 	| 'other';
+
+export type LedgerReason = AdjustmentReason | 'redeem';
 
 export type CreditAdjustmentInput = {
 	direction: 'increase' | 'decrease';
@@ -281,7 +283,6 @@ export type CreditRedeemCodeStatus = 'available' | 'redeemed' | 'voided' | 'expi
 
 export type CreditRedeemCode = {
 	id: string;
-	code: string;
 	hint: string;
 	status: CreditRedeemCodeStatus;
 	redeemed_by_user_id: string | null;

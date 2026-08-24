@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { trapFocus } from '$lib/actions/focusTrap';
@@ -10,14 +10,15 @@
 	} from '$lib/apis/discovery';
 	import ImagePreview from '$lib/components/common/ImagePreview.svelte';
 	import Select from '$lib/components/common/Select.svelte';
-import Spinner from '$lib/components/common/Spinner.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 	import type {
 		DiscoveryCategory,
 		DiscoveryCategoryItem,
 		DiscoveryPostSummary
 	} from '$lib/utils/discovery';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	let categories: DiscoveryCategoryItem[] = [
 		{ id: 'other', display_name: $i18n.t('Other'), enabled: true, sort_order: 999 }
 	];
@@ -34,6 +35,10 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 	let showPreview = false;
 	let previewUrl = '';
 	let previewAlt = '';
+	const updateEditingCategory = (category: string) => {
+		if (editing) editing.category = category;
+	};
+	const mediaKinds = ['', 'image', 'video'] as const;
 	let previewKind: 'image' | 'video' = 'image';
 	let previewPosterUrl = '';
 
@@ -160,7 +165,7 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 				ariaLabel={$i18n.t('Media type')}
 				triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
 				onChange={(kind) => {
-					mediaKind = kind;
+					mediaKind = mediaKinds.find((candidate) => candidate === kind) ?? '';
 					resetPagination();
 				}}
 			/>
@@ -288,7 +293,7 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 		role="presentation"
 		on:click={(event) => event.currentTarget === event.target && !saving && (editing = null)}
 	>
-		<section
+		<div
 			class="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-gray-900 sm:max-w-lg sm:rounded-3xl sm:p-6"
 			role="dialog"
 			aria-modal="true"
@@ -329,19 +334,18 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 
 			<div class="mt-5 grid gap-4">
 				<label class="grid gap-1.5 text-sm"
-					><span class="font-medium">{$i18n.t('Category')}</span
-					><Select
-							value={editing.category}
-							items={categories.map((category) => ({
-								value: category.id,
-								label: category.enabled
-									? $i18n.t(category.display_name)
-									: `${$i18n.t(category.display_name)} · ${$i18n.t('Disabled')}`
-							}))}
-							placeholder={$i18n.t('Category')}
-							triggerClass="flex min-h-11 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-							onChange={(categoryId) => (editing.category = categoryId)}
-						/></label
+					><span class="font-medium">{$i18n.t('Category')}</span><Select
+						value={editing.category}
+						items={categories.map((category) => ({
+							value: category.id,
+							label: category.enabled
+								? $i18n.t(category.display_name)
+								: `${$i18n.t(category.display_name)} · ${$i18n.t('Disabled')}`
+						}))}
+						placeholder={$i18n.t('Category')}
+						triggerClass="flex min-h-11 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
+						onChange={updateEditingCategory}
+					/></label
 				>
 				<label
 					class="flex min-h-12 items-center gap-3 rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700"
@@ -379,7 +383,7 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 					on:click={save}>{saving ? $i18n.t('Saving') : $i18n.t('Save')}</button
 				>
 			</div>
-		</section>
+		</div>
 	</div>
 {/if}
 
@@ -389,13 +393,15 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 		role="presentation"
 		on:click={(event) => event.currentTarget === event.target && (showPreview = false)}
 	>
-		<section
+		<div
 			class="w-full max-w-5xl overflow-hidden rounded-2xl bg-black shadow-2xl"
 			role="dialog"
 			aria-modal="true"
 			aria-label={previewAlt}
 			use:trapFocus
 		>
+			<!-- Preview videos are generated media and do not carry a separate caption track. -->
+			<!-- svelte-ignore a11y_media_has_caption -->
 			<video
 				class="max-h-[82dvh] w-full bg-black object-contain"
 				src={previewUrl}
@@ -411,7 +417,7 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 					on:click={() => (showPreview = false)}>{$i18n.t('Close')}</button
 				>
 			</div>
-		</section>
+		</div>
 	</div>
 {:else}
 	<ImagePreview bind:show={showPreview} src={previewUrl} alt={previewAlt} />

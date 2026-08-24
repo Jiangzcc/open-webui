@@ -13,17 +13,27 @@
 >
 	<div class="flex flex-wrap items-center gap-3">
 		<Tooltip content={$i18n.t('Helpful hint')} placement="top">
-			<span class="underline decoration-dotted cursor-help text-sm text-gray-700 dark:text-gray-200">
+			<span
+				class="underline decoration-dotted cursor-help text-sm text-gray-700 dark:text-gray-200"
+			>
 				{$i18n.t('Hover me')} (top)
 			</span>
 		</Tooltip>
 		<Tooltip content={$i18n.t('Bottom placement')} placement="bottom">
-			<span class="underline decoration-dotted cursor-help text-sm text-gray-700 dark:text-gray-200">
+			<span
+				class="underline decoration-dotted cursor-help text-sm text-gray-700 dark:text-gray-200"
+			>
 				{$i18n.t('Hover me')} (bottom)
 			</span>
 		</Tooltip>
-		<Tooltip content="<b>Bold</b> &amp; <i>italic</i> HTML allowed" placement="top" allowHTML={true}>
-			<span class="underline decoration-dotted cursor-help text-sm text-gray-700 dark:text-gray-200">
+		<Tooltip
+			content="<b>Bold</b> &amp; <i>italic</i> HTML allowed"
+			placement="top"
+			allowHTML={true}
+		>
+			<span
+				class="underline decoration-dotted cursor-help text-sm text-gray-700 dark:text-gray-200"
+			>
 				{$i18n.t('Hover me')} (html)
 			</span>
 		</Tooltip>

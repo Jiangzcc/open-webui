@@ -49,8 +49,8 @@ async def test_event_bus_only_delivers_to_matching_user() -> None:
 
 
 @pytest.mark.asyncio
-async def test_event_bus_drops_on_full_queue_without_blocking_producer() -> None:
-    # 容量 1 的总线：填满后再 publish 应被丢弃，不抛、不阻塞。
+async def test_event_bus_replaces_oldest_on_full_queue_without_blocking_producer() -> None:
+    # 容量 1 的总线：填满后再 publish 应保留最新状态，不抛、不阻塞。
     bus = GenerationEventBus()
 
     # 直接构造一个 maxsize=1 的队列手动塞入，模拟满队列。
@@ -58,10 +58,11 @@ async def test_event_bus_drops_on_full_queue_without_blocking_producer() -> None
     await small.put({'filler': True})
     bus._subscribers.setdefault('u2', set()).add(small)
 
-    # 这条事件应被丢弃（队列满），不阻塞、不抛。
-    await bus.publish({'kind': 'image', 'task_id': 't2', 'status': 'failed', 'user_id': 'u2'})
-    # 生产者未被阻塞到此即视为通过。
-    assert small.qsize() == 1  # 仍是 filler，新事件被丢弃
+    latest = {'kind': 'image', 'task_id': 't2', 'status': 'failed', 'user_id': 'u2'}
+    await bus.publish(latest)
+
+    assert small.qsize() == 1
+    assert small.get_nowait() == latest
 
 
 def test_format_sse_event_is_single_line_data_frame() -> None:

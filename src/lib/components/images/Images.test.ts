@@ -10,8 +10,31 @@ const read = (relative: string) =>
 const source = read('./Images.svelte');
 const form = read('./ImagePromptForm.svelte');
 const card = read('./ImageBatchCard.svelte');
+const navigation = read('./ImagePageNavigation.svelte');
+const commonNavigation = read('../common/GenerationPageNavigation.svelte');
+const results = read('./ImageGenerationResults.svelte');
+const library = read('./ImageLibraryPanel.svelte');
+const pageState = read('./imagePageState.ts');
+const draftState = read('./imageDraftState.ts');
+const taskHistory = read('./imageTaskHistory.ts');
+const referenceFiles = read('./imageReferenceFiles.ts');
+const submission = read('./imageSubmission.ts');
 const idempotency = read('../../utils/submission-idempotency.ts');
-const all = [source, form, card, idempotency].join('\n');
+const all = [
+	source,
+	form,
+	card,
+	navigation,
+	commonNavigation,
+	results,
+	library,
+	pageState,
+	draftState,
+	taskHistory,
+	referenceFiles,
+	submission,
+	idempotency
+].join('\n');
 
 describe('images page controls', () => {
 	test('does not expose user cancellation for image generation tasks', () => {
@@ -93,25 +116,27 @@ describe('images page controls', () => {
 	test('mobile page header carries the sidebar toggle and the tabs together', () => {
 		// 移动端：侧栏图标与创作/我的作品 tab 同处顶部 nav 一行，顶到页面最上面，
 		// 不再让 tab 浮在侧栏图标下方单独一行。桌面端 tab 仍浮动在内容区顶部、不进 nav。
-		const navStart = source.indexOf('<nav');
-		const navEnd = source.indexOf('</nav>', navStart);
-		const nav = source.slice(navStart, navEnd);
+		const navStart = commonNavigation.indexOf('<nav');
+		const navEnd = commonNavigation.indexOf('</nav>', navStart);
+		const nav = commonNavigation.slice(navStart, navEnd);
 
 		expect(nav).toContain('SidebarIcon');
-		expect(nav).toContain('{@render imageTabs()}');
+		expect(nav).toContain('{@render pageTabs()}');
 		expect(all).not.toContain('bind:this={modelSelectorElement}');
 	});
 
 	test('quotes the selected or default model before a prompt is entered', () => {
-		expect(source).toContain('const CREDIT_QUOTE_PLACEHOLDER_PROMPT =');
-		expect(source).toContain('prompt: CREDIT_QUOTE_PLACEHOLDER_PROMPT');
+		expect(pageState).toContain("export const CREDIT_QUOTE_PLACEHOLDER_PROMPT = 'credit-quote'");
+		expect(pageState).toContain('prompt: CREDIT_QUOTE_PLACEHOLDER_PROMPT');
 		expect(source).not.toContain('quotePrompt: string');
 		expect(source).toContain('$: selectedModelConfig =');
 		expect(source).toContain(
 			'primaryModels.find((model) => model.isDefault && model.enabled !== false)'
 		);
 		expect(source).toContain('buildImageQuoteInput(\n\t\tselectedAspectRatio,');
-		expect(source).toContain('\n\t\treferenceImages,\n\t\tcustomSizeValue\n\t)');
+		expect(source).toContain(
+			'\n\t\treferenceImages.map((image) => image.url),\n\t\tcustomSizeValue\n\t)'
+		);
 		expect(source).toContain('$: if (loaded && quoteInput) {');
 	});
 
@@ -133,15 +158,13 @@ describe('images page controls', () => {
 		expect(source).toContain(
 			"const imageSubmissionIdempotency = createSubmissionIdempotency('pending-image-submission')"
 		);
-		expect(source).toContain(
-			'await imageSubmissionIdempotency.idempotencyKeyFor(payload)'
-		);
-		expect(all).not.toContain("payload,\n\t\t\t\tuuidv4()");
+		expect(submission).toContain('await idempotency.idempotencyKeyFor(payload)');
+		expect(all).not.toContain('payload,\n\t\t\t\tuuidv4()');
 		const submitHandlerStart = source.indexOf('const submitHandler = async () => {');
 		const submitHandlerEnd = source.indexOf('\n\tonMount', submitHandlerStart);
 		const submitHandler = source.slice(submitHandlerStart, submitHandlerEnd);
-		expect(submitHandler).toContain('error instanceof ImageTaskRequestError');
-		expect(submitHandler).toContain('![408, 429].includes(error.status)');
+		expect(submission).toContain('error instanceof ImageTaskRequestError');
+		expect(submission).toContain('![408, 429].includes(error.status)');
 		expect(submitHandler).toContain('imageSubmissionIdempotency.clearPendingSubmission()');
 	});
 
@@ -153,7 +176,8 @@ describe('images page controls', () => {
 		expect(applyDraft).not.toContain('window.confirm');
 		expect(applyDraft).not.toContain("$i18n.t('Replace your current creation draft?')");
 		// 草稿 prompt 为纯文本，直接应用。
-		expect(applyDraft).toContain('prompt = draft.prompt');
+		expect(draftState).toContain("prompt: draft.prompt ?? ''");
+		expect(applyDraft).toContain('prompt = fields.prompt');
 	});
 
 	test('places the credit quote directly before the submit button on the right', () => {
@@ -187,16 +211,16 @@ describe('images page controls', () => {
 
 	test('uses accessible generate and library tabs without unmounting page state', () => {
 		expect(source).toContain("let selection: 'generate' | 'mine' | 'all' = 'generate';");
-		expect(source).toContain('role="tablist"');
-		expect(source).toContain('role="tab"');
-		expect(source).toContain('aria-selected={selection ===');
-		expect(source).toContain('on:keydown={handleTabKeydown}');
+		expect(commonNavigation).toContain('role="tablist"');
+		expect(commonNavigation).toContain('role="tab"');
+		expect(commonNavigation).toContain('aria-selected={selection ===');
+		expect(commonNavigation).toContain('on:keydown={handleKeydown}');
 		expect(source).toContain('aria-labelledby="images-generate-tab"');
 		expect(source).toContain(
-			"aria-labelledby={selection === 'all' ? 'images-admin-tab' : 'images-library-tab'}"
+			"labelledBy={selection === 'all' ? 'images-admin-tab' : 'images-library-tab'}"
 		);
-		expect(source).toContain('id="images-library-panel"');
-		expect(source).toContain("hidden={view !== 'library'}");
+		expect(library).toContain('id="images-library-panel"');
+		expect(library).toContain('hidden={!active}');
 		expect(source).not.toContain('{#if canUseImages}');
 	});
 
@@ -232,30 +256,32 @@ describe('images page controls', () => {
 	});
 
 	test('lifts the three-segment pill out of flow so the library tops out', () => {
-		expect(source).toContain('pointer-events-none absolute inset-x-0');
-		expect(source).toContain('pointer-events-auto');
-		expect(source).toContain("$i18n.t('My creations')");
-		expect(source).toContain('{#if isAdmin}');
-		expect(source).toContain('id="images-admin-tab"');
-		expect(source).toContain("$i18n.t('All creations')");
-		expect(source).toContain("selectSelection('all')");
+		expect(commonNavigation).toContain('pointer-events-none absolute inset-x-0');
+		expect(commonNavigation).toContain('pointer-events-auto');
+		expect(navigation).toContain("label: 'My creations'");
+		expect(navigation).toContain("id: 'all'");
+		expect(navigation).toContain("elementId: 'images-admin-tab'");
+		expect(navigation).toContain("label: 'All creations'");
+		expect(source).toContain(
+			'<ImagePageNavigation {selection} {isAdmin} onSelect={selectSelection} />'
+		);
 	});
 
 	test('lets the library scroller hug the viewport edge', () => {
-		const panelStart = source.indexOf('id="images-library-panel"');
-		const panelDecl = source.slice(panelStart, panelStart + 280);
+		const panelStart = library.indexOf('id="images-library-panel"');
+		const panelDecl = library.slice(panelStart, panelStart + 280);
 		expect(panelDecl).toContain('overflow-y-auto');
 		expect(panelDecl).not.toContain('px-3');
 		expect(panelDecl).not.toContain('md:px-6');
 	});
 
 	test('styles image tabs as a centered floating pill while preserving accessibility', () => {
-		expect(source).toContain('rounded-full border border-gray-200/80');
-		expect(source).toContain('bg-white/80');
-		expect(source).toContain('backdrop-blur-xl');
-		expect(source).toContain('shadow-lg shadow-black/10');
-		expect(source).toContain('aria-selected={selection ===');
-		expect(source).toContain('on:keydown={handleTabKeydown}');
+		expect(commonNavigation).toContain('rounded-full border border-gray-200/80');
+		expect(commonNavigation).toContain('bg-white/80');
+		expect(commonNavigation).toContain('backdrop-blur-xl');
+		expect(commonNavigation).toContain('shadow-lg shadow-black/10');
+		expect(commonNavigation).toContain('aria-selected={selection ===');
+		expect(commonNavigation).toContain('on:keydown={handleKeydown}');
 	});
 
 	test('derives view and library scope from the unified selection', () => {
@@ -267,11 +293,9 @@ describe('images page controls', () => {
 	test('increments library revision after a successful generation', () => {
 		// 成功判定从旧的同步 generatedImages 路径迁到 pollGenerationTasks 轮询：
 		// 任务转 succeeded 时自增 libraryRevision，触发作品库刷新。
-		const pollStart = source.indexOf('const pollGenerationTasks');
-		const pollEnd = source.indexOf('} finally', pollStart);
-		const poll = source.slice(pollStart, pollEnd);
-		expect(poll).toContain("task.status === 'succeeded'");
-		expect(poll).toContain('libraryRevision += 1;');
+		expect(taskHistory).toContain("task.status === 'succeeded'");
+		expect(taskHistory).toContain("previous?.status !== 'succeeded'");
+		expect(source).toContain('libraryRevision += result.completed;');
 	});
 
 	test('drops the canUseImagesPage import and reactive gate', () => {
@@ -381,9 +405,26 @@ describe('images page controls', () => {
 
 	test('keeps image options, quote, and submit control on one mobile row', () => {
 		expect(form).toContain('mt-2 flex min-w-0 items-center justify-between gap-2');
+		expect(form).toContain('inline-flex h-11');
+		expect(form).toContain('sm:h-8 sm:gap-4');
 		expect(all).not.toContain(
 			'mt-2 flex flex-col gap-2 sm:h-8 sm:flex-row sm:items-center sm:justify-between'
 		);
+	});
+
+	test('makes the image options popover keyboard-dismissible and semantically related', () => {
+		expect(form).toContain("event.key !== 'Escape' || !showAspectRatioPicker");
+		expect(form).toContain('imageOptionsTriggerElement?.focus()');
+		expect(form).toContain('aria-haspopup="dialog"');
+		expect(form).toContain('aria-controls={IMAGE_OPTIONS_DIALOG_ID}');
+		expect(form).toContain('role="dialog"');
+		expect(form).toContain("aria-label={$i18n.t('Parameters')}");
+	});
+
+	test('uses mobile touch targets for image option controls', () => {
+		expect(form).toContain('class="h-11 rounded-xl border text-sm transition sm:h-9');
+		expect(form).toContain('class="h-11 rounded-xl border text-sm capitalize transition sm:h-9');
+		expect(form).toContain('class="flex min-h-11 items-center gap-1.5');
 	});
 
 	// --- Task #17: cap reference-image uploads to the selected model’s capacity -----

@@ -174,16 +174,16 @@ describe('credit API client', () => {
 			)
 			.mockResolvedValueOnce(new Response('not JSON', { status: 503 }));
 
-		await expect(getMyCredits('token')).rejects.toMatchObject<CreditApiError>({
+		await expect(getMyCredits('token')).rejects.toMatchObject({
 			code: 'insufficient_credits',
 			message: 'Insufficient credits',
 			context: { required: 8 }
-		});
-		await expect(getMyCredits('token')).rejects.toMatchObject<CreditApiError>({
+		} satisfies Partial<CreditApiError>);
+		await expect(getMyCredits('token')).rejects.toMatchObject({
 			code: 'credit_service_unavailable',
 			message: 'Credit service is unavailable',
 			context: {}
-		});
+		} satisfies Partial<CreditApiError>);
 	});
 
 	test('parses FastAPI HTTPException details instead of reporting unavailable', async () => {
@@ -205,14 +205,14 @@ describe('credit API client', () => {
 				)
 			);
 
-		await expect(getMyCredits('token')).rejects.toMatchObject<CreditApiError>({
+		await expect(getMyCredits('token')).rejects.toMatchObject({
 			code: 'rate_limit_exceeded',
 			context: {}
-		});
-		await expect(getMyCredits('token')).rejects.toMatchObject<CreditApiError>({
+		} satisfies Partial<CreditApiError>);
+		await expect(getMyCredits('token')).rejects.toMatchObject({
 			code: 'invalid_repair_request',
 			context: { reason: 'expected_balance mismatch' }
-		});
+		} satisfies Partial<CreditApiError>);
 	});
 
 	test('sends paginated reconciliation queries and returns compensation details', async () => {

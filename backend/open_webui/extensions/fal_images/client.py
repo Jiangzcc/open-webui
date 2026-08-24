@@ -1,27 +1,21 @@
-import asyncio
 import logging
 import random
 import re
-from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from typing import Any
 
-from open_webui.env import AIOHTTP_CLIENT_SESSION_SSL
+from open_webui.extensions.fal_images.errors import FalImageError as FalImageError
+from open_webui.extensions.fal_images.errors import FalImageSizeError as FalImageSizeError
 from open_webui.extensions.fal_images.models import (
     FAL_DEFAULT_IMAGE_EDIT_MODEL,
     FAL_DEFAULT_IMAGE_MODEL,
     FAL_IMAGE_MODELS,
     normalize_fal_image_model_id,
 )
-from open_webui.utils.session_pool import get_session
-
-if TYPE_CHECKING:
-    from open_webui.extensions.provider_ops.tracing import ProviderInvocationObserver
+from open_webui.extensions.fal_images.queue_client import resume_fal_queue as resume_fal_queue
+from open_webui.extensions.fal_images.queue_client import run_fal_queue as run_fal_queue
 
 log = logging.getLogger(__name__)
 
-FAL_QUEUE_BASE_URL = 'https://queue.fal.run'
-FAL_REQUEST_TIMEOUT_SECONDS = 180
-FAL_POLL_INTERVAL_SECONDS = 1
 FAL_MOCK_IMAGE_BASE_URL = 'https://picsum.photos'
 FAL_MOCK_DEFAULT_SIZE = (1024, 1024)
 FAL_MOCK_ASPECT_RATIO_SIZES = {
@@ -46,31 +40,6 @@ FAL_MOCK_ASPECT_RATIO_SIZES = {
     '8:1': (1536, 192),
     '1:8': (192, 1536),
 }
-
-
-class FalImageError(Exception):
-    def __init__(self, message: str, *, status_code: int | None = None, code: str | None = None):
-        super().__init__(message)
-        self.status_code = status_code
-        self.code = code
-
-
-class FalImageSizeError(FalImageError):
-    """A client-supplied size violates the selected model's declared limits."""
-
-
-def _headers(api_key: str) -> dict[str, str]:
-    if not api_key:
-        raise FalImageError('FAL API key is not configured')
-
-    return {
-        'Authorization': f'Key {api_key}',
-        'Content-Type': 'application/json',
-    }
-
-
-def _endpoint(base_url: str, model: str) -> str:
-    return f'{base_url.strip().rstrip("/")}/{model.lstrip("/")}'
 
 
 def _normalize_model_id(model: str | None) -> str:
@@ -487,295 +456,92 @@ def get_fal_edit_model(model: str | None) -> str:
     return f'{normalized_model}/edit'
 
 
+def _set_known_model_size(data: dict[str, Any], form_data: Any, model_info: dict[str, Any]) -> None:
+    _set_option(
+        data,
+        model_info.get('aspect_ratio_field'),
+        getattr(form_data, 'aspect_ratio', None),
+        model_info.get('aspect_ratios', []),
+        model_info.get('default_aspect_ratio'),
+    )
+    image_size_whitelist = model_info.get('image_size_whitelist') or model_info.get('aspect_ratio_sizes')
+    if model_info.get('custom_size_field'):
+        # Custom-size models carry their allowed pixel buckets either as a dedicated
+        # `image_size_whitelist` (preferred, kept out of the public catalog) or, for
+        # legacy aspect-ratio-driven models, as `aspect_ratio_sizes`.
+        _set_custom_image_size(
+            data,
+            model_info.get('custom_size_field'),
+            form_data,
+            image_size_whitelist,
+            model_info.get('custom_size'),
+            model_info.get('resolution_multipliers'),
+        )
+        return
+    _set_option(
+        data,
+        model_info.get('resolution_field'),
+        getattr(form_data, 'resolution', None) or getattr(form_data, 'size', None),
+        model_info.get('resolutions', []),
+        model_info.get('default_resolution'),
+    )
+
+
+def _build_known_model_payload(
+    data: dict[str, Any],
+    form_data: Any,
+    model_info: dict[str, Any],
+) -> dict[str, Any]:
+    count_field = model_info.get('count_field', 'num_images')
+    count = _safe_count(getattr(form_data, 'n', None), model_info.get('image_counts', []))
+    if count_field and count:
+        data[count_field] = count
+    _set_known_model_size(data, form_data, model_info)
+    _set_option(
+        data,
+        'output_format' if model_info.get('output_formats') else None,
+        getattr(form_data, 'output_format', None),
+        model_info.get('output_formats', []),
+        model_info.get('default_output_format'),
+    )
+    _set_option_fields(data, form_data, model_info.get('option_fields'))
+    _set_boolean_fields(data, form_data, model_info.get('boolean_fields'))
+    _set_integer_fields(data, form_data, model_info.get('integer_fields'))
+    _set_number_fields(data, form_data, model_info.get('number_fields'))
+    _set_text_fields(data, form_data, model_info.get('text_fields'))
+
+    system_prompt = getattr(form_data, 'system_prompt', None)
+    if model_info.get('supports_system_prompt') and system_prompt:
+        data['system_prompt'] = system_prompt
+    return data
+
+
+def _build_unknown_model_payload(data: dict[str, Any], form_data: Any) -> dict[str, Any]:
+    optional_fields = (
+        ('num_images', getattr(form_data, 'n', None)),
+        ('aspect_ratio', getattr(form_data, 'aspect_ratio', None)),
+        ('resolution', getattr(form_data, 'resolution', None)),
+        ('output_format', getattr(form_data, 'output_format', None) or 'png'),
+        ('system_prompt', getattr(form_data, 'system_prompt', None)),
+    )
+    data.update({key: value for key, value in optional_fields if value})
+    return data
+
+
 def build_fal_image_payload(form_data: Any, model: str | None, image_urls: list[str] | None = None) -> dict[str, Any]:
     model_info = _get_fal_model_info(model)
     data = {}
     if model_info is None or model_info.get('supports_prompt', True) is not False:
         data['prompt'] = form_data.prompt
-
     if image_urls is not None:
         image_input_field = model_info.get('image_input_field', 'image_urls') if model_info else 'image_urls'
         max_count = model_info.get('image_input_max_count') if model_info else None
         _set_image_input(data, image_input_field, image_urls, max_count if isinstance(max_count, int) else None)
-
     if model_info:
-        count_field = model_info.get('count_field', 'num_images')
-        count = _safe_count(getattr(form_data, 'n', None), model_info.get('image_counts', []))
-        if count_field and count:
-            data[count_field] = count
-
-        _set_option(
-            data,
-            model_info.get('aspect_ratio_field'),
-            getattr(form_data, 'aspect_ratio', None),
-            model_info.get('aspect_ratios', []),
-            model_info.get('default_aspect_ratio'),
-        )
-        # Custom-size models carry their allowed pixel buckets either as a dedicated
-        # `image_size_whitelist` (preferred, kept out of the public catalog) or, for
-        # legacy aspect-ratio-driven models, as `aspect_ratio_sizes`.
-        image_size_whitelist = model_info.get('image_size_whitelist') or model_info.get('aspect_ratio_sizes')
-        if model_info.get('custom_size_field'):
-            _set_custom_image_size(
-                data,
-                model_info.get('custom_size_field'),
-                form_data,
-                image_size_whitelist,
-                model_info.get('custom_size'),
-                model_info.get('resolution_multipliers'),
-            )
-        else:
-            _set_option(
-                data,
-                model_info.get('resolution_field'),
-                getattr(form_data, 'resolution', None) or getattr(form_data, 'size', None),
-                model_info.get('resolutions', []),
-                model_info.get('default_resolution'),
-            )
-        _set_option(
-            data,
-            'output_format' if model_info.get('output_formats') else None,
-            getattr(form_data, 'output_format', None),
-            model_info.get('output_formats', []),
-            model_info.get('default_output_format'),
-        )
-        _set_option_fields(data, form_data, model_info.get('option_fields'))
-        _set_boolean_fields(data, form_data, model_info.get('boolean_fields'))
-        _set_integer_fields(data, form_data, model_info.get('integer_fields'))
-        _set_number_fields(data, form_data, model_info.get('number_fields'))
-        _set_text_fields(data, form_data, model_info.get('text_fields'))
-
-        system_prompt = getattr(form_data, 'system_prompt', None)
-        if model_info.get('supports_system_prompt') and system_prompt:
-            data['system_prompt'] = system_prompt
-
-        return data
-
+        return _build_known_model_payload(data, form_data, model_info)
     if image_urls is not None:
         data['image_urls'] = image_urls
-
-    if getattr(form_data, 'n', None):
-        data['num_images'] = form_data.n
-
-    aspect_ratio = getattr(form_data, 'aspect_ratio', None)
-    if aspect_ratio:
-        data['aspect_ratio'] = aspect_ratio
-
-    resolution = getattr(form_data, 'resolution', None)
-    if resolution:
-        data['resolution'] = resolution
-
-    output_format = getattr(form_data, 'output_format', None) or 'png'
-    if output_format:
-        data['output_format'] = output_format
-
-    system_prompt = getattr(form_data, 'system_prompt', None)
-    if system_prompt:
-        data['system_prompt'] = system_prompt
-
-    return data
-
-
-async def _response_error(response) -> FalImageError:
-    try:
-        payload = await response.json(content_type=None)
-    except Exception:
-        payload = await response.text()
-
-    provider_code = None
-    if isinstance(payload, dict):
-        raw_error = payload.get('error')
-        candidate = raw_error.get('type') if isinstance(raw_error, dict) else payload.get('type')
-        if isinstance(candidate, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', candidate):
-            provider_code = candidate
-        detail = payload.get('detail') or payload.get('message') or payload.get('error') or payload
-    else:
-        detail = payload
-
-    return FalImageError(
-        f'fal.ai request failed: {detail}',
-        status_code=response.status,
-        code=provider_code,
-    )
-
-
-async def _notify_provider(observer: 'ProviderInvocationObserver | None', method: str, *args: object) -> None:
-    if observer is None:
-        return
-    try:
-        await getattr(observer, method)(*args)
-    except Exception:
-        # Provider observability is deliberately best-effort. Generation must
-        # not fail merely because its diagnostic record could not be updated.
-        log.exception('Provider invocation observer failed during %s', method)
-
-
-async def _cancel_fal_request(session: Any, cancel_url: str, headers: dict[str, str]) -> None:
-    """Best-effort remote cancellation used only when the local worker is cancelled."""
-    parsed = urlparse(cancel_url)
-    if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password:
-        log.warning('Ignoring invalid FAL cancellation URL')
-        return
-    try:
-        async with session.put(cancel_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
-            if response.status >= 400:
-                log.warning('FAL cancellation returned HTTP %s', response.status)
-    except Exception:
-        # Shutdown must continue even when the provider cancellation endpoint is
-        # unavailable. Billing retains the prepaid charge for reconciliation.
-        log.exception('Could not cancel the remote FAL request')
-
-
-async def run_fal_queue(  # noqa: C901 - queue lifecycle and observer notifications share one error boundary
-    model: str,
-    payload: dict[str, Any],
-    api_key: str,
-    base_url: str,
-    *,
-    observer: 'ProviderInvocationObserver | None' = None,
-    timeout_seconds: float | None = None,
-) -> dict[str, Any]:
-    headers = _headers(api_key)
-    session = await get_session()
-    cancel_url: str | None = None
-    provider_submitted = False
-    provider_completed = False
-
-    try:
-        async with session.post(
-            _endpoint(base_url or FAL_QUEUE_BASE_URL, model),
-            json=payload,
-            headers=headers,
-            ssl=AIOHTTP_CLIENT_SESSION_SSL,
-        ) as response:
-            if response.status >= 400:
-                raise await _response_error(response)
-            submitted = await response.json(content_type=None)
-
-        if isinstance(submitted, dict):
-            provider_submitted = True
-            candidate_cancel_url = submitted.get('cancel_url')
-            cancel_url = candidate_cancel_url if isinstance(candidate_cancel_url, str) else None
-            await _notify_provider(observer, 'submitted', submitted)
-            if 'images' in submitted or 'image' in submitted or 'video' in submitted or 'url' in submitted:
-                provider_completed = True
-                await _notify_provider(observer, 'succeeded')
-                return submitted
-
-        status_url = submitted.get('status_url') if isinstance(submitted, dict) else None
-        response_url = submitted.get('response_url') if isinstance(submitted, dict) else None
-
-        if not response_url:
-            raise FalImageError('fal.ai response did not include a response_url')
-
-        deadline = asyncio.get_running_loop().time() + (
-            FAL_REQUEST_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
-        )
-
-        while status_url and asyncio.get_running_loop().time() < deadline:
-            async with session.get(status_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
-                if response.status >= 400:
-                    raise await _response_error(response)
-                status = await response.json(content_type=None)
-
-            if isinstance(status, dict):
-                await _notify_provider(observer, 'status', status)
-            request_status = status.get('status') if isinstance(status, dict) else None
-            if request_status == 'COMPLETED':
-                provider_completed = True
-                break
-            if request_status in {'FAILED', 'CANCELLED'}:
-                raise FalImageError(f'fal.ai request {request_status.lower()}: {status}')
-
-            await asyncio.sleep(FAL_POLL_INTERVAL_SECONDS)
-        else:
-            if status_url:
-                raise FalImageError('fal.ai request timed out')
-
-        async with session.get(response_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
-            if response.status >= 400:
-                raise await _response_error(response)
-            result = await response.json(content_type=None)
-        await _notify_provider(observer, 'succeeded')
-        return result
-    except asyncio.CancelledError as error:
-        if cancel_url is not None and not provider_completed:
-            await _cancel_fal_request(session, cancel_url, headers)
-        setattr(error, 'provider_submitted', provider_submitted)
-        setattr(error, 'provider_completed', provider_completed)
-        await _notify_provider(observer, 'failed', error)
-        raise
-    except Exception as error:
-        setattr(error, 'provider_submitted', provider_submitted)
-        setattr(error, 'provider_completed', provider_completed)
-        await _notify_provider(observer, 'failed', error)
-        raise
-
-
-async def resume_fal_queue(  # noqa: C901 - queue status and response recovery share one state boundary
-    *,
-    status_url: str | None,
-    response_url: str,
-    api_key: str,
-    observer: 'ProviderInvocationObserver | None' = None,
-    timeout_seconds: float | None = None,
-) -> dict[str, Any]:
-    """Resume an already-submitted FAL queue request without another POST.
-
-    The URLs come from FAL's original submission response and are persisted by
-    the video extension.  Recovery deliberately has no generation endpoint, so
-    it cannot accidentally create a second paid request.
-    """
-    for value in (status_url, response_url):
-        if value is None:
-            continue
-        parsed = urlparse(value)
-        if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password:
-            raise FalImageError('fal.ai recovery URL is invalid')
-
-    headers = _headers(api_key)
-    session = await get_session()
-    provider_completed = status_url is None
-    try:
-        deadline = asyncio.get_running_loop().time() + (
-            FAL_REQUEST_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
-        )
-        while status_url and asyncio.get_running_loop().time() < deadline:
-            async with session.get(status_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
-                if response.status >= 400:
-                    raise await _response_error(response)
-                status = await response.json(content_type=None)
-            if isinstance(status, dict):
-                await _notify_provider(observer, 'status', status)
-            request_status = status.get('status') if isinstance(status, dict) else None
-            if request_status == 'COMPLETED':
-                provider_completed = True
-                break
-            if request_status in {'FAILED', 'CANCELLED'}:
-                raise FalImageError(f'fal.ai request {request_status.lower()}: {status}')
-            await asyncio.sleep(FAL_POLL_INTERVAL_SECONDS)
-        else:
-            if status_url:
-                raise FalImageError('fal.ai request timed out')
-
-        async with session.get(response_url, headers=headers, ssl=AIOHTTP_CLIENT_SESSION_SSL) as response:
-            if response.status >= 400:
-                raise await _response_error(response)
-            result = await response.json(content_type=None)
-        await _notify_provider(observer, 'succeeded')
-        return result
-    except asyncio.CancelledError as error:
-        setattr(error, 'provider_submitted', True)
-        setattr(error, 'provider_completed', provider_completed)
-        # 复盘 P1：与 run_fal_queue 对齐——取消也要通知 observer 终态，
-        # 否则恢复路径被关停取消时 provider_invocation 行停留无终态。
-        await _notify_provider(observer, 'failed', error)
-        raise
-    except Exception as error:
-        setattr(error, 'provider_submitted', True)
-        setattr(error, 'provider_completed', provider_completed)
-        await _notify_provider(observer, 'failed', error)
-        raise
+    return _build_unknown_model_payload(data, form_data)
 
 
 def extract_fal_image_urls(result: Any) -> list[str]:

@@ -8,6 +8,7 @@ from open_webui.extensions.provider_ops.db import ProviderOpsBase
 from open_webui.extensions.provider_ops.models import ProviderInvocation
 from open_webui.extensions.provider_ops.service import (
     list_provider_invocations,
+    load_provider_recovery_state,
     summarize_provider_models,
     try_resume_provider_invocation,
     try_start_provider_invocation,
@@ -33,13 +34,22 @@ async def test_observer_records_provider_lifecycle_without_storing_input(monkeyp
     observer = await try_start_provider_invocation(
         task_id='task-1',
         user_id='user-1',
-        media_kind='image',
+        media_kind='video',
         provider='fal',
         provider_model_id='fal-ai/example',
         payload={'prompt': 'private prompt', 'num_images': 1},
     )
     assert observer is not None
-    await observer.submitted({'request_id': 'request-1', 'gateway_request_id': 'gateway-1', 'queue_position': 3})
+    await observer.submitted(
+        {
+            'request_id': 'request-1',
+            'gateway_request_id': 'gateway-1',
+            'queue_position': 3,
+            'status_url': 'https://queue.fal.run/status/request-1',
+            'response_url': 'https://queue.fal.run/response/request-1',
+        }
+    )
+    await observer.result_available('https://v3.fal.media/result/request-1.mp4')
     resumed = await try_resume_provider_invocation(task_id='task-1', provider_request_id='request-1')
     assert resumed is not None
     assert resumed.invocation_id == observer.invocation_id
@@ -54,6 +64,9 @@ async def test_observer_records_provider_lifecycle_without_storing_input(monkeyp
         assert row.status == 'succeeded'
         assert row.provider_request_id == 'request-1'
         assert row.provider_gateway_request_id == 'gateway-1'
+        assert row.provider_status_url == 'https://queue.fal.run/status/request-1'
+        assert row.provider_response_url == 'https://queue.fal.run/response/request-1'
+        assert row.provider_result_url == 'https://v3.fal.media/result/request-1.mp4'
         assert row.queue_position == 2
         assert row.execution_duration_ms == 1250
         assert row.provider_metrics_json == {'inference_time': 1.25}
@@ -62,6 +75,7 @@ async def test_observer_records_provider_lifecycle_without_storing_input(monkeyp
 
         result = await list_provider_invocations(session, limit=10, provider='fal', status='succeeded')
         assert [item.id for item in result.items] == [observer.invocation_id]
+        assert not hasattr(result.items[0], 'provider_result_url')
         summary = await summarize_provider_models(session, since_ms=0, provider='fal')
         assert len(summary.items) == 1
         assert summary.items[0].request_count == 1
@@ -70,6 +84,54 @@ async def test_observer_records_provider_lifecycle_without_storing_input(monkeyp
         assert summary.items[0].unknown_count == 0
         assert summary.items[0].average_execution_duration_ms == 1250
 
+    recovery = await load_provider_recovery_state('task-1', 'request-1')
+    assert recovery is not None
+    assert recovery.provider_request_id == 'request-1'
+    assert recovery.status_url == 'https://queue.fal.run/status/request-1'
+    assert recovery.response_url == 'https://queue.fal.run/response/request-1'
+    assert recovery.result_url == 'https://v3.fal.media/result/request-1.mp4'
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_observer_rejects_unsafe_recovery_urls(monkeypatch, tmp_path) -> None:
+    engine = create_async_engine(f'sqlite+aiosqlite:///{tmp_path / "provider-ops.sqlite"}')
+    async with engine.begin() as connection:
+        await connection.run_sync(ProviderOpsBase.metadata.create_all)
+    sessions = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def test_session():
+        async with sessions() as session:
+            yield session
+
+    import open_webui.extensions.provider_ops.service as service
+
+    monkeypatch.setattr(service, 'provider_ops_session', test_session)
+    observer = await try_start_provider_invocation(
+        task_id='task-unsafe',
+        user_id='user-1',
+        media_kind='video',
+        provider='fal',
+        provider_model_id='fal-ai/example',
+        payload={},
+    )
+    assert observer is not None
+    await observer.submitted(
+        {
+            'request_id': 'request-unsafe',
+            'status_url': 'http://queue.fal.run/status',
+            'response_url': 'https://user@queue.fal.run/response',
+        }
+    )
+    await observer.result_available('file:///private/result.mp4')
+
+    recovery = await load_provider_recovery_state('task-unsafe')
+    assert recovery is not None
+    assert recovery.status_url is None
+    assert recovery.response_url is None
+    assert recovery.result_url is None
     await engine.dispose()
 
 

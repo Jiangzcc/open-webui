@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from open_webui.extensions.model_ops.models import ImageModelOperation

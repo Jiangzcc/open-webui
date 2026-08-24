@@ -67,22 +67,28 @@ def public_fal_image_advanced_fields(model: dict[str, Any]) -> list[dict[str, An
         ('text', model.get('text_fields')),
     ):
         for item in group or []:
-            provider_field = item.get('field')
-            public_field = _PUBLIC_ADVANCED_FIELD_SOURCES.get(provider_field)
-            if public_field is None or public_field in seen:
-                continue
-            source = item.get('source')
-            if provider_field != public_field and source != public_field:
-                continue
-            if provider_field == public_field and source is not None and source != public_field:
-                continue
-            public_item: dict[str, Any] = {'field': public_field, 'kind': kind}
-            for key in ('min', 'max'):
-                if key in item:
-                    public_item[key] = item[key]
-            fields.append(public_item)
-            seen.add(public_field)
+            public_item = _public_image_advanced_field(item, kind, seen)
+            if public_item is not None:
+                fields.append(public_item)
     return fields
+
+
+def _public_image_advanced_field(
+    item: dict[str, Any],
+    kind: str,
+    seen: set[str],
+) -> dict[str, Any] | None:
+    provider_field = item.get('field')
+    public_field = _PUBLIC_ADVANCED_FIELD_SOURCES.get(provider_field)
+    if public_field is None or public_field in seen:
+        return None
+    source = item.get('source')
+    if provider_field != public_field and source != public_field:
+        return None
+    if provider_field == public_field and source not in {None, public_field}:
+        return None
+    seen.add(public_field)
+    return {'field': public_field, 'kind': kind, **{key: item[key] for key in ('min', 'max') if key in item}}
 
 
 def _extract_quality_option(model: dict[str, Any]) -> tuple[list[str], str] | None:

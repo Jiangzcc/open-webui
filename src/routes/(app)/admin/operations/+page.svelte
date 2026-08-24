@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { getContext, onMount, tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	import type { SvelteComponent } from 'svelte';
 
 	import Loader from '$lib/components/common/Loader.svelte';
 	import { page } from '$app/stores';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	type OperationsTab = 'discovery' | 'categories' | 'models' | 'providers' | 'promptTags';
 	const tabs: Array<{ id: OperationsTab; label: string }> = [
 		{ id: 'discovery', label: 'Discovery operations' },
@@ -118,6 +119,7 @@
 	<div
 		class="flex shrink-0 gap-1 overflow-x-auto border-b border-gray-100 dark:border-gray-800"
 		role="tablist"
+		tabindex="-1"
 		aria-label={$i18n.t('Operations center')}
 		on:keydown={handleTabKeydown}
 	>

@@ -4,6 +4,7 @@ import asyncio
 import datetime as dt
 import hashlib
 import logging
+from dataclasses import dataclass
 from decimal import Decimal
 from time import time
 from uuid import uuid4
@@ -73,22 +74,26 @@ async def _heartbeat_sync_run(bind, run_id: str) -> None:
     while True:
         await asyncio.sleep(_SYNC_HEARTBEAT_INTERVAL_SECONDS)
         try:
-            async with sessions() as heartbeat_session:
-                result = await heartbeat_session.execute(
-                    update(ProviderSyncRun)
-                    .where(
-                        ProviderSyncRun.id == run_id,
-                        ProviderSyncRun.status == 'running',
-                    )
-                    .values(heartbeat_at=_now_ms())
-                )
-                await heartbeat_session.commit()
-                if not (result.rowcount or 0):
-                    return
+            if not await _write_sync_heartbeat(sessions, run_id):
+                return
         except asyncio.CancelledError:
             raise
         except Exception:
             log.exception('Failed to update provider sync heartbeat for run %s', run_id)
+
+
+async def _write_sync_heartbeat(sessions, run_id: str) -> bool:
+    async with sessions() as heartbeat_session:
+        result = await heartbeat_session.execute(
+            update(ProviderSyncRun)
+            .where(
+                ProviderSyncRun.id == run_id,
+                ProviderSyncRun.status == 'running',
+            )
+            .values(heartbeat_at=_now_ms())
+        )
+        await heartbeat_session.commit()
+        return bool(result.rowcount or 0)
 
 
 async def _stop_heartbeat(task: asyncio.Task[None] | None) -> None:
@@ -255,81 +260,95 @@ def _analytics_rows(buckets: tuple[FalAnalyticsBucket, ...], timeframe: str, syn
             )
 
 
+def _billing_event_values(event: FalBillingEvent, synced_at: int) -> dict[str, object]:
+    return {
+        'provider_model_id': event.endpoint_id,
+        'event_timestamp': event.timestamp,
+        'event_at': _epoch_ms(event.timestamp),
+        'api_key_id': event.auth_method_structured.api_key_id if event.auth_method_structured else None,
+        'output_units': _decimal(event.output_units) if event.output_units is not None else None,
+        'unit_price': _decimal(event.unit_price) if event.unit_price is not None else None,
+        'percent_discount': _decimal(event.percent_discount) if event.percent_discount is not None else None,
+        'cost_subtotal': _decimal(event.cost_subtotal),
+        'cost_discount': _decimal(event.cost_discount),
+        'cost_total': _decimal(event.cost_total),
+        'cost_nano_usd': _decimal(event.cost_estimate_nano_usd),
+        'currency': 'USD',
+        'synced_at': synced_at,
+    }
+
+
+def _upsert_billing_event(
+    session: AsyncSession,
+    existing: dict[str, ProviderBillingEvent],
+    request_id: str,
+    event: FalBillingEvent,
+    synced_at: int,
+) -> tuple[object, str, int]:
+    values = _billing_event_values(event, synced_at)
+    row = existing.get(request_id)
+    if row is None:
+        session.add(
+            ProviderBillingEvent(
+                id=uuid4().hex,
+                provider=_PROVIDER,
+                provider_request_id=request_id,
+                **values,
+            )
+        )
+    else:
+        for field, value in values.items():
+            setattr(row, field, value)
+    condition = ProviderInvocation.provider_request_id == request_id
+    return condition, _decimal(event.cost_total), _epoch_ms(event.timestamp)
+
+
+async def _record_billing_batch(
+    session: AsyncSession,
+    batch: tuple[tuple[str, FalBillingEvent], ...],
+    synced_at: int,
+) -> int:
+    request_ids = tuple(request_id for request_id, _event in batch)
+    rows = (
+        await session.scalars(
+            select(ProviderBillingEvent).where(
+                ProviderBillingEvent.provider == _PROVIDER,
+                ProviderBillingEvent.provider_request_id.in_(request_ids),
+            )
+        )
+    ).all()
+    existing = {row.provider_request_id: row for row in rows}
+    updates = [_upsert_billing_event(session, existing, item[0], item[1], synced_at) for item in batch]
+    result = await session.execute(
+        update(ProviderInvocation)
+        .where(
+            ProviderInvocation.provider == _PROVIDER,
+            ProviderInvocation.provider_request_id.in_(request_ids),
+        )
+        .values(
+            actual_cost_total=case(
+                *[(cond, cost) for cond, cost, _at in updates], else_=ProviderInvocation.actual_cost_total
+            ),
+            actual_cost_currency='USD',
+            cost_accuracy='exact',
+            billing_event_at=case(
+                *[(cond, at) for cond, _cost, at in updates], else_=ProviderInvocation.billing_event_at
+            ),
+            updated_at=synced_at,
+        )
+    )
+    return result.rowcount or 0
+
+
 async def _record_billing_events(
     session: AsyncSession,
     events: tuple[FalBillingEvent, ...],
     synced_at: int,
 ) -> tuple[int, int]:
     unique_events = {event.request_id: event for event in events}
-    if not unique_events:
-        return 0, 0
-
-    matched = 0
-    for batch in _batches(tuple(unique_events.items())):
-        request_ids = tuple(request_id for request_id, _event in batch)
-        existing_rows = (
-            await session.scalars(
-                select(ProviderBillingEvent).where(
-                    ProviderBillingEvent.provider == _PROVIDER,
-                    ProviderBillingEvent.provider_request_id.in_(request_ids),
-                )
-            )
-        ).all()
-        existing_map = {row.provider_request_id: row for row in existing_rows}
-        cost_whens: list[tuple[object, str]] = []
-        event_at_whens: list[tuple[object, int]] = []
-
-        for request_id, event in batch:
-            event_at = _epoch_ms(event.timestamp)
-            api_key_id = event.auth_method_structured.api_key_id if event.auth_method_structured else None
-            values = {
-                'provider_model_id': event.endpoint_id,
-                'event_timestamp': event.timestamp,
-                'event_at': event_at,
-                'api_key_id': api_key_id,
-                'output_units': _decimal(event.output_units) if event.output_units is not None else None,
-                'unit_price': _decimal(event.unit_price) if event.unit_price is not None else None,
-                'percent_discount': _decimal(event.percent_discount) if event.percent_discount is not None else None,
-                'cost_subtotal': _decimal(event.cost_subtotal),
-                'cost_discount': _decimal(event.cost_discount),
-                'cost_total': _decimal(event.cost_total),
-                'cost_nano_usd': _decimal(event.cost_estimate_nano_usd),
-                'currency': 'USD',
-                'synced_at': synced_at,
-            }
-            row = existing_map.get(request_id)
-            if row is None:
-                session.add(
-                    ProviderBillingEvent(
-                        id=uuid4().hex,
-                        provider=_PROVIDER,
-                        provider_request_id=request_id,
-                        **values,
-                    )
-                )
-            else:
-                for field, value in values.items():
-                    setattr(row, field, value)
-
-            cond = ProviderInvocation.provider_request_id == request_id
-            cost_whens.append((cond, _decimal(event.cost_total)))
-            event_at_whens.append((cond, event_at))
-
-        result = await session.execute(
-            update(ProviderInvocation)
-            .where(
-                ProviderInvocation.provider == _PROVIDER,
-                ProviderInvocation.provider_request_id.in_(request_ids),
-            )
-            .values(
-                actual_cost_total=case(*cost_whens, else_=ProviderInvocation.actual_cost_total),
-                actual_cost_currency='USD',
-                cost_accuracy='exact',
-                billing_event_at=case(*event_at_whens, else_=ProviderInvocation.billing_event_at),
-                updated_at=synced_at,
-            )
-        )
-        matched += result.rowcount or 0
+    matched = sum(
+        [await _record_billing_batch(session, batch, synced_at) for batch in _batches(tuple(unique_events.items()))]
+    )
     return len(unique_events), matched
 
 
@@ -345,97 +364,129 @@ async def _record_requests(
     synced_at: int,
 ) -> tuple[int, int]:
     unique_records = {record.request_id: record for record in records}
-    if not unique_records:
-        return 0, 0
-
-    matched = 0
-    for batch in _batches(tuple(unique_records.items())):
-        request_ids = tuple(request_id for request_id, _record in batch)
-        existing_rows = (
-            await session.scalars(
-                select(ProviderRequestRecord).where(
-                    ProviderRequestRecord.provider == _PROVIDER,
-                    ProviderRequestRecord.provider_request_id.in_(request_ids),
-                )
-            )
-        ).all()
-        existing_map = {row.provider_request_id: row for row in existing_rows}
-        submitted_whens: list[tuple[object, int]] = []
-        started_whens: list[tuple[object, int]] = []
-        completed_whens: list[tuple[object, int | None]] = []
-        status_code_whens: list[tuple[object, int | None]] = []
-        duration_whens: list[tuple[object, int | None]] = []
-        status_whens: list[tuple[object, str]] = []
-        inv_completed_whens: list[tuple[object, int]] = []
-
-        for request_id, record in batch:
-            sent_at = _epoch_ms(record.sent_at)
-            started_at = _epoch_ms(record.started_at)
-            ended_at = _epoch_ms(record.ended_at) if record.ended_at is not None else None
-            duration_ms = int(record.duration * 1000) if record.duration is not None else None
-            status = _status_from_http(record.status_code)
-            values = {
-                'provider_model_id': record.endpoint_id,
-                'sent_at': sent_at,
-                'started_at': started_at,
-                'ended_at': ended_at,
-                'status_code': record.status_code,
-                'duration_ms': duration_ms,
-                'synced_at': synced_at,
-            }
-            row = existing_map.get(request_id)
-            if row is None:
-                session.add(
-                    ProviderRequestRecord(
-                        id=uuid4().hex,
-                        provider=_PROVIDER,
-                        provider_request_id=request_id,
-                        **values,
-                    )
-                )
-            else:
-                for field, value in values.items():
-                    setattr(row, field, value)
-
-            cond = ProviderInvocation.provider_request_id == request_id
-            submitted_whens.append((cond, sent_at))
-            started_whens.append((cond, started_at))
-            completed_whens.append((cond, ended_at))
-            status_code_whens.append((cond, record.status_code))
-            duration_whens.append((cond, duration_ms))
-            if status is not None:
-                status_whens.append((cond, status))
-                if ended_at is not None:
-                    inv_completed_whens.append((cond, ended_at))
-
-        update_values: dict[str, object] = {
-            'submitted_at': case(*submitted_whens, else_=ProviderInvocation.submitted_at),
-            'provider_started_at': case(*started_whens, else_=ProviderInvocation.provider_started_at),
-            'provider_completed_at': case(*completed_whens, else_=ProviderInvocation.provider_completed_at),
-            'status_code': case(*status_code_whens, else_=ProviderInvocation.status_code),
-            'execution_duration_ms': case(*duration_whens, else_=ProviderInvocation.execution_duration_ms),
-            'updated_at': synced_at,
-        }
-        if status_whens:
-            update_values['status'] = case(*status_whens, else_=ProviderInvocation.status)
-        if inv_completed_whens:
-            update_values['completed_at'] = case(*inv_completed_whens, else_=ProviderInvocation.completed_at)
-
-        result = await session.execute(
-            update(ProviderInvocation)
-            .where(
-                ProviderInvocation.provider == _PROVIDER,
-                ProviderInvocation.provider_request_id.in_(request_ids),
-            )
-            .values(**update_values)
-        )
-        matched += result.rowcount or 0
+    matched = sum(
+        [await _record_request_batch(session, batch, synced_at) for batch in _batches(tuple(unique_records.items()))]
+    )
     return len(unique_records), matched
 
 
-async def sync_fal_platform(session: AsyncSession, form: ProviderSyncForm) -> ProviderSyncResult:
-    # 僵尸运行清理：以最近心跳（旧数据回退到 started_at）判断，避免把正常执行超过
-    # 两小时的长同步误标为失败，同时允许崩溃后未清理的 running 行自动恢复。
+@dataclass(frozen=True)
+class _RequestInvocationUpdate:
+    condition: object
+    sent_at: int
+    started_at: int
+    ended_at: int | None
+    status_code: int | None
+    duration_ms: int | None
+    status: str | None
+
+
+def _upsert_request_record(
+    session: AsyncSession,
+    existing: dict[str, ProviderRequestRecord],
+    request_id: str,
+    record: FalRequestRecord,
+    synced_at: int,
+) -> _RequestInvocationUpdate:
+    sent_at = _epoch_ms(record.sent_at)
+    started_at = _epoch_ms(record.started_at)
+    ended_at = _epoch_ms(record.ended_at) if record.ended_at is not None else None
+    duration_ms = int(record.duration * 1000) if record.duration is not None else None
+    values = {
+        'provider_model_id': record.endpoint_id,
+        'sent_at': sent_at,
+        'started_at': started_at,
+        'ended_at': ended_at,
+        'status_code': record.status_code,
+        'duration_ms': duration_ms,
+        'synced_at': synced_at,
+    }
+    row = existing.get(request_id)
+    if row is None:
+        session.add(
+            ProviderRequestRecord(
+                id=uuid4().hex,
+                provider=_PROVIDER,
+                provider_request_id=request_id,
+                **values,
+            )
+        )
+    else:
+        for field, value in values.items():
+            setattr(row, field, value)
+    return _RequestInvocationUpdate(
+        ProviderInvocation.provider_request_id == request_id,
+        sent_at,
+        started_at,
+        ended_at,
+        record.status_code,
+        duration_ms,
+        _status_from_http(record.status_code),
+    )
+
+
+def _request_invocation_values(updates: list[_RequestInvocationUpdate], synced_at: int) -> dict[str, object]:
+    values: dict[str, object] = {
+        'submitted_at': case(*[(u.condition, u.sent_at) for u in updates], else_=ProviderInvocation.submitted_at),
+        'provider_started_at': case(
+            *[(u.condition, u.started_at) for u in updates], else_=ProviderInvocation.provider_started_at
+        ),
+        'provider_completed_at': case(
+            *[(u.condition, u.ended_at) for u in updates], else_=ProviderInvocation.provider_completed_at
+        ),
+        'status_code': case(*[(u.condition, u.status_code) for u in updates], else_=ProviderInvocation.status_code),
+        'execution_duration_ms': case(
+            *[(u.condition, u.duration_ms) for u in updates], else_=ProviderInvocation.execution_duration_ms
+        ),
+        'updated_at': synced_at,
+    }
+    terminal = [(u.condition, u.status) for u in updates if u.status is not None]
+    completed = [(u.condition, u.ended_at) for u in updates if u.status is not None and u.ended_at is not None]
+    if terminal:
+        values['status'] = case(*terminal, else_=ProviderInvocation.status)
+    if completed:
+        values['completed_at'] = case(*completed, else_=ProviderInvocation.completed_at)
+    return values
+
+
+async def _record_request_batch(
+    session: AsyncSession,
+    batch: tuple[tuple[str, FalRequestRecord], ...],
+    synced_at: int,
+) -> int:
+    request_ids = tuple(request_id for request_id, _record in batch)
+    rows = (
+        await session.scalars(
+            select(ProviderRequestRecord).where(
+                ProviderRequestRecord.provider == _PROVIDER,
+                ProviderRequestRecord.provider_request_id.in_(request_ids),
+            )
+        )
+    ).all()
+    existing = {row.provider_request_id: row for row in rows}
+    updates = [_upsert_request_record(session, existing, item[0], item[1], synced_at) for item in batch]
+    result = await session.execute(
+        update(ProviderInvocation)
+        .where(
+            ProviderInvocation.provider == _PROVIDER,
+            ProviderInvocation.provider_request_id.in_(request_ids),
+        )
+        .values(**_request_invocation_values(updates, synced_at))
+    )
+    return result.rowcount or 0
+
+
+@dataclass(frozen=True)
+class _FetchedPlatformData:
+    endpoint_ids: tuple[str, ...]
+    prices: tuple
+    requests: tuple
+    billing_events: tuple
+    usage: tuple
+    analytics: tuple
+
+
+async def _clear_stale_sync_runs(session: AsyncSession) -> None:
     stale_cutoff = _now_ms() - _SYNC_STALE_MS
     await session.execute(
         update(ProviderSyncRun)
@@ -452,9 +503,14 @@ async def sync_fal_platform(session: AsyncSession, form: ProviderSyncForm) -> Pr
     )
     await session.commit()
 
-    resources = tuple(dict.fromkeys(form.resources))
-    now = _now_ms()
-    window_start_at = now - form.window_hours * 60 * 60 * 1000
+
+async def _start_sync_run(
+    session: AsyncSession,
+    resources: tuple[str, ...],
+    *,
+    window_start_at: int,
+    now: int,
+) -> ProviderSyncRun:
     run = ProviderSyncRun(
         id=uuid4().hex,
         provider=_PROVIDER,
@@ -468,11 +524,8 @@ async def sync_fal_platform(session: AsyncSession, form: ProviderSyncForm) -> Pr
         heartbeat_at=now,
         completed_at=None,
     )
-    run_id = run.id
     session.add(run)
     try:
-        # ux_ext_provider_sync_run_running 在数据库层保证同一 provider 只有一个
-        # running 行，消除“先查询、后插入”之间的并发竞态。
         await session.commit()
     except IntegrityError as error:
         await session.rollback()
@@ -490,89 +543,163 @@ async def sync_fal_platform(session: AsyncSession, form: ProviderSyncForm) -> Pr
             detail += f' (run {running.id}, started at {running.started_at})'
         raise HTTPException(status_code=409, detail=detail) from error
     await session.refresh(run)
+    return run
+
+
+async def _fetch_platform_data(
+    session: AsyncSession,
+    form: ProviderSyncForm,
+    resources: tuple[str, ...],
+    *,
+    window_start_at: int,
+    now: int,
+) -> _FetchedPlatformData:
+    keys = await Config.get_many('image_generation.fal.api_key', 'provider_ops.fal.admin_api_key')
+    api_key = str(keys.get('image_generation.fal.api_key') or '')
+    admin_api_key = str(keys.get('provider_ops.fal.admin_api_key') or '')
+    api_client = FalPlatformClient(api_key) if {'pricing', 'requests', 'analytics'} & set(resources) else None
+    admin_client = FalPlatformClient(admin_api_key) if {'billing_events', 'usage'} & set(resources) else None
+    local_ids = (
+        await session.scalars(
+            select(ProviderInvocation.provider_model_id).where(ProviderInvocation.provider == _PROVIDER).distinct()
+        )
+    ).all()
+    start, end = _iso(window_start_at), _iso(now)
+    billing_events, usage = await asyncio.gather(
+        _call_or_skip(
+            'billing_events', lambda: admin_client.billing_events(start=start, end=end), admin_client, resources
+        ),
+        _call_or_skip(
+            'usage', lambda: admin_client.usage(start=start, end=end, timeframe=form.timeframe), admin_client, resources
+        ),
+    )
+    endpoint_ids = _relevant_endpoint_ids(tuple(local_ids), billing_events, usage)
+    prices, requests, analytics = await asyncio.gather(
+        _call_or_skip('pricing', lambda: api_client.prices(endpoint_ids), api_client, resources),
+        _call_or_skip(
+            'requests', lambda: api_client.requests(endpoint_ids, start=start, end=end), api_client, resources
+        ),
+        _call_or_skip(
+            'analytics',
+            lambda: api_client.analytics(endpoint_ids, start=start, end=end, timeframe=form.timeframe),
+            api_client,
+            resources,
+        ),
+    )
+    return _FetchedPlatformData(endpoint_ids, prices, requests, billing_events, usage, analytics)
+
+
+async def _replace_usage_buckets(
+    session: AsyncSession,
+    rows: tuple[FalUsageBucket, ...],
+    *,
+    timeframe: str,
+    window_start_at: int,
+    now: int,
+    synced_at: int,
+) -> int:
+    await session.execute(
+        delete(ProviderUsageBucket).where(
+            ProviderUsageBucket.provider == _PROVIDER,
+            ProviderUsageBucket.timeframe == timeframe,
+            ProviderUsageBucket.bucket_start_at >= window_start_at,
+            ProviderUsageBucket.bucket_start_at < now,
+        )
+    )
+    values = tuple(_usage_rows(rows, timeframe, synced_at))
+    session.add_all(values)
+    return len(values)
+
+
+async def _replace_analytics_buckets(
+    session: AsyncSession,
+    rows: tuple[FalAnalyticsBucket, ...],
+    *,
+    timeframe: str,
+    window_start_at: int,
+    now: int,
+    synced_at: int,
+) -> int:
+    await session.execute(
+        delete(ProviderAnalyticsBucket).where(
+            ProviderAnalyticsBucket.provider == _PROVIDER,
+            ProviderAnalyticsBucket.timeframe == timeframe,
+            ProviderAnalyticsBucket.bucket_start_at >= window_start_at,
+            ProviderAnalyticsBucket.bucket_start_at < now,
+        )
+    )
+    values = tuple(_analytics_rows(rows, timeframe, synced_at))
+    session.add_all(values)
+    return len(values)
+
+
+async def _record_platform_data(
+    session: AsyncSession,
+    form: ProviderSyncForm,
+    resources: tuple[str, ...],
+    data: _FetchedPlatformData,
+    *,
+    window_start_at: int,
+    now: int,
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    synced_at = _now_ms()
+    if 'pricing' in resources:
+        counts['pricing'] = await _record_prices(session, data.prices, synced_at)
+        counts['pricing_unavailable'] = max(0, len(data.endpoint_ids) - len(data.prices))
+    if 'requests' in resources:
+        counts['requests'], counts['requests_matched'] = await _record_requests(session, data.requests, synced_at)
+    if 'billing_events' in resources:
+        counts['billing_events'], counts['billing_events_matched'] = await _record_billing_events(
+            session, data.billing_events, synced_at
+        )
+    if 'usage' in resources:
+        counts['usage'] = await _replace_usage_buckets(
+            session,
+            data.usage,
+            timeframe=form.timeframe,
+            window_start_at=window_start_at,
+            now=now,
+            synced_at=synced_at,
+        )
+    if 'analytics' in resources:
+        counts['analytics'] = await _replace_analytics_buckets(
+            session,
+            data.analytics,
+            timeframe=form.timeframe,
+            window_start_at=window_start_at,
+            now=now,
+            synced_at=synced_at,
+        )
+    return counts
+
+
+async def _fail_sync_run(session: AsyncSession, run_id: str, error: Exception) -> ProviderSyncResult:
+    await session.rollback()
+    persisted = await session.get(ProviderSyncRun, run_id)
+    if persisted is None:
+        raise error
+    persisted.status = 'failed'
+    persisted.error_code = error.code[:64] if isinstance(error, FalPlatformError) else 'provider_platform_sync_failed'
+    persisted.completed_at = _now_ms()
+    result = _sync_result(persisted)
+    await session.commit()
+    return result
+
+
+async def sync_fal_platform(session: AsyncSession, form: ProviderSyncForm) -> ProviderSyncResult:
+    await _clear_stale_sync_runs(session)
+    resources = tuple(dict.fromkeys(form.resources))
+    now = _now_ms()
+    window_start_at = now - form.window_hours * 60 * 60 * 1000
+    run = await _start_sync_run(session, resources, window_start_at=window_start_at, now=now)
     heartbeat_task = (
-        asyncio.create_task(_heartbeat_sync_run(session.bind, run_id)) if session.bind is not None else None
+        asyncio.create_task(_heartbeat_sync_run(session.bind, run.id)) if session.bind is not None else None
     )
 
     try:
-        keys = await Config.get_many('image_generation.fal.api_key', 'provider_ops.fal.admin_api_key')
-        api_key = str(keys.get('image_generation.fal.api_key') or '')
-        admin_api_key = str(keys.get('provider_ops.fal.admin_api_key') or '')
-        api_client = (
-            FalPlatformClient(api_key)
-            if any(resource in resources for resource in ('pricing', 'requests', 'analytics'))
-            else None
-        )
-        admin_client = (
-            FalPlatformClient(admin_api_key)
-            if any(resource in resources for resource in ('billing_events', 'usage'))
-            else None
-        )
-        local_endpoint_ids = (
-            await session.scalars(
-                select(ProviderInvocation.provider_model_id).where(ProviderInvocation.provider == _PROVIDER).distinct()
-            )
-        ).all()
-        counts: dict[str, int] = {}
-        start = _iso(window_start_at)
-        end = _iso(now)
-
-        # 复盘 P2：五个 provider API 是纯网络往返，原先串行 await。
-        # 依赖关系分两层：billing/usage 互相独立；endpoint_ids 由二者派生，
-        # prices/requests/analytics 再依赖 endpoint_ids 且互相独立——
-        # 各层内部 gather 并发，层间保持依赖。
-        billing_events, usage = await asyncio.gather(
-            _call_or_skip('billing_events', lambda: admin_client.billing_events(start=start, end=end), admin_client, resources),
-            _call_or_skip(
-                'usage', lambda: admin_client.usage(start=start, end=end, timeframe=form.timeframe), admin_client, resources
-            ),
-        )
-        endpoint_ids = _relevant_endpoint_ids(tuple(local_endpoint_ids), billing_events, usage)
-        prices, requests, analytics = await asyncio.gather(
-            _call_or_skip('pricing', lambda: api_client.prices(endpoint_ids), api_client, resources),
-            _call_or_skip('requests', lambda: api_client.requests(endpoint_ids, start=start, end=end), api_client, resources),
-            _call_or_skip(
-                'analytics',
-                lambda: api_client.analytics(endpoint_ids, start=start, end=end, timeframe=form.timeframe),
-                api_client,
-                resources,
-            ),
-        )
-
-        synced_at = _now_ms()
-        if 'pricing' in resources:
-            counts['pricing'] = await _record_prices(session, prices, synced_at)
-            counts['pricing_unavailable'] = max(0, len(endpoint_ids) - len(prices))
-        if 'requests' in resources:
-            counts['requests'], counts['requests_matched'] = await _record_requests(session, requests, synced_at)
-        if 'billing_events' in resources:
-            counts['billing_events'], counts['billing_events_matched'] = await _record_billing_events(
-                session, billing_events, synced_at
-            )
-        if 'usage' in resources:
-            await session.execute(
-                delete(ProviderUsageBucket).where(
-                    ProviderUsageBucket.provider == _PROVIDER,
-                    ProviderUsageBucket.timeframe == form.timeframe,
-                    ProviderUsageBucket.bucket_start_at >= window_start_at,
-                    ProviderUsageBucket.bucket_start_at < now,
-                )
-            )
-            usage_rows = tuple(_usage_rows(usage, form.timeframe, synced_at))
-            session.add_all(usage_rows)
-            counts['usage'] = len(usage_rows)
-        if 'analytics' in resources:
-            await session.execute(
-                delete(ProviderAnalyticsBucket).where(
-                    ProviderAnalyticsBucket.provider == _PROVIDER,
-                    ProviderAnalyticsBucket.timeframe == form.timeframe,
-                    ProviderAnalyticsBucket.bucket_start_at >= window_start_at,
-                    ProviderAnalyticsBucket.bucket_start_at < now,
-                )
-            )
-            analytics_rows = tuple(_analytics_rows(analytics, form.timeframe, synced_at))
-            session.add_all(analytics_rows)
-            counts['analytics'] = len(analytics_rows)
+        data = await _fetch_platform_data(session, form, resources, window_start_at=window_start_at, now=now)
+        counts = await _record_platform_data(session, form, resources, data, window_start_at=window_start_at, now=now)
         run.status = 'succeeded'
         run.counts_json = counts
         run.completed_at = _now_ms()
@@ -580,18 +707,7 @@ async def sync_fal_platform(session: AsyncSession, form: ProviderSyncForm) -> Pr
         await session.commit()
         return result
     except Exception as error:
-        await session.rollback()
-        persisted = await session.get(ProviderSyncRun, run_id)
-        if persisted is None:
-            raise
-        persisted.status = 'failed'
-        persisted.error_code = (
-            error.code[:64] if isinstance(error, FalPlatformError) else 'provider_platform_sync_failed'
-        )
-        persisted.completed_at = _now_ms()
-        result = _sync_result(persisted)
-        await session.commit()
-        return result
+        return await _fail_sync_run(session, run.id, error)
     finally:
         await _stop_heartbeat(heartbeat_task)
 

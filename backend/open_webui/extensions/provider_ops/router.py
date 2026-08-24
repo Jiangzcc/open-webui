@@ -38,6 +38,8 @@ from .service import list_provider_invocations, summarize_provider_models
 
 router = APIRouter(prefix='/api/v1/provider-ops', tags=['provider-ops'])
 
+_MASKED_FAL_API_KEY = '********'
+
 
 @router.get('/admin/video-runtime', response_model=VideoRuntimeStatus)
 async def get_admin_video_runtime_status(
@@ -61,12 +63,15 @@ _FAL_CONFIG_KEYS: dict[str, tuple[str, object]] = {
 
 async def _read_fal_runtime_config() -> FalRuntimeConfig:
     values = await Config.get_many(*(storage_key for storage_key, _default in _FAL_CONFIG_KEYS.values()))
-    return FalRuntimeConfig(
-        **{
-            field: values.get(storage_key, default)
-            for field, (storage_key, default) in _FAL_CONFIG_KEYS.items()
-        }
-    )
+    public_values = {
+        field: (
+            _MASKED_FAL_API_KEY
+            if field.endswith('_api_key') and values.get(storage_key)
+            else values.get(storage_key, default)
+        )
+        for field, (storage_key, default) in _FAL_CONFIG_KEYS.items()
+    }
+    return FalRuntimeConfig(**public_values)
 
 
 @router.get('/admin/fal-config', response_model=FalRuntimeConfig)
@@ -80,9 +85,16 @@ async def update_admin_fal_runtime_config(
     form: FalRuntimeConfig,
     user=Depends(get_admin_user),
 ) -> FalRuntimeConfig:
-    await Config.upsert(
-        {storage_key: getattr(form, field) for field, (storage_key, _default) in _FAL_CONFIG_KEYS.items()}
-    )
+    # API keys arrive in this request body. The shared audit middleware records
+    # bodies unless the endpoint explicitly opts out, so redact before any
+    # await that could hand control back to middleware/error handling.
+    request.scope['audit_redact_bodies'] = {'request'}
+    updates = {
+        storage_key: value
+        for field, (storage_key, _default) in _FAL_CONFIG_KEYS.items()
+        if (value := getattr(form, field)) != _MASKED_FAL_API_KEY
+    }
+    await Config.upsert(updates)
     await publish_event(
         request,
         EVENTS.CONFIG_UPDATED,

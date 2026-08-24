@@ -7,10 +7,7 @@ from typing import Any
 from open_webui.extensions.credits.pricing import compute_price
 from scripts.credits.seed_prices import PRICES
 
-# seed_prices.py 由 init_prices.py 生成后手工同步（生成器依赖一次性的
-# /tmp/fal_prices.json 快照，无法随时重跑），seedance-2.0 的 480p/4k 倍率
-# 与 fast 基准价又来自 FAL 文档换算，故用测试锁住，防止后续手工编辑漂移。
-# 换算依据见 init_prices.py 的 _VIDEO_TIER_BASE / _VIDEO_RESOLUTION_TIERS 注释。
+# credit_prices.json 是唯一声明式定价源；seed_prices.py 只负责幂等装载。
 
 
 @dataclass(frozen=True)
@@ -38,6 +35,19 @@ def _seedance_entries() -> dict[str, dict[str, Any]]:
         'bytedance/seedance-2.0/fast/image-to-video',
     }
     return entries
+
+
+def test_declarative_price_catalog_has_unique_complete_keys() -> None:
+    keys = []
+    for entry in PRICES:
+        assert set(entry) == {'service_type', 'resource_id', 'action', 'base_price', 'rules'}
+        assert entry['service_type'] in {'image', 'video'}
+        assert isinstance(entry['resource_id'], str) and entry['resource_id']
+        assert isinstance(entry['action'], str) and entry['action']
+        assert Decimal(entry['base_price']) > 0
+        assert entry['rules'].get('schema_version') == 1
+        keys.append((entry['service_type'], entry['resource_id'], entry['action']))
+    assert len(keys) == len(set(keys))
 
 
 def _resolution_values(entry: dict[str, Any]) -> dict[str, str]:

@@ -2,17 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 from open_webui.extensions.creations.task_states import GenerationTaskStatus
+from open_webui.extensions.schema import StrictFrozenModel as _StrictModel
+from pydantic import Field, field_validator
 
 VideoTask = Literal['text-to-video', 'image-to-video', 'video-to-video']
 # 复盘 P2：任务状态枚举收敛至 task_states 单一事实源（此前 6+ 处散落）。
 VideoTaskStatus = GenerationTaskStatus
-
-
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
 
 
 class VideoAssetReference(_StrictModel):
@@ -56,6 +52,7 @@ class VideoTaskResult(_StrictModel):
 
 class VideoTaskResponse(_StrictModel):
     id: str
+    payload_sha256: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$', exclude=True)
     status: VideoTaskStatus
     task: VideoTask
     prompt: str

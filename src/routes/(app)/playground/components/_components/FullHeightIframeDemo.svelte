@@ -20,7 +20,9 @@
 
 <DemoCard
 	title="FullHeightIframe"
-	desc={$i18n.t('Iframe that auto-detects URL vs raw HTML, sandboxed, height-synced via postMessage.')}
+	desc={$i18n.t(
+		'Iframe that auto-detects URL vs raw HTML, sandboxed, height-synced via postMessage.'
+	)}
 >
 	<div class="flex flex-col gap-3 w-full">
 		<FullHeightIframe
@@ -31,7 +33,9 @@
 		/>
 
 		<FullHeightIframe
-			src={altHtml.replace('Iframe 内容', '另一段内容').replace('#eef2ff,#faf5ff', '#ecfeff,#fef3c7')}
+			src={altHtml
+				.replace('Iframe 内容', '另一段内容')
+				.replace('#eef2ff,#faf5ff', '#ecfeff,#fef3c7')}
 			title="demo html 2"
 			initialHeight={120}
 			iframeClassName="w-full rounded-lg border border-gray-100 dark:border-gray-850"

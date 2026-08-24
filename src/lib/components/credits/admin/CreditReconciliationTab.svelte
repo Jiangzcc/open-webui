@@ -10,7 +10,7 @@
 		type ReconciliationItem,
 		type ReconciliationStatus
 	} from '$lib/apis/credits';
-import Select from '$lib/components/common/Select.svelte';
+	import Select from '$lib/components/common/Select.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -129,7 +129,9 @@ import Select from '$lib/components/common/Select.svelte';
 			]}
 			ariaLabel={$i18n.t('credits.admin.allStatuses')}
 			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			onChange={(value) => (status = value)}
+			onChange={(value) => {
+				if (value === '' || value === 'failed' || value === 'unknown') status = value;
+			}}
 		/>
 		<Select
 			value={compensated}
@@ -140,7 +142,9 @@ import Select from '$lib/components/common/Select.svelte';
 			]}
 			ariaLabel={$i18n.t('credits.admin.allCompensation')}
 			triggerClass="flex min-h-10 items-center rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			onChange={(value) => (compensated = value)}
+			onChange={(value) => {
+				if (value === '' || value === 'false' || value === 'true') compensated = value;
+			}}
 		/>
 		<button
 			class="min-h-10 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white dark:bg-white dark:text-gray-900"

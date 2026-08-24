@@ -11,7 +11,8 @@
 
 <DemoCard
 	title="SensitiveInput"
-	desc={$i18n.t('Password input with show/hide. variant: plain | settings. type: text | password.')}>
+	desc={$i18n.t('Password input with show/hide. variant: plain | settings. type: text | password.')}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<div class="w-full">
 			<SensitiveInput

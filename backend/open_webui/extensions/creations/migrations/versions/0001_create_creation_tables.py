@@ -11,6 +11,7 @@ Revises:
   + 分类与精选运营列（0004；0006 移除的类别 CHECK 不再创建）
 - ext_creation_category：内置分类种子（0006）
 - ext_image_generation_task：图片任务（0003；0004 加、0005 删的通知列净为零）
+  + 完整请求摘要（2026-08-24，避免含参考图的幂等键错误复用）
 - ext_video_generation_task：视频任务（0007）+ FAL 交付恢复列（0008）
   （2026-08-23 复盘 P0-1：其 params/assets/result_json 三列由 sa.JSON 修正为
   JSONField——ORM 按此 TEXT 打底类型读写，原生 JSON 列在 PostgreSQL 上读取即
@@ -220,6 +221,7 @@ def upgrade() -> None:
         sa.Column('id', sa.String(128), nullable=False),
         sa.Column('user_id', sa.String(128), nullable=False),
         sa.Column('idempotency_key', sa.String(128), nullable=False),
+        sa.Column('payload_sha256', sa.String(64), nullable=False),
         sa.Column('status', sa.String(16), nullable=False),
         sa.Column('kind', sa.String(32), nullable=False),
         sa.Column('prompt', sa.Text(), nullable=False),
@@ -228,6 +230,8 @@ def upgrade() -> None:
         sa.Column('expected_count', sa.Integer(), nullable=False),
         sa.Column('result_json', JSONField(), nullable=True),
         sa.Column('error_code', sa.String(64), nullable=True),
+        sa.Column('execution_mode', sa.String(16), nullable=True),
+        sa.Column('delivery_attempts', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('created_at', sa.BigInteger(), nullable=False),
         sa.Column('started_at', sa.BigInteger(), nullable=True),
         sa.Column('completed_at', sa.BigInteger(), nullable=True),
@@ -243,6 +247,11 @@ def upgrade() -> None:
             name='ck_ext_image_task_kind',
         ),
         sa.CheckConstraint('expected_count >= 1', name='ck_ext_image_task_expected_count'),
+        sa.CheckConstraint(
+            "execution_mode IS NULL OR execution_mode IN ('mock', 'fal')",
+            name='ck_ext_image_task_execution_mode',
+        ),
+        sa.CheckConstraint('delivery_attempts >= 0', name='ck_ext_image_task_delivery_attempts'),
         schema=schema,
     )
     op.create_index(
@@ -263,12 +272,15 @@ def upgrade() -> None:
         sa.Column('id', sa.String(128), primary_key=True),
         sa.Column('user_id', sa.String(128), nullable=False),
         sa.Column('idempotency_key', sa.String(128), nullable=False),
+        sa.Column('payload_sha256', sa.String(64), nullable=False),
         sa.Column('status', sa.String(16), nullable=False),
         sa.Column('task', sa.String(32), nullable=False),
         sa.Column('prompt', sa.Text(), nullable=False),
         sa.Column('model_id', sa.String(256), nullable=False),
         sa.Column('params_json', JSONField(), nullable=True),
         sa.Column('assets_json', JSONField(), nullable=True),
+        sa.Column('provider_definition_json', JSONField(), nullable=False),
+        sa.Column('provider_payload_json', JSONField(), nullable=False),
         sa.Column('result_json', JSONField(), nullable=True),
         sa.Column('error_code', sa.String(64), nullable=True),
         sa.Column('usage_id', sa.String(128), nullable=True),

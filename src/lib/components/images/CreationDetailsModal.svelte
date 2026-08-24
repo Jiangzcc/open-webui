@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
+	import { getI18nContext } from '$lib/i18n/context';
 
 	import {
 		deleteAdminCreation,
@@ -41,7 +41,7 @@
 	export let onRemoved: (creationId: string) => void = () => {};
 	export let onReuse: (draft: ImageCreationDraft) => void = () => {};
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 
 	type CacheEntry = {
 		detail: CreationDetail | AdminCreationDetail;
@@ -383,6 +383,8 @@
 	<svelte:fragment slot="media">
 		{#if detail}
 			{#if detail.content_url && detail.kind === 'video'}
+				<!-- Generated media has no separate caption track. -->
+				<!-- svelte-ignore a11y_media_has_caption -->
 				<video
 					src={detail.content_url}
 					poster={detail.poster_url ?? undefined}
@@ -395,8 +397,10 @@
 				<button
 					type="button"
 					class="flex max-h-[80dvh] items-center justify-center overflow-hidden rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:rounded-2xl lg:max-h-[72dvh]"
-					on:click={() =>
-						openPreview(detail.content_url as string, detail.caption ?? detail.prompt)}
+					on:click={() => {
+						if (detail?.content_url)
+							openPreview(detail.content_url, detail.caption ?? detail.prompt);
+					}}
 					aria-label={$i18n.t('Preview')}
 				>
 					<img
@@ -669,7 +673,7 @@
 							type="button"
 							class="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-200/70 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
 							on:click={() => {
-								captionDraft = detail.caption ?? '';
+								captionDraft = detail?.caption ?? '';
 								captionEditing = true;
 							}}
 						>

@@ -41,7 +41,6 @@
 	let createError = '';
 	let createdBatch: CreditRedeemBatchCreated | null = null;
 	let copied = false;
-	let copiedCodeId = '';
 	let name = '';
 	let faceValue = 100;
 	let quantity = 10;
@@ -152,15 +151,6 @@
 			copied = true;
 		} else {
 			createError = $i18n.t('credits.admin.redeem.copyError');
-		}
-	};
-
-	const copyCode = async (code: CreditRedeemCode) => {
-		detailError = '';
-		if (await copyToClipboard(code.code)) {
-			copiedCodeId = code.id;
-		} else {
-			detailError = $i18n.t('credits.admin.redeem.copyError');
 		}
 	};
 
@@ -619,7 +609,7 @@
 									class="flex flex-col gap-2 rounded-xl border border-gray-100 p-3 dark:border-gray-800 sm:flex-row sm:items-center"
 								>
 									<div class="min-w-0 flex-1">
-										<div class="break-all font-mono text-sm">{code.code}</div>
+										<div class="break-all font-mono text-sm">{code.hint}</div>
 										<div class="mt-1 text-xs text-gray-500">
 											{statusLabel(code.status)}{code.redeemed_by_name_snapshot
 												? ` · ${code.redeemed_by_name_snapshot}`
@@ -627,16 +617,6 @@
 										</div>
 									</div>
 									<div class="flex shrink-0 flex-wrap items-center gap-2">
-										<button
-											class="min-h-11 rounded-xl border border-gray-200 px-3 text-sm text-gray-600 outline-hidden focus-visible:ring-2 focus-visible:ring-gray-400 dark:border-gray-700 dark:text-gray-300"
-											type="button"
-											on:click={() => copyCode(code)}
-											>{$i18n.t(
-												copiedCodeId === code.id
-													? 'credits.admin.redeem.copied'
-													: 'credits.admin.redeem.copy'
-											)}</button
-										>
 										{#if code.status === 'available'}<button
 												class="min-h-11 rounded-xl border border-red-200 px-3 text-sm text-red-700 outline-hidden focus-visible:ring-2 focus-visible:ring-red-300 dark:border-red-900 dark:text-red-300"
 												type="button"

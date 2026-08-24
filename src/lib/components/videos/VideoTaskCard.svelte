@@ -132,12 +132,16 @@
 		<span class="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100"
 			>{getTaskModelLabel(record)}</span
 		>
-		<span class="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500">{getTaskTime(record)}</span>
+		<span class="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500"
+			>{getTaskTime(record)}</span
+		>
 	</div>
 
 	<!-- prompt：全展开，不折叠；就是用户输入的纯文本 -->
 	{#if record.prompt}
-		<p class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200">
+		<p
+			class="m-0 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700 dark:text-gray-200"
+		>
 			{record.prompt}
 		</p>
 	{/if}
@@ -166,6 +170,7 @@
 		     横屏/竖屏视频共用同一播放器宽度，竖屏视频自动 letterbox。 -->
 		<div class="flex w-full justify-start overflow-hidden">
 			<div class="relative aspect-video w-full max-w-[36rem]">
+				<!-- svelte-ignore a11y_media_has_caption generated media has no caption track -->
 				<video
 					class="absolute inset-0 h-full w-full rounded-2xl object-contain shadow-sm dark:shadow-black/40"
 					controls
@@ -213,7 +218,7 @@
 	<div class="flex flex-wrap items-center gap-1.5">
 		<button
 			type="button"
-			class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+			class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 			on:click={() => onRegenerate(record)}
 			aria-label={$i18n.t('Regenerate')}
 		>
@@ -229,35 +234,37 @@
 			>
 			{$i18n.t('Regenerate')}
 		</button>
-		<button
-			type="button"
-			class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-			on:click={() => onDownload(record)}
-			disabled={downloading}
-			aria-label={$i18n.t('Download')}
-		>
-			{#if downloading}
-				<Spinner className="size-3.5" />
-			{:else}
-				<svg
-					class="size-3.5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
-				>
-			{/if}
-			{$i18n.t('Download')}
-		</button>
+		{#if record.result?.url}
+			<button
+				type="button"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				on:click={() => onDownload(record)}
+				disabled={downloading}
+				aria-label={$i18n.t('Download')}
+			>
+				{#if downloading}
+					<Spinner className="size-3.5" />
+				{:else}
+					<svg
+						class="size-3.5"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
+					>
+				{/if}
+				{$i18n.t('Download')}
+			</button>
+		{/if}
 		{#if record.result?.creation_id}
 			<!-- 复盘：仅已产出 creation 的任务可看详情——queued/running/failed 没有
 			     creation_id，渲染按钮只会打开空白弹窗。 -->
 			<button
 				type="button"
-				class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onViewDetails(record)}
 				aria-label={$i18n.t('View details')}
 			>
@@ -269,15 +276,14 @@
 					stroke-width="2"
 					stroke-linecap="round"
 					stroke-linejoin="round"
-					aria-hidden="true"
-					><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
+					aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
 				>
 				{$i18n.t('View details')}
 			</button>
 		{/if}
 		<button
 			type="button"
-			class="inline-flex h-7 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+			class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 			on:click={() => onRemove(record)}
 			disabled={deleting}
 			aria-label={$i18n.t('Remove record')}
@@ -293,8 +299,7 @@
 					stroke-width="2"
 					stroke-linecap="round"
 					stroke-linejoin="round"
-					aria-hidden="true"
-					><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
+					aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
 				>
 			{/if}
 			{$i18n.t('Remove')}

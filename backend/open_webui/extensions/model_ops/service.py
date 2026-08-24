@@ -10,6 +10,7 @@ from open_webui.extensions.fal_catalog.loader import (
 )
 from open_webui.extensions.fal_images.models import normalize_fal_image_model_id
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import ImageModelOperation
@@ -158,6 +159,59 @@ async def list_model_operations(session: AsyncSession) -> ModelOperationList:
     return ModelOperationList(items=tuple(items))
 
 
+def _apply_operation_update(row: ImageModelOperation, form: ModelOperationUpdate, operator: object) -> None:
+    changes = form.model_dump(exclude_unset=True)
+    if 'tags' in changes:
+        row.tags_json = list(changes.pop('tags') or ())
+    for field, value in changes.items():
+        setattr(row, field, value)
+    row.updated_by_id = getattr(operator, 'id', None)
+    row.updated_by_name_snapshot = getattr(operator, 'name', None)
+    row.updated_at = int(time())
+
+
+async def _commit_operation_update(
+    session: AsyncSession,
+    row: ImageModelOperation,
+    form: ModelOperationUpdate,
+    operator: object,
+    *,
+    created: bool,
+) -> ImageModelOperation:
+    _apply_operation_update(row, form, operator)
+    try:
+        await session.commit()
+        return row
+    except IntegrityError:
+        if not created:
+            raise
+    await session.rollback()
+    winner = await session.get(ImageModelOperation, row.model_id)
+    if winner is None:
+        raise RuntimeError('concurrent model operation winner is missing')
+    _apply_operation_update(winner, form, operator)
+    await session.commit()
+    return winner
+
+
+def _operation_item(definition: object, media_kind: str, row: ImageModelOperation) -> ModelOperationItem:
+    return ModelOperationItem(
+        model_id=definition.id,
+        media_kind=media_kind,
+        public_id=definition.public_id,
+        name=definition.name,
+        provider=definition.provider,
+        task=definition.task,
+        visible=row.visible,
+        enabled=row.enabled,
+        recommended=row.recommended,
+        sort_order=row.sort_order,
+        tags=_tags(row),
+        maintenance_message=row.maintenance_message,
+        updated_at=row.updated_at,
+    )
+
+
 async def update_model_operation(
     session: AsyncSession,
     model_id: str,
@@ -175,7 +229,8 @@ async def update_model_operation(
         return None
     storage_id = _operation_key(media_kind, internal_id)
     row = await session.get(ImageModelOperation, storage_id)
-    if row is None:
+    created = row is None
+    if created:
         row = ImageModelOperation(
             model_id=storage_id,
             visible=True,
@@ -187,30 +242,8 @@ async def update_model_operation(
             updated_at=int(time()),
         )
         session.add(row)
-    changes = form.model_dump(exclude_unset=True)
-    if 'tags' in changes:
-        row.tags_json = list(changes.pop('tags') or ())
-    for field, value in changes.items():
-        setattr(row, field, value)
-    row.updated_by_id = getattr(operator, 'id', None)
-    row.updated_by_name_snapshot = getattr(operator, 'name', None)
-    row.updated_at = int(time())
-    await session.commit()
-    return ModelOperationItem(
-        model_id=definition.id,
-        media_kind=media_kind,
-        public_id=definition.public_id,
-        name=definition.name,
-        provider=definition.provider,
-        task=definition.task,
-        visible=row.visible,
-        enabled=row.enabled,
-        recommended=row.recommended,
-        sort_order=row.sort_order,
-        tags=_tags(row),
-        maintenance_message=row.maintenance_message,
-        updated_at=row.updated_at,
-    )
+    row = await _commit_operation_update(session, row, form, operator, created=created)
+    return _operation_item(definition, media_kind, row)
 
 
 __all__ = [

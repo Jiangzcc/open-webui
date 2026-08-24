@@ -20,6 +20,7 @@ from open_webui.extensions.model_ops.service import (
     update_model_operation,
 )
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from .conftest import make_user
 
@@ -36,6 +37,52 @@ IMAGE_MODEL_TURBO_PUBLIC = 'ideogram-v2-turbo'
 # 视频模型：内部 ID 与公开 ID
 VIDEO_MODEL_INTERNAL = 'fal-ai/ltx-2.3/text-to-video'
 VIDEO_MODEL_PUBLIC = 'ltx-2.3'
+
+
+@pytest.mark.asyncio
+async def test_first_update_recovers_from_concurrent_insert(model_ops_sessions, monkeypatch) -> None:
+    operator = make_user(user_id='admin-loser', name='Loser')
+    async with model_ops_sessions() as session:
+        original_commit = session.commit
+        commit_calls = 0
+
+        async def conflicting_commit():
+            nonlocal commit_calls
+            commit_calls += 1
+            if commit_calls == 1:
+                await session.rollback()
+                async with model_ops_sessions() as winner:
+                    winner.add(
+                        ImageModelOperation(
+                            model_id=IMAGE_MODEL_INTERNAL,
+                            visible=True,
+                            enabled=True,
+                            recommended=False,
+                            sort_order=1000,
+                            tags_json=[],
+                            maintenance_message=None,
+                            updated_at=1,
+                        )
+                    )
+                    await winner.commit()
+                raise IntegrityError('UNIQUE constraint failed', None, Exception('duplicate'))
+            await original_commit()
+
+        monkeypatch.setattr(session, 'commit', conflicting_commit)
+        item = await update_model_operation(
+            session,
+            IMAGE_MODEL_PUBLIC,
+            ModelOperationUpdate(visible=False, recommended=True),
+            operator,
+        )
+
+    assert item is not None
+    assert item.visible is False
+    assert item.recommended is True
+    async with model_ops_sessions() as session:
+        row = await session.get(ImageModelOperation, IMAGE_MODEL_INTERNAL)
+    assert row is not None
+    assert row.updated_by_id == 'admin-loser'
 
 
 # ---------------------------------------------------------------------------

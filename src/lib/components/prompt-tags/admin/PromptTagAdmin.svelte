@@ -18,7 +18,7 @@
 		type PromptTagMediaKind
 	} from '$lib/apis/prompt_tags';
 	import Select from '$lib/components/common/Select.svelte';
-import Spinner from '$lib/components/common/Spinner.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { registerPromptTagTranslations } from '$lib/components/prompt-tags/prompt-tags-i18n';
 	import { trapFocus } from '$lib/actions/focusTrap';
 	import { toast } from 'svelte-sonner';
@@ -30,14 +30,10 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 	let tags: PromptTagItem[] = [];
 	let filterCategoryId = '';
 	let search = '';
-
-	/* ---------- category modal ---------- */
 	let categoryModalOpen = false;
 	let categoryEditing: PromptTagCategoryItem | null = null;
 	let categoryForm = { slug: '', name_zh: '', name_en: '', enabled: true, sort_order: 1000 };
 	let saving = false;
-
-	/* ---------- tag modal ---------- */
 	let tagModalOpen = false;
 	let tagEditing: PromptTagItem | null = null;
 	let tagForm = {
@@ -51,8 +47,6 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 		enabled: true,
 		sort_order: 1000
 	};
-
-	/* ---------- import ---------- */
 	let importModalOpen = false;
 	let importText = '';
 	let importDryRun = true;
@@ -417,15 +411,18 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 				</h2>
 				<div class="flex flex-wrap gap-2">
 					<Select
-	value={filterCategoryId}
-	items={[
-		{ value: '', label: `${$i18n.t('promptTags.admin.categories')}: ${$i18n.t('promptTags.admin.all')}` },
-		...categories.map((c) => ({ value: c.id, label: catName(c) }))
-	]}
-	ariaLabel={$i18n.t('promptTags.admin.categories')}
-	triggerClass="flex min-h-9 items-center rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900"
-	onChange={(value) => (filterCategoryId = value)}
-/>
+						value={filterCategoryId}
+						items={[
+							{
+								value: '',
+								label: `${$i18n.t('promptTags.admin.categories')}: ${$i18n.t('promptTags.admin.all')}`
+							},
+							...categories.map((c) => ({ value: c.id, label: catName(c) }))
+						]}
+						ariaLabel={$i18n.t('promptTags.admin.categories')}
+						triggerClass="flex min-h-9 items-center rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+						onChange={(value) => (filterCategoryId = value)}
+					/>
 					<input
 						type="search"
 						bind:value={search}
@@ -537,10 +534,9 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 {#if categoryModalOpen}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-		on:click|self={() => (categoryModalOpen = false)}
 		role="dialog"
 		aria-modal="true"
-		use:trapFocus
+		use:trapFocus={() => (categoryModalOpen = false)}
 	>
 		<div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
 			<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -618,10 +614,9 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 {#if tagModalOpen}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-		on:click|self={() => (tagModalOpen = false)}
 		role="dialog"
 		aria-modal="true"
-		use:trapFocus
+		use:trapFocus={() => (tagModalOpen = false)}
 	>
 		<div
 			class="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900"
@@ -643,17 +638,17 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 						/>
 					</div>
 					<div>
-						<label class="mb-1 block text-xs font-medium text-gray-500"
-							>{$i18n.t('promptTags.admin.category')}</label
+						<span class="mb-1 block text-xs font-medium text-gray-500"
+							>{$i18n.t('promptTags.admin.category')}</span
 						>
 						<Select
-	value={tagForm.category_id}
-	items={categories.map((c) => ({ value: c.id, label: catName(c) }))}
-	placeholder={catName(categories[0])}
-	ariaLabel={$i18n.t('promptTags.admin.category')}
-	triggerClass="min-h-9 w-full items-center rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700 dark:bg-gray-950"
-	onChange={(value) => (tagForm.category_id = value)}
-/>
+							value={tagForm.category_id}
+							items={categories.map((c) => ({ value: c.id, label: catName(c) }))}
+							placeholder={catName(categories[0])}
+							ariaLabel={$i18n.t('promptTags.admin.category')}
+							triggerClass="min-h-9 w-full items-center rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700 dark:bg-gray-950"
+							onChange={(value) => (tagForm.category_id = value)}
+						/>
 					</div>
 				</div>
 				<div class="grid gap-3 sm:grid-cols-2">
@@ -742,10 +737,9 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 {#if importModalOpen}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-		on:click|self={() => (importModalOpen = false)}
 		role="dialog"
 		aria-modal="true"
-		use:trapFocus
+		use:trapFocus={() => (importModalOpen = false)}
 	>
 		<div
 			class="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900"

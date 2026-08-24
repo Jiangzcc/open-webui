@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 from open_webui.extensions.creations.task_states import GenerationTaskStatus
+from open_webui.extensions.schema import StrictFrozenModel as _StrictModel
+from pydantic import Field, field_validator, model_validator
 
 AuthorizationScope = Literal['direct', 'chat', 'tool']
 ImageCreationTask = Literal['text-to-image', 'image-to-image']
@@ -99,10 +99,6 @@ class CreationCaptureContext:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, 'params', MappingProxyType(dict(self.params)))
-
-
-class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
 
 
 class CaptionUpdateForm(_StrictModel):

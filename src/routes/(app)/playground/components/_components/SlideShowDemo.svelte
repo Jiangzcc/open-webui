@@ -18,7 +18,9 @@
 	title="SlideShow"
 	desc={$i18n.t('Auto-rotating image slideshow. Needs relative parent + height.')}
 >
-	<div class="relative w-full h-40 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-850">
+	<div
+		class="relative w-full h-40 rounded-xl overflow-hidden border border-gray-100 dark:border-gray-850"
+	>
 		<SlideShow {imageUrls} {duration} />
 	</div>
 </DemoCard>

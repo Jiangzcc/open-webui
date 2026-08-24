@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	import { getAdminCreditAccounts, type CreditAccount } from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
@@ -7,8 +7,9 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import AdjustCreditsModal from './AdjustCreditsModal.svelte';
 	import RepairAccountModal from './RepairAccountModal.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	const pageSize = 25;
 
 	let accounts: CreditAccount[] = [];

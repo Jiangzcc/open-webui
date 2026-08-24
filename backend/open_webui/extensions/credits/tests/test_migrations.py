@@ -13,6 +13,7 @@ from open_webui.extensions.credits import db as credit_db
 from open_webui.extensions.credits.db import CreditBase
 from open_webui.extensions.credits.migrations.runner import run_credit_migrations
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
+from open_webui.extensions.tests.migration_assertions import schema_fingerprint, sqlite_upstream_fingerprint
 from open_webui.internal import db as upstream_db
 from sqlalchemy import BigInteger, MetaData, Table, create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
@@ -66,16 +67,6 @@ BIGINT_COLUMNS = {
 }
 
 
-def _sqlite_fingerprint(connection):
-    rows = connection.execute(
-        text(
-            'SELECT type, name, tbl_name, sql FROM sqlite_master '
-            "WHERE name = 'user' OR tbl_name = 'user' ORDER BY type, name"
-        )
-    ).fetchall()
-    return [(row.type, row.name, row.tbl_name, row.sql) for row in rows]
-
-
 def _upgrade_sqlite(engine) -> None:
     with engine.connect() as connection:
         run_credit_migrations(connection=connection, verify_upstream=False)
@@ -94,12 +85,12 @@ def test_upgrade_preserves_sentinel_and_creates_only_extension_objects(sqlite_da
     with engine.begin() as connection:
         connection.execute(text('CREATE TABLE user (id VARCHAR(128) PRIMARY KEY, name VARCHAR(128) NOT NULL)'))
         connection.execute(text('CREATE UNIQUE INDEX ix_user_name ON user (name)'))
-        before = _sqlite_fingerprint(connection)
+        before = sqlite_upstream_fingerprint(connection)
 
     _upgrade_sqlite(engine)
 
     with engine.connect() as connection:
-        assert _sqlite_fingerprint(connection) == before
+        assert sqlite_upstream_fingerprint(connection) == before
         names = set(inspect(connection).get_table_names())
         assert names == TABLE_NAMES | {'user', 'ext_credit_schema_version'}
         assert 'alembic_version' not in names
@@ -347,42 +338,6 @@ def test_database_controlled_enums_reject_invalid_values(sqlite_database):
             connection.execute(CreditLedger.__table__.insert().values(**ledger_values))
 
 
-def _schema_fingerprint(connection, schema: str) -> dict:
-    inspector = inspect(connection)
-    fingerprint = {}
-    for table_name in inspector.get_table_names(schema=schema):
-        fingerprint[table_name] = {
-            'columns': [
-                (column['name'], str(column['type']), column['nullable'], str(column.get('default')))
-                for column in inspector.get_columns(table_name, schema=schema)
-            ],
-            'indexes': sorted(
-                (index['name'], tuple(index['column_names']), index['unique'])
-                for index in inspector.get_indexes(table_name, schema=schema)
-            ),
-            'unique': sorted(
-                (constraint['name'], tuple(constraint['column_names']))
-                for constraint in inspector.get_unique_constraints(table_name, schema=schema)
-            ),
-            'foreign_keys': sorted(
-                (
-                    constraint.get('name'),
-                    tuple(constraint['constrained_columns']),
-                    constraint.get('referred_schema'),
-                    constraint['referred_table'],
-                    tuple(constraint['referred_columns']),
-                    constraint.get('options', {}).get('ondelete'),
-                )
-                for constraint in inspector.get_foreign_keys(table_name, schema=schema)
-            ),
-            'checks': sorted(
-                (constraint['name'], constraint['sqltext'])
-                for constraint in inspector.get_check_constraints(table_name, schema=schema)
-            ),
-        }
-    return fingerprint
-
-
 def _postgres_tables(schema: str) -> dict[str, Table]:
     metadata = MetaData()
     return {
@@ -400,7 +355,7 @@ def test_postgresql_non_public_schema_concurrent_migrations_and_constraints():
     schema = f'credit_test_{uuid4().hex}'
     try:
         with engine.connect() as connection:
-            public_before = _schema_fingerprint(connection, 'public')
+            public_before = schema_fingerprint(connection, 'public')
             connection.rollback()
         with engine.begin() as connection:
             connection.execute(text(f'CREATE SCHEMA "{schema}"'))
@@ -548,7 +503,7 @@ def test_postgresql_non_public_schema_concurrent_migrations_and_constraints():
                 )
 
         with engine.connect() as connection:
-            assert _schema_fingerprint(connection, 'public') == public_before
+            assert schema_fingerprint(connection, 'public') == public_before
             connection.rollback()
     finally:
         with engine.begin() as connection:

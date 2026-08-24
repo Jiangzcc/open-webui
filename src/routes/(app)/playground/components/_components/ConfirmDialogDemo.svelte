@@ -12,7 +12,10 @@
 
 <DemoCard
 	title="ConfirmDialog"
-	desc={$i18n.t('Confirm with markdown message + optional input. onConfirm prop, on:confirm event.')}>
+	desc={$i18n.t(
+		'Confirm with markdown message + optional input. onConfirm prop, on:confirm event.'
+	)}
+>
 	<button
 		class="text-xs px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
 		on:click={() => (show = true)}

@@ -25,7 +25,11 @@
 
 	let iconEntries: IconEntry[] = Object.entries(iconModules)
 		.map(([path, load]) => ({
-			name: path.split('/').pop()?.replace(/\.svelte$/, '') ?? path,
+			name:
+				path
+					.split('/')
+					.pop()
+					?.replace(/\.svelte$/, '') ?? path,
 			load: load as () => Promise<any>
 		}))
 		.sort((a, b) => a.name.localeCompare(b.name));
@@ -77,16 +81,14 @@
 					<button
 						type="button"
 						class="group flex flex-col items-center justify-center gap-1.5 rounded-lg border border-gray-100 dark:border-gray-850 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-850 hover:border-gray-200 dark:hover:border-gray-700 transition p-2.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700"
-						aria-label={copiedName === entry.name
-							? $i18n.t('Copied')
-							: entry.name}
+						aria-label={copiedName === entry.name ? $i18n.t('Copied') : entry.name}
 						on:click={() => copyImport(entry.name)}
 					>
 						<span
 							class="text-gray-700 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition"
 						>
 							{#await entry.load()}
-								<div class="size-5 animate-pulse bg-gray-100 dark:bg-gray-800 rounded" />
+								<div class="size-5 animate-pulse bg-gray-100 dark:bg-gray-800 rounded"></div>
 							{:then Component}
 								<Component className="size-5" />
 							{/await}

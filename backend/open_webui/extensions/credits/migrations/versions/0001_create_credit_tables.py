@@ -230,7 +230,6 @@ def upgrade() -> None:
         'ext_credit_redeem_code',
         sa.Column('id', sa.String(128), nullable=False),
         sa.Column('batch_id', sa.String(128), nullable=False),
-        sa.Column('code', sa.String(64), nullable=False),
         sa.Column('code_hash', sa.String(64), nullable=False),
         sa.Column('code_hint', sa.String(16), nullable=False),
         sa.Column('redeemed_by_user_id', sa.String(128), nullable=True),
@@ -254,7 +253,6 @@ def upgrade() -> None:
             ondelete='RESTRICT',
             name='fk_ext_credit_redeem_code_ledger',
         ),
-        sa.CheckConstraint("code <> ''", name='ck_ext_credit_redeem_code_code_nonempty'),
         sa.CheckConstraint(
             'NOT (redeemed_at IS NOT NULL AND voided_at IS NOT NULL)',
             name='ck_ext_credit_redeem_code_terminal_state',

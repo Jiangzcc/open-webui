@@ -11,7 +11,8 @@
 
 <DemoCard
 	title="Collapsible"
-	desc={$i18n.t('Fold/unfold container. bind:open. title → button; null title → slot + pointerup.')}>
+	desc={$i18n.t('Fold/unfold container. bind:open. title → button; null title → slot + pointerup.')}
+>
 	<div class="w-full">
 		<Collapsible
 			bind:open

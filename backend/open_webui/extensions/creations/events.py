@@ -67,8 +67,13 @@ class GenerationEventBus:
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                # 慢消费者：丢弃这个事件，不阻塞任务终态写入。
-                log.debug('generation event subscriber queue full, dropping event')
+                # 保留最新状态：慢消费者真正需要的是最新任务终态，而不是最早
+                # 的过渡态。淘汰一个最旧事件后立即写入当前事件，仍不阻塞生产者。
+                try:
+                    queue.get_nowait()
+                    queue.put_nowait(event)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    log.debug('generation event subscriber queue changed while replacing oldest event')
             except Exception:
                 log.exception('failed to publish generation event to a subscriber')
 

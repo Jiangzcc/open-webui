@@ -10,6 +10,10 @@ from open_webui.extensions.credits.constants import CREDIT_QUOTE_CACHE_TTL_SECON
 from .router_test_support import AuthenticatedUser
 
 
+class _EmptySession:
+    pass
+
+
 def _stub_openai_image_config(monkeypatch, credits_router) -> None:
     monkeypatch.setattr(
         credits_router.prepare_generation_call.__globals__['compat'],
@@ -220,9 +224,6 @@ def test_quote_endpoint_uses_the_image_adapter(monkeypatch) -> None:
 def test_quote_uses_the_edit_adapter_for_image_to_image_requests(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
-    class Session:
-        pass
-
     calls = []
 
     async def prepare_edit(_request, image_input, _metadata, _user):
@@ -263,7 +264,7 @@ def test_quote_uses_the_edit_adapter_for_image_to_image_requests(monkeypatch) ->
 
     result = asyncio.run(
         credits_router.quote_image(
-            Session(),
+            _EmptySession(),
             AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test'),
             {
                 'resource_id': 'model-a',
@@ -281,9 +282,6 @@ def test_quote_uses_the_edit_adapter_for_image_to_image_requests(monkeypatch) ->
 
 def test_quote_cache_recomputes_after_ttl_expiry(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
-
-    class Session:
-        pass
 
     compute_calls = []
     clock = [100.0]
@@ -326,9 +324,9 @@ def test_quote_cache_recomputes_after_ttl_expiry(monkeypatch) -> None:
     payload = {'resource_id': 'model-a', 'action': 'text-to-image', 'prompt': 'safe test prompt', 'dimensions': {}}
     user = AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test')
 
-    asyncio.run(credits_router.quote_image(Session(), user, payload))
+    asyncio.run(credits_router.quote_image(_EmptySession(), user, payload))
     clock[0] += CREDIT_QUOTE_CACHE_TTL_SECONDS + 1
-    asyncio.run(credits_router.quote_image(Session(), user, payload))
+    asyncio.run(credits_router.quote_image(_EmptySession(), user, payload))
 
     assert compute_calls == [100.0, 106.0]
 
@@ -349,9 +347,6 @@ def test_quote_rejects_an_invalid_payload_mapping() -> None:
 
 def test_quote_returns_insufficient_balance_state(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
-
-    class Session:
-        pass
 
     async def prepare(_request, _image_input, _metadata, _user):
         return type(
@@ -390,7 +385,7 @@ def test_quote_returns_insufficient_balance_state(monkeypatch) -> None:
 
     result = asyncio.run(
         credits_router.quote_image(
-            Session(),
+            _EmptySession(),
             AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test'),
             {'resource_id': 'model-a', 'action': 'text-to-image', 'prompt': 'safe test prompt', 'dimensions': {}},
         )
@@ -403,9 +398,6 @@ def test_quote_returns_insufficient_balance_state(monkeypatch) -> None:
 
 def test_quote_cache_isolated_by_user_and_invalidated_by_price_version(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
-
-    class Session:
-        pass
 
     calls = []
     price = type('Price', (), {'updated_at': 1, 'enabled': True})()
@@ -449,20 +441,17 @@ def test_quote_cache_isolated_by_user_and_invalidated_by_price_version(monkeypat
     user_one = AuthenticatedUser('user-1', 'User One', 'user-1@example.test')
     user_two = AuthenticatedUser('user-2', 'User Two', 'user-2@example.test')
 
-    asyncio.run(credits_router.quote_image(Session(), user_one, payload))
-    asyncio.run(credits_router.quote_image(Session(), user_one, payload))
-    asyncio.run(credits_router.quote_image(Session(), user_two, payload))
+    asyncio.run(credits_router.quote_image(_EmptySession(), user_one, payload))
+    asyncio.run(credits_router.quote_image(_EmptySession(), user_one, payload))
+    asyncio.run(credits_router.quote_image(_EmptySession(), user_two, payload))
     price.updated_at = 2
-    asyncio.run(credits_router.quote_image(Session(), user_one, payload))
+    asyncio.run(credits_router.quote_image(_EmptySession(), user_one, payload))
 
     assert calls == [1, 1, 2]
 
 
 def test_quote_prices_the_adapter_normalized_dimensions(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
-
-    class Session:
-        pass
 
     normalized_dimensions = {
         'size': '1024x1024',
@@ -510,7 +499,7 @@ def test_quote_prices_the_adapter_normalized_dimensions(monkeypatch) -> None:
 
     result = asyncio.run(
         credits_router.quote_image(
-            Session(),
+            _EmptySession(),
             AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test'),
             {
                 'resource_id': 'model-a',
@@ -562,9 +551,6 @@ def test_quote_returns_incomplete_price_state(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
     from open_webui.extensions.credits.errors import CreditError
 
-    class Session:
-        pass
-
     async def balance(_session, _user_id):
         return 4
 
@@ -581,7 +567,7 @@ def test_quote_returns_incomplete_price_state(monkeypatch) -> None:
 
     result = __import__('asyncio').run(
         credits_router.quote_image(
-            Session(),
+            _EmptySession(),
             AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test'),
             {'resource_id': 'model-a', 'action': 'text-to-image', 'prompt': 'safe test prompt', 'dimensions': {}},
         )
@@ -593,9 +579,6 @@ def test_quote_returns_incomplete_price_state(monkeypatch) -> None:
 
 def test_quote_returns_not_configured_state(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
-
-    class Session:
-        pass
 
     async def balance(_session, _user_id):
         return 4
@@ -609,7 +592,7 @@ def test_quote_returns_not_configured_state(monkeypatch) -> None:
 
     result = __import__('asyncio').run(
         credits_router.quote_image(
-            Session(),
+            _EmptySession(),
             AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test'),
             {'resource_id': 'model-a', 'action': 'text-to-image', 'prompt': 'safe test prompt', 'dimensions': {}},
         )
@@ -629,11 +612,8 @@ def test_quote_returns_not_configured_state(monkeypatch) -> None:
 def test_quote_does_not_create_an_account(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
-    class Session:
-        pass
-
     async def no_account_creation(session, user_id):
-        assert isinstance(session, Session)
+        assert isinstance(session, _EmptySession)
         assert user_id == 'user-1'
         return 7
 
@@ -662,7 +642,7 @@ def test_quote_does_not_create_an_account(monkeypatch) -> None:
 
     result = __import__('asyncio').run(
         credits_router.quote_image(
-            Session(),
+            _EmptySession(),
             AuthenticatedUser(id='user-1', name='User One', email='user-1@example.test'),
             {'resource_id': 'model-a', 'action': 'text-to-image', 'prompt': 'safe test prompt', 'dimensions': {}},
         )

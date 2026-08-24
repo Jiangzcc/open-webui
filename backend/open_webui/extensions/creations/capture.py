@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -8,6 +9,7 @@ import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
+from open_webui.extensions.creations.file_cleanup import cleanup_uploaded_files
 from open_webui.extensions.creations.metrics import creation_metrics
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.creations.schemas import (
@@ -132,14 +134,15 @@ async def capture_reference_snapshots(
         upload_file_handler = _handler
 
     captured: list[CapturedReferenceResult] = []
-    for reference in references:
-        extension = _MIME_BY_EXTENSION[reference.mime_type]
-        file = UploadFile(
-            file=io.BytesIO(reference.payload),
-            filename=f'creation-reference-{reference.position}{extension}',
-            headers={'content-type': reference.mime_type},
-        )
-        try:
+    uploaded_files: list[object] = []
+    try:
+        for reference in references:
+            extension = _MIME_BY_EXTENSION[reference.mime_type]
+            file = UploadFile(
+                file=io.BytesIO(reference.payload),
+                filename=f'creation-reference-{reference.position}{extension}',
+                headers={'content-type': reference.mime_type},
+            )
             file_item = await upload_file_handler(
                 request,
                 file=file,
@@ -147,19 +150,24 @@ async def capture_reference_snapshots(
                 process=False,
                 user=user,
             )
-        except Exception:
-            creation_metrics.reference_capture_failed(task=None, source=None)
-            raise
-        captured.append(
-            CapturedReferenceResult(
-                file_id=file_item.id,
-                file_user_id=file_item.user_id,
-                file_created_at=file_item.created_at,
-                mime_type=reference.mime_type,
-                sha256=reference.sha256,
-                position=reference.position,
+            uploaded_files.append(file_item)
+            captured.append(
+                CapturedReferenceResult(
+                    file_id=file_item.id,
+                    file_user_id=file_item.user_id,
+                    file_created_at=file_item.created_at,
+                    mime_type=reference.mime_type,
+                    sha256=reference.sha256,
+                    position=reference.position,
+                )
             )
-        )
+    except asyncio.CancelledError:
+        await cleanup_uploaded_files(uploaded_files)
+        raise
+    except Exception:
+        creation_metrics.reference_capture_failed(task=None, source=None)
+        await cleanup_uploaded_files(uploaded_files)
+        raise
     return tuple(captured)
 
 
@@ -257,7 +265,11 @@ async def _load_existing_batch(
     """批量预载既有 creation 行（复盘 P2：原先逐张 SELECT，N 图任务即 N 次查询）。"""
     if not file_ids:
         return {}
-    rows = (await session.execute(select(CreationMediaItem).where(CreationMediaItem.file_id.in_(file_ids)))).scalars().all()
+    rows = (
+        (await session.execute(select(CreationMediaItem).where(CreationMediaItem.file_id.in_(file_ids))))
+        .scalars()
+        .all()
+    )
     return {row.file_id: row for row in rows}
 
 
@@ -316,62 +328,69 @@ async def _verify_replay(
         raise RuntimeError('creation immutable identity conflict')
 
 
+def _validated_capture_batch(
+    context: CreationCaptureContext,
+    batch: CapturedImageBatch,
+) -> tuple[list[CapturedImageResult], list[str]]:
+    has_reused = any(isinstance(item, ReusedImageResult) for item in batch.images)
+    captured = [item for item in batch.images if isinstance(item, CapturedImageResult)]
+    if has_reused and captured:
+        raise RuntimeError('creation batch mixes reused and captured results')
+    if any(reference.file_user_id != context.user_id for reference in batch.references):
+        raise RuntimeError('creation file ownership mismatch')
+    reference_ids = [reference.file_id for reference in batch.references]
+    positions = [reference.position for reference in batch.references]
+    if positions != list(range(len(batch.references))) or len(reference_ids) != len(set(reference_ids)):
+        raise RuntimeError('invalid creation reference identity')
+    if any(result.file_user_id != context.user_id for result in captured):
+        raise RuntimeError('creation file ownership mismatch')
+    return captured, reference_ids
+
+
+async def _persist_captured_result(
+    session: AsyncSession,
+    context: CreationCaptureContext,
+    result: CapturedImageResult,
+    reference_ids: list[str],
+    existing: CreationMediaItem | None,
+) -> None:
+    if existing is not None:
+        await _verify_replay(existing, context, result, reference_ids)
+        return
+    try:
+        # SAVEPOINT isolates a concurrent duplicate without rolling back the
+        # surrounding billing terminal transaction.
+        async with session.begin_nested():
+            await _insert_creation(session, context, result, reference_ids)
+    except IntegrityError:
+        winner = await _load_existing(session, result.file_id)
+        if winner is None:
+            raise
+        await _verify_replay(winner, context, result, reference_ids)
+
+
 async def finalize_created_images(
     session: AsyncSession,
     context: CreationCaptureContext,
     batch: CapturedImageBatch,
 ) -> None:
-    images = batch.images
-    has_reused = any(isinstance(item, ReusedImageResult) for item in images)
-    has_captured = any(isinstance(item, CapturedImageResult) for item in images)
-    if has_reused and has_captured:
-        creation_metrics.capture_failed(task=context.task, source=context.source)
-        raise RuntimeError('creation batch mixes reused and captured results')
-    if has_reused and not has_captured:
-        return
-
-    for reference in batch.references:
-        if reference.file_user_id != context.user_id:
-            creation_metrics.capture_failed(task=context.task, source=context.source)
-            raise RuntimeError('creation file ownership mismatch')
-
-    reference_ids = [reference.file_id for reference in batch.references]
-    if [reference.position for reference in batch.references] != list(range(len(batch.references))) or len(
-        reference_ids
-    ) != len(set(reference_ids)):
-        creation_metrics.capture_failed(task=context.task, source=context.source)
-        raise RuntimeError('invalid creation reference identity')
-
     try:
-        for result in images:
-            if isinstance(result, CapturedImageResult) and result.file_user_id != context.user_id:
-                raise RuntimeError('creation file ownership mismatch')
-        captured = [item for item in images if isinstance(item, CapturedImageResult)]
+        captured, reference_ids = _validated_capture_batch(context, batch)
+        if not captured:
+            return
         existing_by_file = await _load_existing_batch(session, [item.file_id for item in captured])
         for result in captured:
-            existing = existing_by_file.get(result.file_id)
-            if existing is None:
-                try:
-                    # SAVEPOINT 包裹插入：finalize 运行在计费 terminal 事务
-                    # 里，撞唯一约束只能回滚本条插入，不能 rollback 整个事务。
-                    async with session.begin_nested():
-                        await _insert_creation(session, context, result, reference_ids)
-                except IntegrityError:
-                    # 复盘 P1：同 file_id 的并发捕获（在线路径与恢复路径重复
-                    # 投递）撞唯一约束——按已有行回退到 replay 校验：一致的
-                    # 幂等重放放行，不能让已生成的付费结果整体失败。
-                    existing = await _load_existing(session, result.file_id)
-                    if existing is None:
-                        raise
-                    await _verify_replay(existing, context, result, reference_ids)
-            else:
-                await _verify_replay(existing, context, result, reference_ids)
+            await _persist_captured_result(
+                session,
+                context,
+                result,
+                reference_ids,
+                existing_by_file.get(result.file_id),
+            )
     except Exception:
         creation_metrics.capture_failed(task=context.task, source=context.source)
         raise
-
-    captured_count = sum(1 for item in images if isinstance(item, CapturedImageResult))
-    creation_metrics.capture_succeeded(task=context.task, source=context.source, count=captured_count)
+    creation_metrics.capture_succeeded(task=context.task, source=context.source, count=len(captured))
 
 
 __all__ = [

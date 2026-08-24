@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, tick } from 'svelte';
+	import { tick } from 'svelte';
 	import CreditAccountsTab from '$lib/components/credits/admin/CreditAccountsTab.svelte';
 	import CreditLedgerTab from '$lib/components/credits/admin/CreditLedgerTab.svelte';
 	import CreditPricingTab from '$lib/components/credits/admin/CreditPricingTab.svelte';
@@ -7,8 +7,9 @@
 	import CreditReconciliationTab from '$lib/components/credits/admin/CreditReconciliationTab.svelte';
 	import CreditRedemptionTab from '$lib/components/credits/admin/CreditRedemptionTab.svelte';
 	import { registerCreditTranslations } from '$lib/components/credits/credits-i18n';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	registerCreditTranslations(i18n);
 
 	type CreditTab =

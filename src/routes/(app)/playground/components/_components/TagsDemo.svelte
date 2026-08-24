@@ -6,16 +6,14 @@
 	import DemoCard from './DemoCard.svelte';
 	const i18n = getContext<Writable<i18nType>>('i18n');
 
-	let tags = [
-		{ name: 'open-webui' },
-		{ name: 'svelte' }
-	];
+	let tags = [{ name: 'open-webui' }, { name: 'svelte' }];
 	const suggestionTags = ['important', 'draft', 'review', 'bug', 'feature'];
 </script>
 
 <DemoCard
 	title="Tags"
-	desc={$i18n.t('Tag input with autocomplete. on:add / on:delete. Enter or space to add.')}>
+	desc={$i18n.t('Tag input with autocomplete. on:add / on:delete. Enter or space to add.')}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<div class="w-full p-2 rounded-lg border border-gray-200 dark:border-gray-800">
 			<Tags

@@ -20,8 +20,10 @@
 		>
 			{show ? $i18n.t('Hide Overlay') : $i18n.t('Show Overlay')}
 		</button>
-		<div class="relative h-28 w-full rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
-			<Overlay show={show} content={$i18n.t('Loading')} opacity={1}>
+		<div
+			class="relative h-28 w-full rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden"
+		>
+			<Overlay {show} content={$i18n.t('Loading')} opacity={1}>
 				<div class="p-3 text-xs text-gray-500">
 					{$i18n.t('Underlying content here.')}
 				</div>

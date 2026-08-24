@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import anyio
 from fastapi import FastAPI
 from open_webui.extensions.migration_kit import SchemaGuard, validate_schema
+from starlette.requests import Request
 
 from .events import init_generation_event_bus
-from .generation_tasks import fail_incomplete_generation_tasks, shutdown_generation_tasks
+from .generation_tasks import shutdown_generation_tasks
+from .image_recovery import recover_incomplete_generation_tasks
 from .migrations.runner import SPEC, run_creation_migrations
 from .models import CreationBase
+from .recovery_request import recovery_request
 
 log = logging.getLogger(__name__)
+_RECOVERY_INTERVAL_SECONDS = 60
 
 _REQUIRED_TABLES = frozenset(table.name for table in CreationBase.metadata.sorted_tables)
 _REQUIRED_UNIQUE = {
@@ -43,6 +48,8 @@ _REQUIRED_CHECKS = {
             'ck_ext_image_task_status',
             'ck_ext_image_task_kind',
             'ck_ext_image_task_expected_count',
+            'ck_ext_image_task_execution_mode',
+            'ck_ext_image_task_delivery_attempts',
         }
     ),
     'ext_video_generation_task': frozenset(
@@ -104,6 +111,17 @@ def _validate_creation_schema() -> None:
     validate_schema(_SCHEMA_GUARD)
 
 
+async def _image_recovery_worker(request: Request) -> None:
+    while True:
+        await asyncio.sleep(_RECOVERY_INTERVAL_SECONDS)
+        try:
+            await recover_incomplete_generation_tasks(request)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception('Image recovery pass failed')
+
+
 async def initialize_creations_extension(app: FastAPI) -> None:
     """Run the creation migration chain and validate the resulting schema.
 
@@ -114,15 +132,27 @@ async def initialize_creations_extension(app: FastAPI) -> None:
     await anyio.to_thread.run_sync(run_creation_migrations)
     await anyio.to_thread.run_sync(_validate_creation_schema)
     app.state.creation_generation_tasks = {}
-    # 初始化任务事件总线，供 SSE 端点与任务执行体共享。早于 fail_incomplete
-    # 初始化，确保中断任务标记失败时也能广播（尽管此时无订阅者，会安全跳过）。
+    # 初始化任务事件总线，供 SSE 端点与任务执行体共享。
     init_generation_event_bus(app)
-    interrupted = await fail_incomplete_generation_tasks()
-    if interrupted:
-        log.warning('Marked %s interrupted image generation task(s) as failed', interrupted)
+    request = recovery_request(app)
+    recovered = await recover_incomplete_generation_tasks(request)
+    if recovered:
+        log.info('Scheduled %s persisted image task(s) for recovery', recovered)
+    app.state.image_recovery_task = asyncio.create_task(
+        _image_recovery_worker(request),
+        name='image-delivery-recovery',
+    )
 
 
 async def shutdown_creations_extension(app: FastAPI) -> None:
+    recovery = getattr(app.state, 'image_recovery_task', None)
+    if recovery is not None:
+        recovery.cancel()
+        try:
+            await recovery
+        except asyncio.CancelledError:
+            pass
+        delattr(app.state, 'image_recovery_task')
     await shutdown_generation_tasks(app)
 
 

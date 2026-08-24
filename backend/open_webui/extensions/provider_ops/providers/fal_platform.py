@@ -167,6 +167,19 @@ def _chunks(values: tuple[str, ...], size: int) -> Iterable[tuple[str, ...]]:
         yield values[index : index + size]
 
 
+async def _platform_response_error(response: Any) -> FalPlatformError:
+    code = f'provider_platform_http_{response.status}'
+    try:
+        payload = await response.json(content_type=None)
+    except Exception:
+        payload = None
+    error = payload.get('error') if isinstance(payload, dict) else None
+    candidate = error.get('type') if isinstance(error, dict) else None
+    if isinstance(candidate, str) and candidate:
+        code = candidate[:64]
+    return FalPlatformError(code, status_code=response.status)
+
+
 class FalPlatformClient:
     def __init__(self, api_key: str, base_url: str = FAL_PLATFORM_BASE_URL):
         if not api_key:
@@ -183,16 +196,7 @@ class FalPlatformClient:
             ssl=AIOHTTP_CLIENT_SESSION_SSL,
         ) as response:
             if response.status >= 400:
-                code = f'provider_platform_http_{response.status}'
-                try:
-                    payload = await response.json(content_type=None)
-                    error = payload.get('error') if isinstance(payload, dict) else None
-                    candidate = error.get('type') if isinstance(error, dict) else None
-                    if isinstance(candidate, str) and candidate:
-                        code = candidate[:64]
-                except Exception:
-                    pass
-                raise FalPlatformError(code, status_code=response.status)
+                raise await _platform_response_error(response)
             payload = await response.json(content_type=None)
         if not isinstance(payload, dict):
             raise FalPlatformError('provider_platform_invalid_response')
@@ -282,32 +286,39 @@ class FalPlatformClient:
         records: list[FalRequestRecord] = []
         try:
             for endpoint_batch in _chunks(endpoint_ids, _MAX_ENDPOINTS_PER_REQUEST):
-                params = [
-                    *[('endpoint_id', endpoint_id) for endpoint_id in endpoint_batch],
-                    ('start', start),
-                    ('end', end),
-                    ('sort_by', 'ended_at'),
-                    ('limit', '100'),
-                ]
-                cursor = None
-                seen_cursors: set[str] = set()
-                for _ in range(_MAX_PAGES):
-                    page_params = [*params, *(([('cursor', cursor)]) if cursor else [])]
-                    page = FalRequestResponse.model_validate(
-                        await self._get('/models/requests/by-endpoint', page_params)
-                    )
-                    records.extend(page.items)
-                    cursor = page.next_cursor
-                    if not cursor:
-                        break
-                    if cursor in seen_cursors:
-                        raise FalPlatformError('provider_platform_cursor_loop')
-                    seen_cursors.add(cursor)
-                else:
-                    raise FalPlatformError('provider_platform_page_limit')
+                records.extend(await self._request_batch(endpoint_batch, start=start, end=end))
         except ValidationError as error:
             raise FalPlatformError('provider_platform_invalid_response') from error
         return tuple(records)
+
+    async def _request_batch(
+        self,
+        endpoint_batch: tuple[str, ...],
+        *,
+        start: str,
+        end: str,
+    ) -> tuple[FalRequestRecord, ...]:
+        params = [
+            *[('endpoint_id', endpoint_id) for endpoint_id in endpoint_batch],
+            ('start', start),
+            ('end', end),
+            ('sort_by', 'ended_at'),
+            ('limit', '100'),
+        ]
+        records: list[FalRequestRecord] = []
+        cursor = None
+        seen_cursors: set[str] = set()
+        for _ in range(_MAX_PAGES):
+            page_params = [*params, *(([('cursor', cursor)]) if cursor else [])]
+            page = FalRequestResponse.model_validate(await self._get('/models/requests/by-endpoint', page_params))
+            records.extend(page.items)
+            cursor = page.next_cursor
+            if not cursor:
+                return tuple(records)
+            if cursor in seen_cursors:
+                raise FalPlatformError('provider_platform_cursor_loop')
+            seen_cursors.add(cursor)
+        raise FalPlatformError('provider_platform_page_limit')
 
     async def _paginated_usage(self, params: list[tuple[str, str]]) -> tuple[FalUsageBucket, ...]:
         buckets: list[FalUsageBucket] = []
@@ -339,33 +350,43 @@ class FalPlatformClient:
         buckets: list[FalAnalyticsBucket] = []
         try:
             for endpoint_batch in _chunks(endpoint_ids, _MAX_ENDPOINTS_PER_REQUEST):
-                params = [
-                    *[('endpoint_id', endpoint_id) for endpoint_id in endpoint_batch],
-                    ('start', start),
-                    ('end', end),
-                    ('timeframe', timeframe),
-                    ('bound_to_timeframe', 'false'),
-                    ('expand', 'time_series'),
-                    *[('expand', metric) for metric in _ANALYTICS_METRICS],
-                    ('limit', '50'),
-                ]
-                cursor = None
-                seen_cursors: set[str] = set()
-                for _ in range(_MAX_PAGES):
-                    page_params = [*params, *(([('cursor', cursor)]) if cursor else [])]
-                    page = FalAnalyticsResponse.model_validate(await self._get('/models/analytics', page_params))
-                    buckets.extend(page.time_series)
-                    cursor = page.next_cursor
-                    if not cursor:
-                        break
-                    if cursor in seen_cursors:
-                        raise FalPlatformError('provider_platform_cursor_loop')
-                    seen_cursors.add(cursor)
-                else:
-                    raise FalPlatformError('provider_platform_page_limit')
+                buckets.extend(await self._analytics_batch(endpoint_batch, start=start, end=end, timeframe=timeframe))
         except ValidationError as error:
             raise FalPlatformError('provider_platform_invalid_response') from error
         return tuple(buckets)
+
+    async def _analytics_batch(
+        self,
+        endpoint_batch: tuple[str, ...],
+        *,
+        start: str,
+        end: str,
+        timeframe: str,
+    ) -> tuple[FalAnalyticsBucket, ...]:
+        params = [
+            *[('endpoint_id', endpoint_id) for endpoint_id in endpoint_batch],
+            ('start', start),
+            ('end', end),
+            ('timeframe', timeframe),
+            ('bound_to_timeframe', 'false'),
+            ('expand', 'time_series'),
+            *[('expand', metric) for metric in _ANALYTICS_METRICS],
+            ('limit', '50'),
+        ]
+        buckets: list[FalAnalyticsBucket] = []
+        cursor = None
+        seen_cursors: set[str] = set()
+        for _ in range(_MAX_PAGES):
+            page_params = [*params, *(([('cursor', cursor)]) if cursor else [])]
+            page = FalAnalyticsResponse.model_validate(await self._get('/models/analytics', page_params))
+            buckets.extend(page.time_series)
+            cursor = page.next_cursor
+            if not cursor:
+                return tuple(buckets)
+            if cursor in seen_cursors:
+                raise FalPlatformError('provider_platform_cursor_loop')
+            seen_cursors.add(cursor)
+        raise FalPlatformError('provider_platform_page_limit')
 
 
 __all__ = [

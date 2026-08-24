@@ -36,7 +36,8 @@ print("hello, world")
 		/>
 		<details class="mt-2 text-[11px] text-gray-400">
 			<summary class="cursor-pointer select-none">{$i18n.t('Source')} (markdown)</summary>
-			<pre class="mt-1 whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-850 p-2 rounded">{value}</pre>
+			<pre
+				class="mt-1 whitespace-pre-wrap break-words bg-gray-50 dark:bg-gray-850 p-2 rounded">{value}</pre>
 		</details>
 	</div>
 </DemoCard>

@@ -14,7 +14,8 @@
 
 <DemoCard
 	title="Pagination"
-	desc={$i18n.t('bits-ui pagination. bind:page (page number), count (total items), perPage.')}>
+	desc={$i18n.t('bits-ui pagination. bind:page (page number), count (total items), perPage.')}
+>
 	<div class="flex flex-col items-center gap-2 w-full">
 		<Pagination bind:page {count} {perPage} />
 		<span class="text-[11px] text-gray-400">

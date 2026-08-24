@@ -17,7 +17,8 @@
 
 <DemoCard
 	title="Select"
-	desc={$i18n.t('Custom dropdown base: trigger + content slots. Call selectItem(item) to select.')}>
+	desc={$i18n.t('Custom dropdown base: trigger + content slots. Call selectItem(item) to select.')}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<div class="w-full">
 			<Select

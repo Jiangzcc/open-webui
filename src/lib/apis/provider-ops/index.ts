@@ -111,7 +111,8 @@ export const getProviderOverview = (token: string, provider: string, windowHours
 export const getVideoRuntimeStatus = (token: string) =>
 	request<VideoRuntimeStatus>('/admin/video-runtime', token);
 
-export const getFalRuntimeConfig = (token: string) => request<FalRuntimeConfig>('/admin/fal-config', token);
+export const getFalRuntimeConfig = (token: string) =>
+	request<FalRuntimeConfig>('/admin/fal-config', token);
 
 export const updateFalRuntimeConfig = (token: string, config: FalRuntimeConfig) =>
 	request<FalRuntimeConfig>('/admin/fal-config/update', token, {

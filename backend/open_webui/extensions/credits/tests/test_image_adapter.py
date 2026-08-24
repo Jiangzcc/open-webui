@@ -749,7 +749,12 @@ async def test_a1111_dynamic_model_fetch_skipped_when_configured(monkeypatch) ->
         'get_runtime_image_config',
         AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='checkpoint')),
     )
-    assert await compat.resolve_dynamic_engine_model(request(), config(IMAGE_GENERATION_ENGINE=''), image_input()) is None
+    assert (
+        await compat.resolve_dynamic_engine_model(
+            request(), config(IMAGE_GENERATION_ENGINE=''), image_input()
+        )
+        is None
+    )
     assert (
         await compat.resolve_dynamic_engine_model(
             request(), config(IMAGE_GENERATION_ENGINE='openai'), image_input()
@@ -1131,15 +1136,33 @@ async def test_a1111_dynamic_model_cache_is_scoped_to_instance(monkeypatch) -> N
         monkeypatch.setattr('open_webui.routers.images.get_image_model', fetch)
 
         first = await compat.resolve_dynamic_engine_model(
-            request(), config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='', AUTOMATIC1111_BASE_URL='http://a:7860'), image_input()
+            request(),
+            config(
+                IMAGE_GENERATION_ENGINE='',
+                IMAGE_GENERATION_MODEL='',
+                AUTOMATIC1111_BASE_URL='http://a:7860',
+            ),
+            image_input(),
         )
         # 同一实例的第二次调用命中 TTL 缓存，不再发网络请求。
         cached = await compat.resolve_dynamic_engine_model(
-            request(), config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='', AUTOMATIC1111_BASE_URL='http://a:7860'), image_input()
+            request(),
+            config(
+                IMAGE_GENERATION_ENGINE='',
+                IMAGE_GENERATION_MODEL='',
+                AUTOMATIC1111_BASE_URL='http://a:7860',
+            ),
+            image_input(),
         )
         # 切换实例（base_url 变化）：缓存不命中，重新解析。
         switched = await compat.resolve_dynamic_engine_model(
-            request(), config(IMAGE_GENERATION_ENGINE='', IMAGE_GENERATION_MODEL='', AUTOMATIC1111_BASE_URL='http://b:7860'), image_input()
+            request(),
+            config(
+                IMAGE_GENERATION_ENGINE='',
+                IMAGE_GENERATION_MODEL='',
+                AUTOMATIC1111_BASE_URL='http://b:7860',
+            ),
+            image_input(),
         )
 
         assert first == 'checkpoint-1'

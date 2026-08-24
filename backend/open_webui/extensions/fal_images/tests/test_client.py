@@ -15,6 +15,7 @@ from open_webui.extensions.fal_images.client import (
     run_fal_queue,
     validate_fal_image_size,
 )
+from open_webui.extensions.tests.http_test_support import AsyncJsonResponse as _FakeResponse
 
 
 @pytest.mark.parametrize(
@@ -215,24 +216,6 @@ def test_custom_size_validation_can_run_before_provider_payload_build(monkeypatc
         validate_fal_image_size('fal-ai/custom-model', _form(size='not-a-size'))
 
 
-class _FakeResponse:
-    def __init__(self, payload, status=200):
-        self.payload = payload
-        self.status = status
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *_args):
-        return None
-
-    async def json(self, content_type=None):
-        return self.payload
-
-    async def text(self):
-        return str(self.payload)
-
-
 class _FakeSession:
     def __init__(self):
         self.status_responses = [
@@ -261,6 +244,13 @@ class _FakeSession:
         return _FakeResponse({})
 
 
+class _CompletedThenFailingSession(_FakeSession):
+    def get(self, url, **_kwargs):
+        if url.endswith('/status'):
+            return _FakeResponse({'status': 'COMPLETED'})
+        return _FakeResponse({'detail': 'temporary response failure'}, status=503)
+
+
 class _RecordingObserver:
     def __init__(self):
         self.events = []
@@ -280,7 +270,7 @@ class _RecordingObserver:
 
 @pytest.mark.asyncio
 async def test_fal_queue_reports_submission_status_and_completion(monkeypatch) -> None:
-    import open_webui.extensions.fal_images.client as fal
+    import open_webui.extensions.fal_images.queue_client as fal
 
     observer = _RecordingObserver()
     monkeypatch.setattr(fal, 'get_session', lambda: _async_value(_FakeSession()))
@@ -302,15 +292,9 @@ async def test_fal_queue_reports_submission_status_and_completion(monkeypatch) -
 
 @pytest.mark.asyncio
 async def test_fal_queue_preserves_completed_state_when_result_fetch_fails(monkeypatch) -> None:
-    import open_webui.extensions.fal_images.client as fal
+    import open_webui.extensions.fal_images.queue_client as fal
 
-    class Session(_FakeSession):
-        def get(self, url, **_kwargs):
-            if url.endswith('/status'):
-                return _FakeResponse({'status': 'COMPLETED'})
-            return _FakeResponse({'detail': 'temporary response failure'}, status=503)
-
-    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(Session()))
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(_CompletedThenFailingSession()))
 
     with pytest.raises(FalImageError) as captured:
         await run_fal_queue(
@@ -326,8 +310,53 @@ async def test_fal_queue_preserves_completed_state_when_result_fetch_fails(monke
 
 
 @pytest.mark.asyncio
+async def test_fal_queue_never_sends_key_to_cross_origin_response_url(monkeypatch) -> None:
+    import open_webui.extensions.fal_images.queue_client as fal
+
+    requested: list[str] = []
+
+    class Session(_FakeSession):
+        def post(self, *_args, **_kwargs):
+            return _FakeResponse(
+                {
+                    'request_id': 'request-1',
+                    'response_url': 'https://attacker.example/result',
+                }
+            )
+
+        def get(self, url, **_kwargs):
+            requested.append(url)
+            raise AssertionError('cross-origin URL must be rejected before GET')
+
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(Session()))
+
+    with pytest.raises(FalImageError, match='invalid queue URL') as captured:
+        await run_fal_queue('fal-ai/example', {'prompt': 'test'}, 'secret', 'https://queue.test')
+
+    assert requested == []
+    assert captured.value.provider_submitted is True
+
+
+@pytest.mark.asyncio
+async def test_resume_fal_queue_rejects_cross_origin_urls_before_session_lookup(monkeypatch) -> None:
+    import open_webui.extensions.fal_images.queue_client as fal
+
+    async def forbidden_session():
+        raise AssertionError('invalid recovery URL must fail before session lookup')
+
+    monkeypatch.setattr(fal, 'get_session', forbidden_session)
+    with pytest.raises(FalImageError, match='invalid queue URL'):
+        await resume_fal_queue(
+            status_url=None,
+            response_url='https://attacker.example/result',
+            api_key='secret',
+            base_url='https://queue.test',
+        )
+
+
+@pytest.mark.asyncio
 async def test_fal_queue_cancels_remote_request_when_worker_is_cancelled(monkeypatch) -> None:
-    import open_webui.extensions.fal_images.client as fal
+    import open_webui.extensions.fal_images.queue_client as fal
 
     cancelled_urls: list[str] = []
 
@@ -360,7 +389,7 @@ async def test_fal_queue_cancels_remote_request_when_worker_is_cancelled(monkeyp
 
 @pytest.mark.asyncio
 async def test_resume_fal_queue_only_polls_and_fetches_existing_response(monkeypatch) -> None:
-    import open_webui.extensions.fal_images.client as fal
+    import open_webui.extensions.fal_images.queue_client as fal
 
     class Session(_FakeSession):
         def post(self, *_args, **_kwargs):
@@ -374,6 +403,7 @@ async def test_resume_fal_queue_only_polls_and_fetches_existing_response(monkeyp
         status_url='https://queue.test/status',
         response_url='https://queue.test/result',
         api_key='secret',
+        base_url='https://queue.test',
         observer=observer,
     )
 
@@ -383,21 +413,16 @@ async def test_resume_fal_queue_only_polls_and_fetches_existing_response(monkeyp
 
 @pytest.mark.asyncio
 async def test_resume_fal_queue_preserves_completed_state_on_response_failure(monkeypatch) -> None:
-    import open_webui.extensions.fal_images.client as fal
+    import open_webui.extensions.fal_images.queue_client as fal
 
-    class Session(_FakeSession):
-        def get(self, url, **_kwargs):
-            if url.endswith('/status'):
-                return _FakeResponse({'status': 'COMPLETED'})
-            return _FakeResponse({'detail': 'temporary response failure'}, status=503)
-
-    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(Session()))
+    monkeypatch.setattr(fal, 'get_session', lambda: _async_value(_CompletedThenFailingSession()))
 
     with pytest.raises(FalImageError) as captured:
         await resume_fal_queue(
             status_url='https://queue.test/status',
             response_url='https://queue.test/result',
             api_key='secret',
+            base_url='https://queue.test',
         )
 
     assert captured.value.provider_submitted is True
@@ -412,7 +437,7 @@ async def _async_value(value):
 async def test_resume_fal_queue_notifies_observer_failed_on_cancel(monkeypatch) -> None:
     """复盘 P1：恢复路径取消也要通知 observer failed（与 run_fal_queue
     对齐），否则关停取消时 provider_invocation 行停留无终态。"""
-    import open_webui.extensions.fal_images.client as fal
+    import open_webui.extensions.fal_images.queue_client as fal
 
     async def cancel_during_poll(_seconds):
         raise asyncio.CancelledError
@@ -426,7 +451,75 @@ async def test_resume_fal_queue_notifies_observer_failed_on_cancel(monkeypatch) 
             status_url='https://queue.test/status',
             response_url='https://queue.test/result',
             api_key='secret',
+            base_url='https://queue.test',
             observer=observer,
         )
 
     assert [event[0] for event in observer.events] == ['status', 'failed']
+
+
+def test_payload_helper_edges_cover_invalid_and_optional_values() -> None:
+    import open_webui.extensions.fal_images.client as client
+
+    assert client._get_fal_model_info(None) is None
+    assert client._get_fal_model_info('missing') is None
+    assert client._safe_option('bad', ['good'], 'good') == 'good'
+    assert client._safe_option('value', None, None) == 'value'
+    assert client._safe_count(0, None) is None
+    assert client._safe_count(2, [1]) is None
+    assert client._parse_pixel_size(123) is None
+    assert client._parse_pixel_size('bad') is None
+    assert client._validate_custom_size(0, 1, None) is not None
+    assert client._validate_custom_size(10, 10, None) is None
+
+    data = {}
+    client._set_option(data, None, 'value', None, None)
+    client._set_option(data, 'max_image_size', '2', ['2'], None)
+    assert data == {'max_image_size': 2}
+    client._set_image_input(data, 'image_url', [], None)
+    client._set_image_input(data, 'image_url', ['one', 'two'], 1)
+    client._set_image_input(data, 'image_urls', ['one', 'two'], 1)
+    assert data['image_url'] == 'one'
+    assert data['image_urls'] == ['one']
+
+    form = _form(flag=None, steps=99, scale=True, note='  text  ')
+    client._set_option_fields(data, form, [{'field': None}, {'field': 'quality', 'default': 'high'}])
+    client._set_boolean_fields(data, form, [{'field': None}, {'field': 'flag', 'default': True}])
+    client._set_integer_fields(data, form, [{'field': None}, {'field': 'steps', 'max': 10}])
+    client._set_number_fields(data, form, [{'field': None}, {'field': 'scale'}])
+    client._set_text_fields(data, form, [{'field': None}, {'field': 'note'}])
+    assert data['flag'] is True
+    assert data['note'] == 'text'
+
+
+def test_mock_sizes_unknown_payloads_and_result_url_shapes(monkeypatch) -> None:
+    import open_webui.extensions.fal_images.client as client
+
+    assert client._mock_named_resolution_size(None, None) is None
+    assert client._mock_named_resolution_size('bad', None) is None
+    assert client._mock_named_resolution_size('2K', None) == (2048, 2048)
+    assert client._mock_named_resolution_size('2K', '16:9') == (2048, 1152)
+    assert client._mock_named_resolution_size('2K', '9:16') == (1152, 2048)
+    assert client._mock_image_size(_form(size='640x480')) == (640, 480)
+    assert client._mock_image_size(_form(size='0x0', aspect_ratio='16:9')) == client.FAL_MOCK_ASPECT_RATIO_SIZES['16:9']
+
+    monkeypatch.setattr(client.random, 'getrandbits', lambda _bits: 7)
+    result = client.get_mock_fal_image_result('model', _form(size='640x480', n=2))
+    assert len(result['images']) == 2
+    assert result['seed'] == '7-0'
+
+    unknown = SimpleNamespace(
+        prompt='Prompt',
+        n=2,
+        aspect_ratio='1:1',
+        resolution='1K',
+        output_format=None,
+        system_prompt='System',
+    )
+    payload = client.build_fal_image_payload(unknown, 'unknown', ['one'])
+    assert payload['image_urls'] == ['one']
+    assert payload['output_format'] == 'png'
+
+    assert client.extract_fal_image_urls({'data': {'image': {'url': 'one'}, 'url': 'two'}}) == ['one', 'two']
+    assert client.extract_fal_image_urls(['one', {'url': 'two'}, {'bad': True}, 3]) == ['one', 'two']
+    assert client.extract_fal_image_urls(None) == []

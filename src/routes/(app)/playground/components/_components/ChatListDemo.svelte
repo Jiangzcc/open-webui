@@ -40,7 +40,12 @@
 		setTimeout(() => {
 			chatList = [
 				...chatList,
-				{ id: 'c' + (chatList.length + 1), title: '历史会话 #' + (chatList.length + 1), updated_at: now - 172800, time_range: 'Last 7 Days' }
+				{
+					id: 'c' + (chatList.length + 1),
+					title: '历史会话 #' + (chatList.length + 1),
+					updated_at: now - 172800,
+					time_range: 'Last 7 Days'
+				}
 			];
 			loading = false;
 			if (chatList.length >= 6) allLoaded = true;
@@ -67,7 +72,9 @@
 
 <DemoCard
 	title="ChatList"
-	desc={$i18n.t('Chat list with time grouping, sort headers, load-more. Uses mock data, no backend.')}
+	desc={$i18n.t(
+		'Chat list with time grouping, sort headers, load-more. Uses mock data, no backend.'
+	)}
 >
 	<div class="w-full">
 		<ChatList
@@ -78,7 +85,7 @@
 			{orderBy}
 			{direction}
 			onLoadMore={loadMore}
-			onChatClick={onChatClick}
+			{onChatClick}
 			onSort={onSort as any}
 		/>
 		{#if clickLog}

@@ -47,11 +47,9 @@ IF "%WEBUI_SECRET_KEY% %WEBUI_JWT_SECRET_KEY%" == " " (
     SET /p WEBUI_SECRET_KEY=<%KEY_FILE%
 )
 
-:: Execute uvicorn
+:: Use the source-tree Windows runner so PostgreSQL stays on the Selector event
+:: loop configured by open_webui.internal.db. Calling uvicorn directly selects
+:: ProactorEventLoop again, which psycopg cannot use asynchronously.
 SET "WEBUI_SECRET_KEY=%WEBUI_SECRET_KEY%"
 IF "%UVICORN_WORKERS%"=="" SET UVICORN_WORKERS=1
-::  --reload --reload-dir open_webui
-rem Windows + PostgreSQL：dev_server.py 先设置 WindowsSelectorEventLoopPolicy 再以 loop=none 启动，
-rem 避免 psycopg v3 异步引擎在 ProactorEventLoop 下启动失败（直接 uvicorn 命令行不可用）。
-python dev_server.py
-:: For ssl user uvicorn open_webui.main:app --host "%HOST%" --port "%PORT%" --forwarded-allow-ips '*' --ssl-keyfile "key.pem" --ssl-certfile "cert.pem" --ws auto
+python -m open_webui.windows_server

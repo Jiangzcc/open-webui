@@ -29,15 +29,20 @@
 
 	const refreshBalance = async () => {
 		requestController?.abort();
-		requestController = new AbortController();
+		const controller = new AbortController();
+		requestController = controller;
 		balanceState = { status: 'loading', balance: null };
 
 		try {
-			const { balance } = await getMyCredits(localStorage.token, requestController.signal);
+			const { balance } = await getMyCredits(localStorage.token, controller.signal);
+			if (requestController !== controller) return;
 			balanceState = { status: 'ready', balance };
 		} catch (error) {
 			if (error instanceof DOMException && error.name === 'AbortError') return;
+			if (requestController !== controller) return;
 			balanceState = unavailableCreditBalanceState(balanceState);
+		} finally {
+			if (requestController === controller) requestController = null;
 		}
 	};
 
@@ -55,7 +60,7 @@
 </script>
 
 <button
-	class="flex h-[1.6875rem] w-full cursor-pointer select-none items-center gap-2 rounded-xl px-2 text-left text-[13px] transition hover:bg-gray-50/40 dark:hover:bg-gray-800/40"
+	class="flex h-11 w-full cursor-pointer select-none items-center gap-2 rounded-xl px-2 text-left text-[13px] transition hover:bg-gray-50/40 sm:h-[1.6875rem] dark:hover:bg-gray-800/40"
 	type="button"
 	on:click={() => dispatch('openLedger')}
 >

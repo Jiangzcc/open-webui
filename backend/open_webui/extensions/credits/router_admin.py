@@ -35,7 +35,6 @@ from open_webui.extensions.credits.router_support import (
     _enforce_rate_limit,
     _ledger_limiter,
     _public_error_response,
-    _public_user_error_response,
     _redeem_admin_limiter,
     _unexpected_error_response,
     _user_snapshot,
@@ -95,7 +94,7 @@ async def get_redeem_batches(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-list:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-list:{_user_snapshot(user).id}')
     try:
         return (await list_redeem_batches(session, skip=skip, limit=limit)).model_dump()
     except CreditError as error:
@@ -111,7 +110,7 @@ async def generate_redeem_batch(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> JSONResponse:
-    _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-create:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-create:{_user_snapshot(user).id}')
     # Set this before generating any one-time plaintext. The shared ASGI scope is
     # server-owned, so a client cannot opt arbitrary responses out of audit logs.
     request.scope['audit_redact_bodies'] = frozenset({'response'})
@@ -138,10 +137,11 @@ async def get_redeem_batch_codes(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> JSONResponse:
-    # Codes are stored in plaintext so administrators can retrieve them at any
-    # time; keep the response out of audit logs and HTTP caches like generation.
+    # The list exposes only irreversible-code metadata and a non-sensitive hint.
+    # Keep it out of audit bodies and HTTP caches anyway, because redemption
+    # status and operator activity are still administrative data.
     request.scope['audit_redact_bodies'] = frozenset({'response'})
-    _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-codes:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-codes:{_user_snapshot(user).id}')
     try:
         page = await list_redeem_codes(session, batch_id, skip=skip, limit=limit)
     except CreditError as error:
@@ -162,7 +162,7 @@ async def get_redeem_batch_audit(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-audit:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-audit:{_user_snapshot(user).id}')
     try:
         return (await list_redeem_audit(session, batch_id, skip=skip, limit=limit)).model_dump()
     except CreditError as error:
@@ -178,7 +178,7 @@ async def void_credit_redeem_batch(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-void:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-void:{_user_snapshot(user).id}')
     audit = _audit_context(request)
     try:
         count = await void_redeem_batch(
@@ -202,7 +202,7 @@ async def void_credit_redeem_code(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-void:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_redeem_admin_limiter, f'credits:redeem-admin-void:{_user_snapshot(user).id}')
     audit = _audit_context(request)
     try:
         voided = await void_redeem_code(
@@ -242,7 +242,7 @@ async def repair_credit_account_from_ledger(
     account_ledger_mismatch 拒绝一切调整；该端点在运维确认数据库备份后，
     按台账合计校准账户余额，让后续调整恢复可用。
     """
-    _enforce_rate_limit(_adjustment_limiter, f'credits:repair:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_adjustment_limiter, f'credits:repair:{_user_snapshot(user).id}')
     try:
         ledger = await repair_account_from_ledger(
             session,
@@ -273,7 +273,7 @@ async def get_admin_credit_ledger(
     _user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_ledger_limiter, f'credits:admin-ledger:{_user_snapshot(_user).id}')
+    await _enforce_rate_limit(_ledger_limiter, f'credits:admin-ledger:{_user_snapshot(_user).id}')
     try:
         page = await list_admin_ledger(session, query)
     except CreditError as error:
@@ -289,7 +289,7 @@ async def get_credit_reconciliation_cases(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_ledger_limiter, f'credits:reconciliation:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_ledger_limiter, f'credits:reconciliation:{_user_snapshot(user).id}')
     try:
         return (await list_reconciliation_cases(session, query)).model_dump()
     except CreditError as error:
@@ -306,7 +306,7 @@ async def compensate_credit_reconciliation_case(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, object]:
-    _enforce_rate_limit(_adjustment_limiter, f'credits:reconciliation-adjust:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_adjustment_limiter, f'credits:reconciliation-adjust:{_user_snapshot(user).id}')
     try:
         audit = _audit_context(request)
         ledger, created = await compensate_reconciliation_case(
@@ -331,7 +331,7 @@ async def create_credit_adjustment(
     user=Depends(get_admin_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, str]:
-    _enforce_rate_limit(_adjustment_limiter, f'credits:adjustment:{_user_snapshot(user).id}')
+    await _enforce_rate_limit(_adjustment_limiter, f'credits:adjustment:{_user_snapshot(user).id}')
     try:
         audit = _audit_context(request)
     except HTTPException:
@@ -515,14 +515,7 @@ async def update_credit_price(
         async with session.begin():
             price = await session.get(CreditPrice, price_id)
             if price is not None:
-                next_rules = body.rules if body.rules is not None else PriceRuleSet.model_validate(price.rules)
-                _validate_price_dimensions(price.service_type, price.action, next_rules)
-                for field, value in changes.items():
-                    setattr(price, field, value)
-                price.updated_at = max(int(time()), price.updated_at + 1)
-                price.updated_by_id = getattr(user, 'id', None)
-                price.updated_by_name_snapshot = getattr(user, 'name', None)
-                price.updated_by_email_snapshot = getattr(user, 'email', None)
+                _apply_credit_price_update(price, body, changes, user)
                 await session.flush()
     except HTTPException:
         raise
@@ -535,6 +528,22 @@ async def update_credit_price(
     except Exception as error:
         return _unexpected_error_response(error)
     return _price_response(price)
+
+
+def _apply_credit_price_update(
+    price: CreditPrice,
+    body: PriceUpdateRequest,
+    changes: dict[str, object],
+    user: object,
+) -> None:
+    next_rules = body.rules if body.rules is not None else PriceRuleSet.model_validate(price.rules)
+    _validate_price_dimensions(price.service_type, price.action, next_rules)
+    for field, value in changes.items():
+        setattr(price, field, value)
+    price.updated_at = max(int(time()), price.updated_at + 1)
+    price.updated_by_id = getattr(user, 'id', None)
+    price.updated_by_name_snapshot = getattr(user, 'name', None)
+    price.updated_by_email_snapshot = getattr(user, 'email', None)
 
 
 @admin_router.delete('/admin/prices/{price_id}')

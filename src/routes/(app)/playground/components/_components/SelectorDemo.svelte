@@ -12,7 +12,10 @@
 
 <DemoCard
 	title="Selector"
-	desc={$i18n.t('Select-based picker with built-in search + checkmark. Default placeholder = Select a model.')}>
+	desc={$i18n.t(
+		'Select-based picker with built-in search + checkmark. Default placeholder = Select a model.'
+	)}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<div class="w-full">
 			<Selector

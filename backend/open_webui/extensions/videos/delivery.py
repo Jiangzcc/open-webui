@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Request
+from open_webui.extensions.creations.file_cleanup import cleanup_uploaded_files as _cleanup_generated_files
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.videos.executor import VideoExecutionError, VideoExecutionOutput
 from open_webui.extensions.videos.pexels_mock import (
@@ -18,7 +19,6 @@ from open_webui.extensions.videos.pexels_mock import (
 )
 from open_webui.extensions.videos.schemas import VideoTaskResponse, VideoTaskResult
 from open_webui.models.files import Files
-from open_webui.storage.provider import Storage
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile
 
@@ -140,6 +140,75 @@ async def _upload_video_file(
         stream.close()
 
 
+async def _upload_mock_pair(
+    request: Request,
+    user: object,
+    video_source: Path | bytes,
+    poster_source: Path | bytes,
+    poster_filename: str,
+    poster_content_type: str,
+) -> tuple[object, object]:
+    uploaded_files: list[object] = []
+    try:
+        video_file = await _upload_mock_file(request, user, video_source, 'generated-video.mp4', 'video/mp4')
+        uploaded_files.append(video_file)
+        poster_file = await _upload_mock_file(request, user, poster_source, poster_filename, poster_content_type)
+        uploaded_files.append(poster_file)
+        return video_file, poster_file
+    except BaseException:
+        await _cleanup_generated_files(uploaded_files)
+        raise
+
+
+async def _persist_mock_creation(
+    request: Request,
+    user: object,
+    task: VideoTaskResponse,
+    session: AsyncSession,
+    video_file: object,
+    poster_file: object,
+    duration_seconds: int,
+) -> dict[str, object]:
+    creation_id = uuid4().hex
+    created_at = int(getattr(video_file, 'created_at', None) or _now())
+    try:
+        session.add(
+            CreationMediaItem(
+                id=creation_id,
+                user_id=getattr(user, 'id'),
+                kind='video',
+                file_id=getattr(video_file, 'id'),
+                poster_file_id=getattr(poster_file, 'id'),
+                duration_seconds=duration_seconds,
+                caption=None,
+                prompt=task.prompt,
+                negative_prompt=(str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None),
+                model_id=task.model_id,
+                model_name_snapshot=None,
+                task=task.task,
+                params_json=dict(task.params),
+                reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
+                source='web',
+                batch_id=task.id,
+                soft_deleted=False,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+        )
+        await session.flush()
+        return VideoTaskResult(
+            creation_id=creation_id,
+            file_id=getattr(video_file, 'id'),
+            poster_file_id=getattr(poster_file, 'id'),
+            url=str(request.app.url_path_for('get_file_content_by_id', id=getattr(video_file, 'id'))),
+            poster_url=str(request.app.url_path_for('get_file_content_by_id', id=getattr(poster_file, 'id'))),
+            duration_seconds=duration_seconds,
+        ).model_dump()
+    except BaseException:
+        await _cleanup_generated_files([video_file, poster_file])
+        raise
+
+
 async def _finalize_mock_video(
     request: Request,
     user: object,
@@ -157,52 +226,17 @@ async def _finalize_mock_video(
         return await _finalize_clip_mock_video(request, user, task, session, clip)
     if not _MOCK_VIDEO_PATH.is_file() or not _MOCK_POSTER_PATH.is_file():
         raise RuntimeError('video mock assets are missing')
-    # File uploads commit through their own sessions. Keep these writes sequential so
-    # SQLite does not have to arbitrate two writers for the same generated result.
-    video_file = await _upload_mock_file(request, user, _MOCK_VIDEO_PATH, 'generated-video.mp4', 'video/mp4')
-    poster_file = await _upload_mock_file(
+    video_file, poster_file = await _upload_mock_pair(
         request,
         user,
+        _MOCK_VIDEO_PATH,
         _MOCK_POSTER_PATH,
         'generated-video-poster.webp',
         'image/webp',
     )
-    created_at = int(video_file.created_at or _now())
-    duration = _duration_seconds(task.params)
-    creation_id = uuid4().hex
-    session.add(
-        CreationMediaItem(
-            id=creation_id,
-            user_id=getattr(user, 'id'),
-            kind='video',
-            file_id=video_file.id,
-            poster_file_id=poster_file.id,
-            duration_seconds=duration,
-            caption=None,
-            prompt=task.prompt,
-            negative_prompt=(str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None),
-            model_id=task.model_id,
-            model_name_snapshot=None,
-            task=task.task,
-            params_json=dict(task.params),
-            reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
-            source='web',
-            batch_id=task.id,
-            soft_deleted=False,
-            created_at=created_at,
-            updated_at=created_at,
-        )
+    return await _persist_mock_creation(
+        request, user, task, session, video_file, poster_file, _duration_seconds(task.params)
     )
-    await session.flush()
-
-    return VideoTaskResult(
-        creation_id=creation_id,
-        file_id=video_file.id,
-        poster_file_id=poster_file.id,
-        url=str(request.app.url_path_for('get_file_content_by_id', id=video_file.id)),
-        poster_url=str(request.app.url_path_for('get_file_content_by_id', id=poster_file.id)),
-        duration_seconds=duration,
-    ).model_dump()
 
 
 async def _finalize_clip_mock_video(
@@ -238,46 +272,103 @@ async def _finalize_clip_mock_video(
     else:
         poster_filename_ext = 'generated-video-poster.bin'
 
-    # File uploads commit through their own sessions. Keep these writes sequential so
-    # SQLite does not have to arbitrate two writers for the same generated result.
-    video_file = await _upload_mock_file(request, user, clip.video_bytes, 'generated-video.mp4', 'video/mp4')
-    poster_file = await _upload_mock_file(request, user, poster_bytes, poster_filename_ext, poster_content_type)
-    created_at = int(video_file.created_at or _now())
+    video_file, poster_file = await _upload_mock_pair(
+        request,
+        user,
+        clip.video_bytes,
+        poster_bytes,
+        poster_filename_ext,
+        poster_content_type,
+    )
     # Prefer the real clip duration reported by Pexels; fall back to the task's
     # configured duration when the API omits it.
     duration = clip.duration_seconds or _duration_seconds(task.params)
-    creation_id = uuid4().hex
-    session.add(
-        CreationMediaItem(
-            id=creation_id,
-            user_id=getattr(user, 'id'),
-            kind='video',
-            file_id=video_file.id,
-            poster_file_id=poster_file.id,
-            duration_seconds=duration,
-            caption=None,
-            prompt=task.prompt,
-            negative_prompt=(str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None),
-            model_id=task.model_id,
-            model_name_snapshot=None,
-            task=task.task,
-            params_json=dict(task.params),
-            reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
-            source='web',
-            batch_id=task.id,
-            soft_deleted=False,
-            created_at=created_at,
-            updated_at=created_at,
-        )
-    )
-    await session.flush()
+    return await _persist_mock_creation(request, user, task, session, video_file, poster_file, duration)
 
-    return VideoTaskResult(
-        creation_id=creation_id,
+
+async def _upload_real_video_files(
+    request: Request,
+    user: object,
+    task: VideoTaskResponse,
+    output: VideoExecutionOutput,
+    uploaded_files: list[object],
+) -> tuple[object, object | None]:
+    poster = await asyncio.to_thread(extract_poster_from_video, output.video_path)
+    if poster is None:
+        log.warning('Poster extraction failed for real video %s; delivering without poster', task.id)
+    metadata = {'video_generation_provider': 'fal', 'video_generation_mock': False}
+    video_file = await _upload_video_file(
+        request,
+        user,
+        output.video_path,
+        'generated-video.mp4',
+        output.content_type,
+        metadata=metadata,
+    )
+    uploaded_files.append(video_file)
+    if poster is None:
+        return video_file, None
+    poster_bytes, poster_content_type = poster
+    poster_filename = (
+        'generated-video-poster.jpg' if poster_content_type == 'image/jpeg' else 'generated-video-poster.webp'
+    )
+    poster_file = await _upload_video_file(
+        request,
+        user,
+        poster_bytes,
+        poster_filename,
+        poster_content_type,
+        metadata=metadata,
+    )
+    uploaded_files.append(poster_file)
+    return video_file, poster_file
+
+
+def _real_video_creation(
+    user: object,
+    task: VideoTaskResponse,
+    output: VideoExecutionOutput,
+    video_file: object,
+    poster_file: object | None,
+) -> tuple[CreationMediaItem, int]:
+    created_at = int(video_file.created_at or _now())
+    duration = output.duration_seconds or _duration_seconds(task.params)
+    return CreationMediaItem(
+        id=uuid4().hex,
+        user_id=getattr(user, 'id'),
+        kind='video',
         file_id=video_file.id,
-        poster_file_id=poster_file.id,
-        url=str(request.app.url_path_for('get_file_content_by_id', id=video_file.id)),
-        poster_url=str(request.app.url_path_for('get_file_content_by_id', id=poster_file.id)),
+        poster_file_id=getattr(poster_file, 'id', None),
+        duration_seconds=duration,
+        caption=None,
+        prompt=task.prompt,
+        negative_prompt=str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None,
+        model_id=task.model_id,
+        model_name_snapshot=None,
+        task=task.task,
+        params_json=dict(task.params),
+        reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
+        source='web',
+        batch_id=task.id,
+        soft_deleted=False,
+        created_at=created_at,
+        updated_at=created_at,
+    ), duration
+
+
+def _real_video_result(
+    request: Request,
+    creation: CreationMediaItem,
+    duration: int | None,
+) -> dict[str, object]:
+    poster_id = creation.poster_file_id
+    path_for = request.app.url_path_for
+    return VideoTaskResult(
+        creation_id=creation.id,
+        file_id=creation.file_id,
+        poster_file_id=poster_id,
+        url=str(path_for('get_file_content_by_id', id=creation.file_id)),
+        poster_url=str(path_for('get_file_content_by_id', id=poster_id)) if poster_id else None,
         duration_seconds=duration,
     ).model_dump()
 
@@ -291,77 +382,11 @@ async def _finalize_real_video(
 ) -> dict[str, object]:
     uploaded_files: list[object] = []
     try:
-        poster = await asyncio.to_thread(extract_poster_from_video, output.video_path)
-        if poster is None:
-            # 复盘 P1：封面是展示增强而非视频本体——提取失败（如 ffmpeg 不可
-            # 用或视频无法解码）时按无封面交付，不得静默降级 mock 欢迎图
-            # （违反 mock 与生产路径隔离，付费作品会全站显示欢迎页封面）。
-            log.warning('Poster extraction failed for real video %s; delivering without poster', task.id)
-        metadata = {'video_generation_provider': 'fal', 'video_generation_mock': False}
-        video_file = await _upload_video_file(
-            request,
-            user,
-            output.video_path,
-            'generated-video.mp4',
-            output.content_type,
-            metadata=metadata,
-        )
-        uploaded_files.append(video_file)
-        poster_file: object | None = None
-        if poster is not None:
-            poster_bytes, poster_content_type = poster
-            poster_filename = (
-                'generated-video-poster.jpg' if poster_content_type == 'image/jpeg' else 'generated-video-poster.webp'
-            )
-            poster_file = await _upload_video_file(
-                request,
-                user,
-                poster_bytes,
-                poster_filename,
-                poster_content_type,
-                metadata=metadata,
-            )
-            uploaded_files.append(poster_file)
-        created_at = int(video_file.created_at or _now())
-        duration = output.duration_seconds or _duration_seconds(task.params)
-        creation_id = uuid4().hex
-        poster_file_id: str | None = getattr(poster_file, 'id', None)
-        session.add(
-            CreationMediaItem(
-                id=creation_id,
-                user_id=getattr(user, 'id'),
-                kind='video',
-                file_id=video_file.id,
-                poster_file_id=poster_file_id,
-                duration_seconds=duration,
-                caption=None,
-                prompt=task.prompt,
-                negative_prompt=(str(task.params['negative_prompt']) if task.params.get('negative_prompt') else None),
-                model_id=task.model_id,
-                model_name_snapshot=None,
-                task=task.task,
-                params_json=dict(task.params),
-                reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
-                source='web',
-                batch_id=task.id,
-                soft_deleted=False,
-                created_at=created_at,
-                updated_at=created_at,
-            )
-        )
+        video_file, poster_file = await _upload_real_video_files(request, user, task, output, uploaded_files)
+        creation, duration = _real_video_creation(user, task, output, video_file, poster_file)
+        session.add(creation)
         await session.flush()
-        return VideoTaskResult(
-            creation_id=creation_id,
-            file_id=video_file.id,
-            poster_file_id=poster_file_id,
-            url=str(request.app.url_path_for('get_file_content_by_id', id=video_file.id)),
-            poster_url=(
-                str(request.app.url_path_for('get_file_content_by_id', id=poster_file_id))
-                if poster_file_id
-                else None
-            ),
-            duration_seconds=duration,
-        ).model_dump()
+        return _real_video_result(request, creation, duration)
     except asyncio.CancelledError as error:
         setattr(error, 'provider_completed', True)
         await _cleanup_generated_files(uploaded_files)
@@ -371,22 +396,6 @@ async def _finalize_real_video(
         if isinstance(error, VideoExecutionError):
             raise
         raise VideoExecutionError('video_delivery_failed', str(error), provider_completed=True) from error
-
-
-async def _cleanup_generated_files(files: list[object]) -> None:
-    for file in reversed(files):
-        file_id = getattr(file, 'id', None)
-        file_path = getattr(file, 'path', None)
-        if isinstance(file_path, str) and file_path:
-            try:
-                await asyncio.to_thread(Storage.delete_file, file_path)
-            except Exception:
-                log.exception('Could not remove orphaned generated file payload %s', file_id)
-        if isinstance(file_id, str) and file_id:
-            try:
-                await Files.delete_file_by_id(file_id)
-            except Exception:
-                log.exception('Could not remove orphaned generated file row %s', file_id)
 
 
 async def _cleanup_result_files(result: dict[str, object] | None) -> None:

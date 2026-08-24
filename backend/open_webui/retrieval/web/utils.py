@@ -25,7 +25,6 @@ import certifi
 import urllib3.connection
 import urllib3.connectionpool
 import validators
-from requests.adapters import HTTPAdapter
 from fastapi.concurrency import run_in_threadpool
 from langchain_community.document_loaders import PlaywrightURLLoader, WebBaseLoader
 from langchain_community.document_loaders.base import BaseLoader
@@ -60,6 +59,7 @@ from open_webui.retrieval.loaders.microsoft_web_iq import MicrosoftWebIQLoader
 from open_webui.retrieval.loaders.tavily import TavilyLoader
 from open_webui.retrieval.web.firecrawl import scrape_firecrawl_url
 from open_webui.utils.misc import is_host_allowed
+from requests.adapters import HTTPAdapter
 
 log = logging.getLogger(__name__)
 
@@ -240,7 +240,11 @@ class _SSRFSafeResolver(aiohttp.resolver.DefaultResolver):
         return results
 
 
-def get_ssrf_safe_session() -> aiohttp.ClientSession:
+def get_ssrf_safe_session(
+    *,
+    timeout: aiohttp.ClientTimeout | None = None,
+    trust_env: bool = True,
+) -> aiohttp.ClientSession:
     """A one-off aiohttp session that re-validates the connect-time IP via _SSRFSafeResolver,
     defeating DNS rebinding. Use for validate_url-gated fetches of user-supplied URLs that must
     not use the shared (rebinding-vulnerable) pool. Use as a context manager so it is closed:
@@ -248,8 +252,8 @@ def get_ssrf_safe_session() -> aiohttp.ClientSession:
     """
     return aiohttp.ClientSession(
         connector=aiohttp.TCPConnector(resolver=_SSRFSafeResolver()),
-        timeout=aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT),
-        trust_env=True,
+        timeout=timeout or aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT),
+        trust_env=trust_env,
     )
 
 
@@ -576,7 +580,9 @@ class SafeMicrosoftWebIQLoader(BaseLoader, RateLimitMixin, URLProcessingMixin):
 
 
 class SafePlaywrightURLLoader(PlaywrightURLLoader, RateLimitMixin, URLProcessingMixin):
-    """Load HTML pages safely with Playwright, supporting SSL verification, rate limiting, and remote browser connection.
+    """Load HTML pages safely with Playwright.
+
+    Supports SSL verification, rate limiting, and remote browser connections.
 
     Attributes:
         web_paths (List[str]): List of URLs to load.

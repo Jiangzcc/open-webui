@@ -3,17 +3,34 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+import pytest
 from fastapi import HTTPException
-
 from open_webui.extensions.credits.errors import CreditError
-from open_webui.extensions.videos import service
+from open_webui.extensions.fal_catalog.video_schemas import FalVideoModelDefinition
+from open_webui.extensions.tests.async_test_support import SelfTransactionalContext
+from open_webui.extensions.videos import service, task_state
+from open_webui.extensions.videos.catalog import build_video_provider_payload
 from open_webui.extensions.videos.executor import MockVideoExecutor, VideoExecutionError
 from open_webui.extensions.videos.schemas import VideoTaskResponse
+from open_webui.extensions.videos.tests.task_test_support import (
+    FileUrlRequest as _FakeVideoRequest,
+)
+
+
+def _definition(task: str, model_id: str) -> FalVideoModelDefinition:
+    return FalVideoModelDefinition(
+        id=model_id,
+        public_id=model_id,
+        name='Test video model',
+        provider='test',
+        task=task,
+    )
 
 
 def _row_of(task: VideoTaskResponse):
     """run/recover_video_task 直接按行查询（读取 response 之外的原始列，
     如 params_json 原始列），测试需提供行形态而非响应模型。"""
+    definition = _definition(task.task, task.model_id)
     return SimpleNamespace(
         id=task.id,
         user_id='user-1',
@@ -23,6 +40,8 @@ def _row_of(task: VideoTaskResponse):
         model_id=task.model_id,
         params_json=dict(task.params),
         assets_json=[asset.model_dump() for asset in task.assets],
+        provider_definition_json=definition.model_dump(mode='json'),
+        provider_payload_json={'prompt': task.prompt, **dict(task.params)},
         result_json=None,
         error_code=task.error_code,
         created_at=task.created_at,
@@ -49,6 +68,32 @@ class _RowContext:
 
     async def scalar(self, _statement):
         return self.row
+
+
+def _record_async_call(calls: list[bool]):
+    async def record(*_args, **_kwargs) -> None:
+        calls.append(True)
+
+    return record
+
+
+def _tracked_heartbeat(tasks: list[asyncio.Task]):
+    async def heartbeat(_usage_id: str) -> None:
+        tasks.append(asyncio.current_task())
+        await asyncio.sleep(3600)
+
+    return heartbeat
+
+
+def _finalize_while_heartbeat_alive(
+    heartbeat_tasks: list[asyncio.Task],
+    observations: list[bool],
+):
+    async def finalize(*_args, **_kwargs):
+        observations.append(not heartbeat_tasks[0].done())
+        return {'url': '/api/v1/files/result/content'}
+
+    return finalize
 
 
 def test_schedule_video_task_holds_slot_until_worker_finishes(monkeypatch) -> None:
@@ -195,7 +240,7 @@ def test_shutdown_cleanup_failure_does_not_mask_cancellation_or_skip_task_state(
 def test_late_cancellation_preserves_committed_success(monkeypatch) -> None:  # noqa: C901
     async def scenario() -> None:  # noqa: C901
         states: list[str] = []
-        failed_usage = False
+        failed_usage: list[bool] = []
         success_publish_count = 0
         task = VideoTaskResponse(
             id='task-1',
@@ -210,16 +255,6 @@ def test_late_cancellation_preserves_committed_success(monkeypatch) -> None:  # 
             created_at=1,
             updated_at=1,
         )
-
-        class _Context:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *_args) -> None:
-                return None
-
-            def begin(self):
-                return self
 
         async def set_state(_task_id, status, **_kwargs) -> None:  # type: ignore[no-untyped-def]
             states.append(status)
@@ -243,10 +278,6 @@ def test_late_cancellation_preserves_committed_success(monkeypatch) -> None:  # 
         async def succeed(*_args, **_kwargs) -> int:
             return 1
 
-        async def fail_usage(*_args, **_kwargs) -> None:
-            nonlocal failed_usage
-            failed_usage = True
-
         monkeypatch.setattr(service, '_set_task_state', set_state)
         monkeypatch.setattr(service, '_publish_video_task_event', publish)
 
@@ -255,14 +286,14 @@ def test_late_cancellation_preserves_committed_success(monkeypatch) -> None:  # 
 
         monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
         monkeypatch.setattr(service, 'creation_session', lambda: _RowContext(_row_of(task)))
-        monkeypatch.setattr(service, 'credit_session', lambda: _Context())
+        monkeypatch.setattr(service, 'credit_session', SelfTransactionalContext)
         monkeypatch.setattr(service, 'begin_video_usage', begin_usage)
         monkeypatch.setattr(service, '_set_task_usage_id', no_op)
         monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
         monkeypatch.setattr(service.asyncio, 'sleep', no_op)
         monkeypatch.setattr(service, '_finalize_mock_video', finalize)
         monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
-        monkeypatch.setattr(service, 'mark_video_usage_failed', fail_usage)
+        monkeypatch.setattr(service, 'mark_video_usage_failed', _record_async_call(failed_usage))
 
         try:
             await service.run_video_task(
@@ -277,7 +308,7 @@ def test_late_cancellation_preserves_committed_success(monkeypatch) -> None:  # 
 
         assert states[-1] == 'succeeded'
         assert 'failed' not in states
-        assert failed_usage is False
+        assert failed_usage == []
 
     asyncio.run(scenario())
 
@@ -285,7 +316,7 @@ def test_late_cancellation_preserves_committed_success(monkeypatch) -> None:  # 
 def test_cancellation_during_terminal_commit_uses_persisted_usage_status(monkeypatch) -> None:  # noqa: C901
     async def scenario() -> None:  # noqa: C901
         states: list[str] = []
-        failed_usage = False
+        failed_usage: list[bool] = []
         credit_session_calls = 0
         task = VideoTaskResponse(
             id='task-1',
@@ -341,10 +372,6 @@ def test_cancellation_during_terminal_commit_uses_persisted_usage_status(monkeyp
         async def succeed(*_args, **_kwargs) -> int:
             return 1
 
-        async def fail_usage(*_args, **_kwargs) -> None:
-            nonlocal failed_usage
-            failed_usage = True
-
         monkeypatch.setattr(service, '_set_task_state', set_state)
         monkeypatch.setattr(service, '_publish_video_task_event', no_op)
         monkeypatch.setattr(service, 'creation_session', lambda: _RowContext(_row_of(task)))
@@ -360,7 +387,7 @@ def test_cancellation_during_terminal_commit_uses_persisted_usage_status(monkeyp
         monkeypatch.setattr(service.asyncio, 'sleep', no_op)
         monkeypatch.setattr(service, '_finalize_mock_video', finalize)
         monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
-        monkeypatch.setattr(service, 'mark_video_usage_failed', fail_usage)
+        monkeypatch.setattr(service, 'mark_video_usage_failed', _record_async_call(failed_usage))
 
         try:
             await service.run_video_task(
@@ -375,7 +402,7 @@ def test_cancellation_during_terminal_commit_uses_persisted_usage_status(monkeyp
 
         assert states[-1] == 'succeeded'
         assert 'failed' not in states
-        assert failed_usage is False
+        assert failed_usage == []
         assert credit_session_calls == 2
 
     asyncio.run(scenario())
@@ -395,6 +422,8 @@ def test_recovery_resumes_existing_fal_request_without_new_generation(monkeypatc
             model_id='kling-video-v3-pro',
             params_json={'duration': '5'},
             assets_json=[],
+            provider_definition_json=_definition('text-to-video', 'kling-video-v3-pro').model_dump(mode='json'),
+            provider_payload_json={'prompt': 'A paper boat', 'duration': '5'},
             result_json=None,
             error_code=None,
             usage_id='usage-1',
@@ -425,7 +454,7 @@ def test_recovery_resumes_existing_fal_request_without_new_generation(monkeypatc
 
         output_path = tmp_path / 'recovered.mp4'
         output_path.write_bytes(b'video')
-        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+        real = service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
 
         async def resume(self, _task, _definition, **kwargs):
             resumed.update(kwargs)
@@ -451,6 +480,7 @@ def test_recovery_resumes_existing_fal_request_without_new_generation(monkeypatc
 
         monkeypatch.setattr(service.FalVideoExecutor, 'resume', resume)
         monkeypatch.setattr(service.FalVideoExecutor, 'invoke', unexpected_invoke)
+
         async def resolve_executor():
             return real
 
@@ -463,7 +493,6 @@ def test_recovery_resumes_existing_fal_request_without_new_generation(monkeypatc
         monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
         monkeypatch.setattr(service, '_set_task_state', set_state)
         monkeypatch.setattr(service, '_publish_video_task_event', no_op)
-        monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission, **_kwargs: (object(), {}, {}))
 
         await service.recover_video_task(
             'task-1',
@@ -481,7 +510,7 @@ def test_recovery_resumes_existing_fal_request_without_new_generation(monkeypatc
 def test_shutdown_keeps_submitted_fal_task_recoverable(monkeypatch) -> None:  # noqa: C901
     async def scenario() -> None:  # noqa: C901 - shutdown billing collaborators are isolated explicitly
         states: list[tuple[str, str | None]] = []
-        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+        real = service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
         task = VideoTaskResponse(
             id='task-1',
             status='running',
@@ -514,6 +543,7 @@ def test_shutdown_keeps_submitted_fal_task_recoverable(monkeypatch) -> None:  # 
             raise AssertionError('submitted FAL usage must remain invoking for recovery')
 
         monkeypatch.setattr(service.FalVideoExecutor, 'invoke', invoke)
+
         async def resolve_executor():
             return real
 
@@ -526,7 +556,6 @@ def test_shutdown_keeps_submitted_fal_task_recoverable(monkeypatch) -> None:  # 
         monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
         monkeypatch.setattr(service, 'heartbeat_video_usage', no_op)
         monkeypatch.setattr(service, 'mark_video_usage_failed', unexpected_fail)
-        monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission, **_kwargs: (object(), {}, {}))
 
         try:
             await service.run_video_task(
@@ -548,7 +577,7 @@ def test_uncertain_submitted_fal_failure_resumes_without_refund(monkeypatch) -> 
     async def scenario() -> None:
         states: list[tuple[str, str | None]] = []
         recovered: list[str] = []
-        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+        real = service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
         task = VideoTaskResponse(
             id='task-1',
             status='running',
@@ -586,6 +615,7 @@ def test_uncertain_submitted_fal_failure_resumes_without_refund(monkeypatch) -> 
             raise AssertionError('uncertain submitted usage must remain invoking for recovery')
 
         monkeypatch.setattr(service.FalVideoExecutor, 'invoke', invoke)
+
         async def resolve_executor():
             return real
 
@@ -599,7 +629,6 @@ def test_uncertain_submitted_fal_failure_resumes_without_refund(monkeypatch) -> 
         monkeypatch.setattr(service, 'heartbeat_video_usage', no_op)
         monkeypatch.setattr(service, 'mark_video_usage_failed', unexpected_fail)
         monkeypatch.setattr(service, 'recover_video_task', recover)
-        monkeypatch.setattr(service, 'build_video_provider_payload', lambda _submission, **_kwargs: (object(), {}, {}))
 
         await service.run_video_task(
             'task-1',
@@ -635,7 +664,7 @@ def test_submission_from_task_reserializes_json_params() -> None:
     submission = service._submission_from_task(task)
 
     assert isinstance(submission.params['multi_prompt'], str)
-    _definition, provider_payload, _safe_params = service.build_video_provider_payload(submission)
+    _definition, provider_payload, _safe_params = build_video_provider_payload(submission)
     assert provider_payload['multi_prompt'] == [{'prompt': 'golden hour orbit', 'duration': 3}]
 
 
@@ -694,7 +723,7 @@ def test_run_video_task_passes_stored_prompt_to_provider(monkeypatch, tmp_path) 
     async def scenario() -> None:
         states: list[str] = []
         invoked_payloads: list[dict] = {}
-        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+        real = service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
         task = VideoTaskResponse(
             id='task-1',
             status='running',
@@ -732,6 +761,7 @@ def test_run_video_task_passes_stored_prompt_to_provider(monkeypatch, tmp_path) 
             return 1
 
         monkeypatch.setattr(service.FalVideoExecutor, 'invoke', invoke)
+
         async def resolve_executor():
             return real
 
@@ -766,6 +796,7 @@ def test_run_video_task_passes_stored_prompt_to_provider(monkeypatch, tmp_path) 
 
 def _recovery_row(**overrides) -> SimpleNamespace:
     """recover_video_task 的最小任务行（可按用例覆盖字段）。"""
+    definition = _definition('text-to-video', 'fal-ai/kling-video/v3/pro/text-to-video')
     row = SimpleNamespace(
         id='task-1',
         user_id='user-1',
@@ -776,6 +807,8 @@ def _recovery_row(**overrides) -> SimpleNamespace:
         model_id='kling-video-v3-pro',
         params_json={'duration': '5'},
         assets_json=[],
+        provider_definition_json=definition.model_dump(mode='json'),
+        provider_payload_json={'prompt': 'A paper boat', 'duration': '5'},
         result_json=None,
         error_code=None,
         usage_id='usage-1',
@@ -793,6 +826,14 @@ def _recovery_row(**overrides) -> SimpleNamespace:
     for key, value in overrides.items():
         setattr(row, key, value)
     return row
+
+
+@pytest.fixture(autouse=True)
+def _disable_provider_ops_recovery_by_default(monkeypatch):
+    async def no_recovery_state(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(task_state, 'load_provider_recovery_state', no_recovery_state)
 
 
 class _SessionContext:
@@ -848,20 +889,12 @@ def test_run_finalize_runs_under_usage_heartbeat(monkeypatch, tmp_path) -> None:
         )
         output_path = tmp_path / 'result.mp4'
         output_path.write_bytes(b'video')
-        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
-
-        async def tracked_heartbeat(_usage_id: str) -> None:
-            heartbeat_tasks.append(asyncio.current_task())
-            await asyncio.sleep(3600)
+        real = service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
 
         async def invoke(self, *_args, **_kwargs):
             await asyncio.sleep(0)
             assert heartbeat_tasks, 'heartbeat must start during invoke'
             return service.VideoExecutionOutput(output_path, 'video/mp4', 5)
-
-        async def finalize(*_args, **_kwargs):
-            heartbeat_alive_in_finalize.append(not heartbeat_tasks[0].done())
-            return {'url': '/api/v1/files/result/content'}
 
         async def begin_usage(*_args, **_kwargs):
             return SimpleNamespace(outcome='new', usage=SimpleNamespace(id='usage-1'))
@@ -881,7 +914,7 @@ def test_run_finalize_runs_under_usage_heartbeat(monkeypatch, tmp_path) -> None:
             return real
 
         monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
-        monkeypatch.setattr(service, 'heartbeat_video_usage', tracked_heartbeat)
+        monkeypatch.setattr(service, 'heartbeat_video_usage', _tracked_heartbeat(heartbeat_tasks))
         monkeypatch.setattr(service, '_set_task_state', set_state)
         monkeypatch.setattr(service, '_publish_video_task_event', no_op)
         monkeypatch.setattr(service, 'creation_session', lambda: _SessionContext(_row_of(task)))
@@ -890,9 +923,10 @@ def test_run_finalize_runs_under_usage_heartbeat(monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(service, '_set_task_usage_id', no_op)
         monkeypatch.setattr(service, 'mark_video_usage_invoking', no_op)
         monkeypatch.setattr(
-            service, 'build_video_provider_payload', lambda _submission, **_kw: (object(), {}, {})
+            service,
+            '_finalize_real_video',
+            _finalize_while_heartbeat_alive(heartbeat_tasks, heartbeat_alive_in_finalize),
         )
-        monkeypatch.setattr(service, '_finalize_real_video', finalize)
         monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
 
         await service.run_video_task(
@@ -921,20 +955,12 @@ def test_recovery_finalize_runs_under_usage_heartbeat(monkeypatch, tmp_path) -> 
         )
         output_path = tmp_path / 'recovered.mp4'
         output_path.write_bytes(b'video')
-        real = service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
-
-        async def tracked_heartbeat(_usage_id: str) -> None:
-            heartbeat_tasks.append(asyncio.current_task())
-            await asyncio.sleep(3600)
+        real = service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
 
         async def resume(self, *_args, **_kwargs):
             await asyncio.sleep(0)
             assert heartbeat_tasks, 'heartbeat must start during resume'
             return service.VideoExecutionOutput(output_path, 'video/mp4', 5)
-
-        async def finalize(*_args, **_kwargs):
-            heartbeat_alive_in_finalize.append(not heartbeat_tasks[0].done())
-            return {'url': '/api/v1/files/result/content'}
 
         async def no_op(*_args, **_kwargs) -> None:
             return None
@@ -951,15 +977,16 @@ def test_recovery_finalize_runs_under_usage_heartbeat(monkeypatch, tmp_path) -> 
             return real
 
         monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
-        monkeypatch.setattr(service, 'heartbeat_video_usage', tracked_heartbeat)
+        monkeypatch.setattr(service, 'heartbeat_video_usage', _tracked_heartbeat(heartbeat_tasks))
         monkeypatch.setattr(service, 'creation_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, '_existing_creation_result', no_op)
         monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
         monkeypatch.setattr(
-            service, 'build_video_provider_payload', lambda _submission, **_kw: (object(), {}, {})
+            service,
+            '_finalize_real_video',
+            _finalize_while_heartbeat_alive(heartbeat_tasks, heartbeat_alive_in_finalize),
         )
-        monkeypatch.setattr(service, '_finalize_real_video', finalize)
         monkeypatch.setattr(service, 'mark_usage_succeeded_in_session', succeed)
         monkeypatch.setattr(service, '_set_task_state', set_state)
         monkeypatch.setattr(service, '_publish_video_task_event', no_op)
@@ -1000,9 +1027,9 @@ def test_recovery_stops_after_max_delivery_attempts(monkeypatch) -> None:
 
         monkeypatch.setattr(service.FalVideoExecutor, 'resume', unexpected_resume)
         monkeypatch.setattr(
-            service, '_increment_delivery_attempts', lambda *_a, **_kw: (_ for _ in ()).throw(
-                AssertionError('attempts must not be incremented past the cap')
-            )
+            service,
+            '_increment_delivery_attempts',
+            lambda *_a, **_kw: (_ for _ in ()).throw(AssertionError('attempts must not be incremented past the cap')),
         )
         monkeypatch.setattr(service, 'creation_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
@@ -1068,9 +1095,9 @@ def test_recovery_mock_switch_counts_delivery_attempt_and_retries(monkeypatch) -
     asyncio.run(scenario())
 
 
-def test_recovery_state_missing_without_submission_refunds(monkeypatch) -> None:
-    """复盘 #4：恢复状态缺失且从未持久化提交状态 ⇒ 无法确认 FAL 是否
-    受理过请求，与在线路径一致按未受理退款，而不是永久保留预扣。"""
+def test_recovery_state_missing_without_local_submission_keeps_charge(monkeypatch) -> None:
+    """真实 FAL 恢复状态缺失并不证明供应商未受理：进程可能死在供应商
+    返回成功与本地回调提交之间。保留预扣进入对账，禁止猜测性退款。"""
 
     async def scenario() -> None:
         states: list[tuple[str, str | None]] = []
@@ -1094,12 +1121,9 @@ def test_recovery_state_missing_without_submission_refunds(monkeypatch) -> None:
         monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, '_existing_creation_result', no_op)
         monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
-        monkeypatch.setattr(
-            service, 'build_video_provider_payload', lambda _submission, **_kw: (object(), {}, {})
-        )
 
         async def resolve_executor():
-            return service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+            return service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
 
         monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
         monkeypatch.setattr(service, 'mark_video_usage_failed', mark_failed)
@@ -1109,7 +1133,44 @@ def test_recovery_state_missing_without_submission_refunds(monkeypatch) -> None:
         await service.recover_video_task('task-1', SimpleNamespace(app=SimpleNamespace()), SimpleNamespace(id='user-1'))
 
         assert states == [('failed', 'video_recovery_state_missing')]
-        assert failed_usage['restore_prepaid'] is True
+        assert failed_usage['restore_prepaid'] is False
+
+    asyncio.run(scenario())
+
+
+def test_recovery_uses_provider_ops_fallback_and_backfills_task(monkeypatch) -> None:
+    async def scenario() -> None:
+        row = _recovery_row()
+        persisted: dict[str, object] = {}
+
+        async def load_recovery(task_id, provider_request_id=None):
+            assert task_id == 'task-1'
+            assert provider_request_id is None
+            return SimpleNamespace(
+                provider_request_id='request-from-provider-ops',
+                status_url='https://queue.fal.run/status/fallback',
+                response_url='https://queue.fal.run/response/fallback',
+                result_url='https://v3.fal.media/result/fallback.mp4',
+            )
+
+        async def persist(task_id, values):
+            assert task_id == 'task-1'
+            persisted.update(values)
+
+        monkeypatch.setattr(task_state, 'load_provider_recovery_state', load_recovery)
+        monkeypatch.setattr(task_state, 'persist_task_recovery_values', persist)
+
+        values = await service._merged_provider_recovery_values('task-1', row)
+
+        assert values == (
+            'request-from-provider-ops',
+            'https://queue.fal.run/status/fallback',
+            'https://queue.fal.run/response/fallback',
+            'https://v3.fal.media/result/fallback.mp4',
+            True,
+        )
+        assert persisted['provider_request_id'] == 'request-from-provider-ops'
+        assert persisted['provider_result_url'] == 'https://v3.fal.media/result/fallback.mp4'
 
     asyncio.run(scenario())
 
@@ -1139,12 +1200,9 @@ def test_recovery_state_missing_with_submission_keeps_charge(monkeypatch) -> Non
         monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, '_existing_creation_result', no_op)
         monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
-        monkeypatch.setattr(
-            service, 'build_video_provider_payload', lambda _submission, **_kw: (object(), {}, {})
-        )
 
         async def resolve_executor():
-            return service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600)
+            return service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600)
 
         monkeypatch.setattr(service, 'resolve_video_executor', resolve_executor)
         monkeypatch.setattr(service, 'mark_video_usage_failed', mark_failed)
@@ -1158,9 +1216,9 @@ def test_recovery_state_missing_with_submission_keeps_charge(monkeypatch) -> Non
     asyncio.run(scenario())
 
 
-def test_recovery_catalog_rejection_terminates_task(monkeypatch) -> None:
-    """复盘 #3：模型下架（VideoInputError）必须转终态；原先落入泛型
-    handler 被设回 running，60 秒恢复循环无限重试、任务永不终态。"""
+def test_recovery_invalid_execution_snapshot_terminates_task(monkeypatch) -> None:
+    """已受理任务只信提交时快照；快照损坏必须终态化，不能用当前目录
+    重建后轮询，也不能退款。"""
 
     async def scenario() -> None:
         states: list[tuple[str, str | None]] = []
@@ -1168,13 +1226,11 @@ def test_recovery_catalog_rejection_terminates_task(monkeypatch) -> None:
         row = _recovery_row(
             provider_request_id='request-1',
             provider_response_url='https://queue.fal.run/response/request-1',
+            provider_definition_json={},
         )
 
         async def unexpected_resume(*_args, **_kwargs):
-            raise AssertionError('catalog-rejected recovery must not poll the provider')
-
-        def payload_raises(*_args, **_kwargs):
-            raise service.VideoInputError('unknown_video_model')
+            raise AssertionError('invalid snapshot must not poll the provider')
 
         async def mark_failed(usage_id, code, *, restore_prepaid):
             failed_usage.update(usage_id=usage_id, code=code, restore_prepaid=restore_prepaid)
@@ -1186,7 +1242,7 @@ def test_recovery_catalog_rejection_terminates_task(monkeypatch) -> None:
             return None
 
         monkeypatch.setattr(service.FalVideoExecutor, 'resume', unexpected_resume)
-        monkeypatch.setattr(service, 'build_video_provider_payload', payload_raises)
+
         # 隔离管理端 FAL 配置：本地库的 mock 开关（video_generation.fal.mock_enabled）
         # 会改变 resolve_video_executor 的返回类型，导致恢复路径提前转
         # video_fal_not_configured（retryable）而非走到 catalog 校验。
@@ -1211,7 +1267,7 @@ def test_recovery_catalog_rejection_terminates_task(monkeypatch) -> None:
 
         await service.recover_video_task('task-1', SimpleNamespace(app=SimpleNamespace()), SimpleNamespace(id='user-1'))
 
-        assert states == [('failed', 'video_input_rejected:unknown_video_model')]
+        assert states == [('failed', 'video_execution_snapshot_invalid')]
         # FAL 已受理（提交状态持久化）→ 保留预扣等待对账。
         assert failed_usage['restore_prepaid'] is False
 
@@ -1243,6 +1299,7 @@ def test_recovery_billing_failure_does_not_block_terminal_state(monkeypatch) -> 
             return None
 
         monkeypatch.setattr(service.FalVideoExecutor, 'resume', resume_raises)
+
         # 同 catalog 拒绝用例：隔离本地库 mock 开关，保证 executor 类型为 FAL。
         async def resolve_fal_executor():
             return service.FalVideoExecutor(
@@ -1259,9 +1316,6 @@ def test_recovery_billing_failure_does_not_block_terminal_state(monkeypatch) -> 
         monkeypatch.setattr(service, 'credit_session', lambda: _SessionContext(row))
         monkeypatch.setattr(service, '_existing_creation_result', no_op)
         monkeypatch.setattr(service, '_increment_delivery_attempts', no_op)
-        monkeypatch.setattr(
-            service, 'build_video_provider_payload', lambda _submission, **_kw: (object(), {}, {})
-        )
         monkeypatch.setattr(service, 'mark_video_usage_failed', mark_failed_raises)
         monkeypatch.setattr(service, '_set_task_state', set_state)
         monkeypatch.setattr(service, '_publish_video_task_event', no_op)
@@ -1328,6 +1382,7 @@ def _patch_recovery_scan(
     monkeypatch.setattr(service, 'ensure_model_enabled', ensure_model_enabled)
     monkeypatch.setattr(service, 'quote_video_usage', quote)
     if executor is not None:
+
         async def resolve_executor():
             return executor
 
@@ -1378,9 +1433,7 @@ def test_recovery_scan_leaves_transient_failures_to_run_path(monkeypatch) -> Non
         async def quote(*_args, **_kwargs):
             raise CreditError(code='insufficient_credits')
 
-        observed = _patch_recovery_scan(
-            monkeypatch, [row], ensure_model_enabled=ensure_enabled, quote=quote
-        )
+        observed = _patch_recovery_scan(monkeypatch, [row], ensure_model_enabled=ensure_enabled, quote=quote)
 
         scheduled = await service.recover_incomplete_video_tasks(SimpleNamespace(app=SimpleNamespace()))
 
@@ -1412,7 +1465,7 @@ def test_recovery_scan_rejects_queued_task_over_price_limit(monkeypatch) -> None
             [row],
             ensure_model_enabled=ensure_enabled,
             quote=quote,
-            executor=service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600),
+            executor=service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600),
             enforce_policy=enforce_raises,
         )
 
@@ -1445,7 +1498,7 @@ def test_recovery_scan_schedules_qualified_queued_task(monkeypatch) -> None:
             [row],
             ensure_model_enabled=ensure_enabled,
             quote=quote,
-            executor=service.FalVideoExecutor('key', 'queue', 'storage', 900, 1024, 3600),
+            executor=service.FalVideoExecutor('key', 'https://queue.test', 'https://storage.test', 900, 1024, 3600),
             enforce_policy=enforce_ok,
         )
 
@@ -1509,15 +1562,6 @@ def test_finalize_real_video_without_poster_delivers_no_poster(monkeypatch, tmp_
         assert creation.poster_file_id is None
 
     asyncio.run(scenario())
-
-
-class _FakeVideoRequest:
-    class _App:
-        @staticmethod
-        def url_path_for(name: str, *, id: str) -> str:
-            return f'/api/v1/files/{id}/content'
-
-    app = _App()
 
 
 def _video_task() -> VideoTaskResponse:

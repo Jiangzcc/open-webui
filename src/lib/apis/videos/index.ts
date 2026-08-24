@@ -120,6 +120,14 @@ export type VideoGenerationTask = {
 	updated_at: number;
 };
 
+export type VideoTaskSubmission = {
+	task: VideoTask;
+	model: string;
+	prompt: string;
+	assets: { role: VideoAssetRole; file_id: string }[];
+	params: Record<string, string | number | boolean | null>;
+};
+
 export class VideoRequestError extends Error {
 	code: string;
 	publicMessage?: string;
@@ -169,13 +177,7 @@ export const getVideoModels = (token: string) =>
 
 export const submitVideoTask = (
 	token: string,
-	payload: {
-		task: VideoTask;
-		model: string;
-		prompt: string;
-		assets: { role: VideoAssetRole; file_id: string }[];
-		params: Record<string, string | number | boolean | null>;
-	},
+	payload: VideoTaskSubmission,
 	idempotencyKey: string
 ) =>
 	request<VideoGenerationTask>(token, '/tasks', {

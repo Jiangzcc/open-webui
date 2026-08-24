@@ -33,6 +33,10 @@
 >
 	<!-- 需要 height 才能撑起交互区 -->
 	<div class="w-full h-52">
-		<SVGPanZoom className="w-full h-full rounded-lg border border-gray-100 dark:border-gray-850" svg={sampleSvg} content={sampleSvg} />
+		<SVGPanZoom
+			className="w-full h-full rounded-lg border border-gray-100 dark:border-gray-850"
+			svg={sampleSvg}
+			content={sampleSvg}
+		/>
 	</div>
 </DemoCard>

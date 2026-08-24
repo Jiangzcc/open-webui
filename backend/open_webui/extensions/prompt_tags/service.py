@@ -399,6 +399,90 @@ async def export_catalog(session: AsyncSession) -> PromptTagExportDocument:
     )
 
 
+def _upsert_import_category(
+    session: AsyncSession,
+    item: PromptTagExportCategory,
+    existing: dict[str, PromptTagCategory],
+    *,
+    now: int,
+    operator_id: str | None,
+    operator_name: str | None,
+) -> bool:
+    row = existing.get(item.slug)
+    if row is None:
+        row = PromptTagCategory(
+            id=uuid4().hex,
+            slug=item.slug,
+            created_at=now,
+        )
+        session.add(row)
+        existing[item.slug] = row
+        created = True
+    else:
+        created = False
+    row.name_zh = item.name_zh
+    row.name_en = item.name_en
+    row.enabled = item.enabled
+    row.sort_order = item.sort_order
+    row.updated_at = now
+    row.updated_by_id = operator_id
+    row.updated_by_name_snapshot = operator_name
+    return created
+
+
+def _upsert_import_tag(
+    session: AsyncSession,
+    item: PromptTagExportTag,
+    categories: dict[str, PromptTagCategory],
+    existing: dict[str, PromptTag],
+    *,
+    now: int,
+    operator_id: str | None,
+    operator_name: str | None,
+) -> bool:
+    validated = PromptTagCreate(
+        slug=item.slug,
+        category_id=categories[item.category_slug].id,
+        label_zh=item.label_zh,
+        label_en=item.label_en,
+        insert_text=item.insert_text,
+        is_negative=item.is_negative,
+        media_kinds=item.media_kinds,
+        model_refs=item.model_refs,
+        enabled=item.enabled,
+        sort_order=item.sort_order,
+    )
+    row = existing.get(item.slug)
+    if row is None:
+        row = PromptTag(id=uuid4().hex, created_at=now)
+        session.add(row)
+        existing[item.slug] = row
+        created = True
+    else:
+        created = False
+    for field, value in _validated_tag_data(validated).items():
+        setattr(row, field, value)
+    row.updated_at = now
+    row.updated_by_id = operator_id
+    row.updated_by_name_snapshot = operator_name
+    return created
+
+
+async def _finish_catalog_import(session: AsyncSession, *, dry_run: bool) -> None:
+    try:
+        await session.flush()
+        if dry_run:
+            await session.rollback()
+        else:
+            await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+        raise PromptTagConflictError('prompt_tag_import_conflict') from error
+    except BaseException:
+        await session.rollback()
+        raise
+
+
 async def import_catalog(
     session: AsyncSession,
     form: PromptTagImportRequest,
@@ -413,89 +497,37 @@ async def import_catalog(
 
     now = _now()
     operator_id, operator_name = _operator_snapshot(operator)
-    categories_created = categories_updated = tags_created = tags_updated = 0
-    try:
-        for category in form.categories:
-            row = existing_categories.get(category.slug)
-            if row is None:
-                row = PromptTagCategory(
-                    id=uuid4().hex,
-                    slug=category.slug,
-                    name_zh=category.name_zh,
-                    name_en=category.name_en,
-                    enabled=category.enabled,
-                    sort_order=category.sort_order,
-                    created_at=now,
-                    updated_at=now,
-                    updated_by_id=operator_id,
-                    updated_by_name_snapshot=operator_name,
-                )
-                session.add(row)
-                existing_categories[category.slug] = row
-                categories_created += 1
-            else:
-                row.name_zh = category.name_zh
-                row.name_en = category.name_en
-                row.enabled = category.enabled
-                row.sort_order = category.sort_order
-                row.updated_at = now
-                row.updated_by_id = operator_id
-                row.updated_by_name_snapshot = operator_name
-                categories_updated += 1
-
-        for tag in form.tags:
-            category = existing_categories[tag.category_slug]
-            validated = PromptTagCreate(
-                slug=tag.slug,
-                category_id=category.id,
-                label_zh=tag.label_zh,
-                label_en=tag.label_en,
-                insert_text=tag.insert_text,
-                is_negative=tag.is_negative,
-                media_kinds=tag.media_kinds,
-                model_refs=tag.model_refs,
-                enabled=tag.enabled,
-                sort_order=tag.sort_order,
-            )
-            row = existing_tags.get(tag.slug)
-            if row is None:
-                row = PromptTag(
-                    id=uuid4().hex,
-                    **_validated_tag_data(validated),
-                    created_at=now,
-                    updated_at=now,
-                    updated_by_id=operator_id,
-                    updated_by_name_snapshot=operator_name,
-                )
-                session.add(row)
-                existing_tags[tag.slug] = row
-                tags_created += 1
-            else:
-                for field, value in _validated_tag_data(validated).items():
-                    setattr(row, field, value)
-                row.updated_at = now
-                row.updated_by_id = operator_id
-                row.updated_by_name_snapshot = operator_name
-                tags_updated += 1
-
-        await session.flush()
-        if form.dry_run:
-            await session.rollback()
-        else:
-            await session.commit()
-    except IntegrityError as error:
-        await session.rollback()
-        raise PromptTagConflictError('prompt_tag_import_conflict') from error
-    except BaseException:
-        await session.rollback()
-        raise
+    category_results = [
+        _upsert_import_category(
+            session,
+            item,
+            existing_categories,
+            now=now,
+            operator_id=operator_id,
+            operator_name=operator_name,
+        )
+        for item in form.categories
+    ]
+    tag_results = [
+        _upsert_import_tag(
+            session,
+            item,
+            existing_categories,
+            existing_tags,
+            now=now,
+            operator_id=operator_id,
+            operator_name=operator_name,
+        )
+        for item in form.tags
+    ]
+    await _finish_catalog_import(session, dry_run=form.dry_run)
 
     return PromptTagImportResult(
         dry_run=form.dry_run,
-        categories_created=categories_created,
-        categories_updated=categories_updated,
-        tags_created=tags_created,
-        tags_updated=tags_updated,
+        categories_created=sum(category_results),
+        categories_updated=len(category_results) - sum(category_results),
+        tags_created=sum(tag_results),
+        tags_updated=len(tag_results) - sum(tag_results),
     )
 
 

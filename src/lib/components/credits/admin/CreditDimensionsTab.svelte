@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 
 	import { getAdminCreditDimensions, type CreditDimensions } from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
-import Select from '$lib/components/common/Select.svelte';
+	import Select from '$lib/components/common/Select.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 
 	let serviceType = 'image';
 	let registry: CreditDimensions | null = null;

@@ -39,7 +39,6 @@ def test_redemption_migration_is_the_credit_head_and_registers_all_runtime_guard
         'ck_ext_credit_redeem_code_terminal_state',
         'ck_ext_credit_redeem_code_redemption_fields',
         'ck_ext_credit_redeem_code_void_fields',
-        'ck_ext_credit_redeem_code_code_nonempty',
     } <= registration._REQUIRED_CONSTRAINTS['ext_credit_redeem_code']
     assert {
         'ck_ext_credit_redeem_audit_action'
@@ -66,42 +65,8 @@ def test_redemption_schema_enforces_hash_and_ledger_uniqueness(sqlite_database) 
     assert ('redeemed_ledger_id',) in unique_columns
 
     code_columns = {column['name'] for column in inspector.get_columns('ext_credit_redeem_code')}
-    assert 'code' in code_columns
-    code_constraints = {
-        constraint['name'] for constraint in inspector.get_check_constraints('ext_credit_redeem_code')
-    }
-    assert 'ck_ext_credit_redeem_code_code_nonempty' in code_constraints
-
-
-def test_redemption_database_rejects_empty_plaintext_code(sqlite_database) -> None:
-    engine, _ = sqlite_database
-    _upgrade_sqlite(engine)
-
-    with engine.begin() as connection:
-        connection.execute(
-            CreditRedeemBatch.__table__.insert().values(
-                id='batch-1',
-                name='Batch',
-                face_value=10,
-                code_count=1,
-                created_by_id='admin-1',
-                created_at=1,
-                updated_at=1,
-            )
-        )
-
-    with pytest.raises(IntegrityError):
-        with engine.begin() as connection:
-            connection.execute(
-                CreditRedeemCode.__table__.insert().values(
-                    id='empty-code',
-                    batch_id='batch-1',
-                    code_hash='b' * 64,
-                    code_hint='…BBBBBB',
-                    code='',
-                    created_at=1,
-                )
-            )
+    assert {'code_hash', 'code_hint'} <= code_columns
+    assert 'code' not in code_columns
 
 
 def test_redemption_database_rejects_invalid_batch_limits_and_terminal_states(sqlite_database) -> None:
@@ -141,7 +106,6 @@ def test_redemption_database_rejects_invalid_batch_limits_and_terminal_states(sq
                     batch_id='batch-1',
                     code_hash='a' * 64,
                     code_hint='…AAAAAA',
-                    code='OWC-AAAAA',
                     redeemed_by_user_id='user-1',
                     redeemed_ledger_id='ledger-1',
                     redeemed_at=2,

@@ -32,7 +32,9 @@
 
 <DemoCard
 	title="DragGhost"
-	desc={$i18n.t('Pointer-following ghost layer. Press and drag the box. Portal to body while active.')}
+	desc={$i18n.t(
+		'Pointer-following ghost layer. Press and drag the box. Portal to body while active.'
+	)}
 >
 	<div
 		role="button"
@@ -49,7 +51,9 @@
 {#if dragging}
 	<!-- 锁定期间显示一个跟手的小卡片，作为被拖"幽灵" -->
 	<DragGhost {x} {y}>
-		<div class="px-3 py-2 rounded-lg bg-gray-900/90 text-white text-xs shadow-lg border border-white/10">
+		<div
+			class="px-3 py-2 rounded-lg bg-gray-900/90 text-white text-xs shadow-lg border border-white/10"
+		>
 			ghost 👻
 		</div>
 	</DragGhost>

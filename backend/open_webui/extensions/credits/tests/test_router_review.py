@@ -9,7 +9,7 @@ from open_webui.extensions.credits import router_admin
 from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
 from sqlalchemy import func, select
 
-from .router_test_support import AuthenticatedUser
+from .router_test_support import AuthenticatedUser, seed_credit_price
 
 
 def _admin_app(credits_router, session_dependency):
@@ -24,7 +24,6 @@ def _admin_app(credits_router, session_dependency):
 
 def test_credit_error_response_is_the_direct_public_envelope(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
-    from open_webui.extensions.credits import router_admin
     from open_webui.extensions.credits.errors import CreditError
 
     app = FastAPI()
@@ -527,23 +526,7 @@ def test_price_create_requires_default_for_discrete_dimensions() -> None:
 def test_price_update_rejects_unregistered_rules_without_committing(router_database, monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
-    async def seed() -> None:
-        async with router_database() as session, session.begin():
-            session.add(
-                CreditPrice(
-                    id='price-1',
-                    service_type='image',
-                    resource_id='model-a',
-                    action='text-to-image',
-                    base_price='1',
-                    rules={'schema_version': 1, 'dimensions': []},
-                    enabled=True,
-                    created_at=1,
-                    updated_at=1,
-                )
-            )
-
-    asyncio.run(seed())
+    asyncio.run(seed_credit_price(router_database))
 
     async def database_session():
         async with router_database() as session:
@@ -578,23 +561,7 @@ def test_price_update_rejects_unregistered_rules_without_committing(router_datab
 def test_price_update_advances_the_cache_version_within_the_same_second(router_database, monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
-    async def seed() -> None:
-        async with router_database() as session, session.begin():
-            session.add(
-                CreditPrice(
-                    id='price-1',
-                    service_type='image',
-                    resource_id='model-a',
-                    action='text-to-image',
-                    base_price='1',
-                    rules={'schema_version': 1, 'dimensions': []},
-                    enabled=True,
-                    created_at=100,
-                    updated_at=100,
-                )
-            )
-
-    asyncio.run(seed())
+    asyncio.run(seed_credit_price(router_database, created_at=100))
 
     async def database_session():
         async with router_database() as session:
@@ -616,23 +583,7 @@ def test_price_update_advances_the_cache_version_within_the_same_second(router_d
 def test_price_create_returns_conflict_for_an_existing_business_key(router_database, monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
 
-    async def seed() -> None:
-        async with router_database() as session, session.begin():
-            session.add(
-                CreditPrice(
-                    id='existing-price',
-                    service_type='image',
-                    resource_id='model-a',
-                    action='text-to-image',
-                    base_price='1',
-                    rules={'schema_version': 1, 'dimensions': []},
-                    enabled=True,
-                    created_at=1,
-                    updated_at=1,
-                )
-            )
-
-    asyncio.run(seed())
+    asyncio.run(seed_credit_price(router_database, price_id='existing-price'))
 
     async def database_session():
         async with router_database() as session:

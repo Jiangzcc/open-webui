@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from open_webui.extensions.credits.errors import CreditError
 from open_webui.extensions.videos.billing import (
@@ -180,15 +182,15 @@ def test_quote_video_usage_raises_on_unknown_model() -> None:
         params={'duration': '5', 'resolution': '1080p', 'aspect_ratio': '16:9', 'audio_mode': 'generate'},
     )
 
-    class _FakeUser:
-        id = 'user-1'
-        name = 'tester'
-        email = 't@example.com'
-
     with pytest.raises(CreditError) as raised:
         import asyncio
 
-        asyncio.run(quote_video_usage(_FakeUser(), submission))
+        asyncio.run(
+            quote_video_usage(
+                SimpleNamespace(id='user-1', name='tester', email='t@example.com'),
+                submission,
+            )
+        )
     assert raised.value.code == 'price_rule_incomplete'
 
 
@@ -204,13 +206,13 @@ def test_quote_video_usage_rejects_invalid_duration_before_database_access() -> 
         params={'duration': 'not-a-duration'},
     )
 
-    class _FakeUser:
-        id = 'user-1'
-        name = 'tester'
-        email = 't@example.com'
-
     with pytest.raises(VideoInputError) as raised:
         import asyncio
 
-        asyncio.run(quote_video_usage(_FakeUser(), submission))
+        asyncio.run(
+            quote_video_usage(
+                SimpleNamespace(id='user-1', name='tester', email='t@example.com'),
+                submission,
+            )
+        )
     assert str(raised.value) == 'invalid_duration'

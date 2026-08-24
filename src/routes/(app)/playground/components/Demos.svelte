@@ -29,7 +29,9 @@
 
 	const scrollTo = (id: string) => {
 		activeCategory = id;
-		document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		document
+			.getElementById(`section-${id}`)
+			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	};
 </script>
 
@@ -87,7 +89,9 @@
 			<aside
 				class="md:w-52 md:shrink-0 md:sticky md:top-0 md:self-start border-b md:border-b-0 md:border-r border-gray-100 dark:border-gray-850 bg-white/80 dark:bg-gray-900/80 backdrop-blur z-10"
 			>
-				<div class="md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto md:max-h-full p-2">
+				<div
+					class="md:p-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-y-auto md:max-h-full p-2"
+				>
 					{#each categories as cat (cat.id)}
 						<button
 							class="text-left whitespace-nowrap md:whitespace-normal px-2.5 py-1.5 rounded-lg text-xs transition {activeCategory ===
@@ -118,37 +122,37 @@
 					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 						<!-- 演示卡片：统一外壳，便于对比 -->
 						{#await import('./_components/BadgeDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SpinnerDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/MarqueeDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/LoaderDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/OverlayDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/TooltipDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -168,19 +172,19 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 						{#await import('./_components/AccessButtonDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/GenerationSubmitButtonDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SplitCreateButtonDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -200,31 +204,31 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 						{#await import('./_components/CheckboxDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SwitchDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/TextareaDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SensitiveInputDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/TagsDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -244,49 +248,49 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 						{#await import('./_components/NativeSelectDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SettingsSelectDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SelectDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SelectorDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/DropdownOptionsDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/MultiSelectDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/DropdownDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/DropdownSubDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -306,19 +310,19 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 						{#await import('./_components/ModalDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/DrawerDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/ConfirmDialogDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -338,19 +342,19 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 						{#await import('./_components/CollapsibleDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/PaginationDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SidebarDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -370,37 +374,37 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 						{#await import('./_components/ImageDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/ImagePreviewDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SlideShowDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/SVGPanZoomDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/PanzoomContainerDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/FullHeightIframeDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -420,25 +424,25 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 						{#await import('./_components/FileItemDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/FolderDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/ChatListDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/BannerDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -458,25 +462,25 @@
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 						{#await import('./_components/RichTextInputDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/CodeEditorDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/CodeEditorModalDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/ValvesDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -496,7 +500,7 @@
 
 					<div class="grid grid-cols-1 gap-3">
 						{#await import('./_components/ToolCallDisplayDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -511,24 +515,26 @@
 						{$i18n.t('Icons')}
 					</h2>
 					<p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-						{$i18n.t('All SVG icon components under $lib/components/icons. Click to copy import statement.')}
+						{$i18n.t(
+							'All SVG icon components under $lib/components/icons. Click to copy import statement.'
+						)}
 					</p>
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
 						{#await import('./_components/EmojiDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/VendorLogoDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
 
 						{#await import('./_components/DragGhostDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}
@@ -536,7 +542,7 @@
 
 					<div class="grid grid-cols-1 gap-3">
 						{#await import('./_components/IconsDemo.svelte')}
-							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl" />
+							<div class="h-28 animate-pulse bg-gray-100 dark:bg-gray-800 rounded-xl"></div>
 						{:then Component}
 							<Component.default />
 						{/await}

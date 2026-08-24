@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from open_webui.extensions.schema import StrictFrozenModel as StrictModel
+from pydantic import Field, field_validator
 
 ProviderInvocationStatus = Literal[
     'created', 'submitted', 'queued', 'running', 'succeeded', 'failed', 'cancelled', 'unknown'
 ]
-
-
-class StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
 
 
 class ProviderInvocationItem(StrictModel):
@@ -216,6 +213,13 @@ class FalRuntimeConfig(StrictModel):
     video_api_key: str
     image_mock_enabled: bool
     video_mock_enabled: bool
+
+    @field_validator('image_generation_api_base_url', 'image_edit_api_base_url')
+    @classmethod
+    def validate_https_base_url(cls, value: str) -> str:
+        from open_webui.extensions.url_security import normalize_https_base_url
+
+        return normalize_https_base_url(value, allow_empty=True)
 
 
 __all__ = [

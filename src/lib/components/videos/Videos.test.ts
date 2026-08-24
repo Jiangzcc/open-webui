@@ -10,9 +10,14 @@ const read = (relative: string) =>
 const page = read('./Videos.svelte');
 const form = read('./VideoPromptForm.svelte');
 const card = read('./VideoTaskCard.svelte');
+const navigation = read('./VideoPageNavigation.svelte');
+const commonNavigation = read('../common/GenerationPageNavigation.svelte');
 const labels = read('./videoLabels.ts');
+const pageState = read('./videoPageState.ts');
 const idempotency = read('../../utils/submission-idempotency.ts');
-const all = [page, form, card, labels, idempotency].join('\n');
+const all = [page, form, card, navigation, commonNavigation, labels, pageState, idempotency].join(
+	'\n'
+);
 
 describe('video creation page', () => {
 	test('uses a duration slider and the shared generation button', () => {
@@ -29,7 +34,7 @@ describe('video creation page', () => {
 		expect(page).toContain(
 			"negative_prompt: appendPromptText(String(params['negative_prompt'] ?? ''), text)"
 		);
-		expect(page).toContain('prompt: prompt.trim()');
+		expect(pageState).toContain('prompt: prompt.trim()');
 		expect(all).not.toContain('composePromptWithTags');
 	});
 
@@ -92,10 +97,22 @@ describe('video creation page', () => {
 		expect(page).toContain('onRemove={requestDeleteTask}');
 		expect(card).toContain("$i18n.t('Regenerate')");
 		expect(card).toContain("$i18n.t('Download')");
+		expect(card).toContain('{#if record.result?.url}');
 		expect(card).toContain("$i18n.t('View details')");
 		expect(card).toContain("$i18n.t('Remove')");
 		// 「查看详情并发布」文案改为单纯的「查看详情」
 		expect(all).not.toContain("$i18n.t('View details and publish')");
+	});
+
+	test('fails closed when the selected model changes while its quote is loading', () => {
+		expect(page).toContain('const submittedTask = task');
+		expect(page).toContain('const submitModel = models.find(');
+		expect(page).toContain(
+			'const latestQuote = await refreshQuote(submitModel, quoteDimensions(), submittedTask)'
+		);
+		expect(page).toContain('task !== submittedTask');
+		expect(page).toContain('selectedModel?.id !== submitModel.id');
+		expect(page).toContain('model.enabled !== false');
 	});
 
 	test('renders a result card with model header, prompt, meta pills and action row', () => {
@@ -110,9 +127,12 @@ describe('video creation page', () => {
 
 	test('provides creation and video-only library tabs', () => {
 		expect(page).toContain("let selection: 'generate' | 'mine' | 'all' = 'generate';");
-		expect(page).toContain("['generate', 'Create art']");
-		expect(page).toContain("['mine', 'My creations']");
-		expect(page).toContain("selection = 'all'");
+		expect(navigation).toContain("id: 'generate'");
+		expect(navigation).toContain("label: 'Create art'");
+		expect(navigation).toContain("id: 'mine'");
+		expect(navigation).toContain("label: 'My creations'");
+		expect(navigation).toContain("id: 'all'");
+		expect(commonNavigation).toContain("tab.id !== 'all' || isAdmin");
 		expect(page).toContain('mediaKind="video"');
 	});
 

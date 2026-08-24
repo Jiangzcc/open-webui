@@ -12,6 +12,22 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
+class FakeFiles:
+    def __init__(self, files):
+        self._files = {item.id: item for item in files}
+
+    async def get_files_by_ids(self, ids):
+        return [self._files[item_id] for item_id in ids if item_id in self._files]
+
+
+class FakeUsers:
+    def __init__(self, users):
+        self._users = {item.id: item for item in users}
+
+    async def get_users_by_ids(self, ids):
+        return [self._users[item_id] for item_id in ids if item_id in self._users]
+
+
 @pytest.fixture
 def sqlite_database(tmp_path: Path):
     database_path = tmp_path / 'creations.sqlite'

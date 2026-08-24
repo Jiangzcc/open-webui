@@ -9,6 +9,24 @@ from fastapi.testclient import TestClient
 from .router_test_support import AuthenticatedUser
 
 
+class _Scalars:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _CatalogSession:
+    def __init__(self, price, operation_type):
+        self._price = price
+        self._operation_type = operation_type
+
+    async def scalars(self, statement):
+        entity = statement.column_descriptions[0]['entity'] if statement.column_descriptions else None
+        return _Scalars([] if entity is self._operation_type else [self._price])
+
+
 def test_public_fal_catalog_uses_stable_public_ids_without_leaking_provider_routes() -> None:
     from open_webui.extensions.fal_images import models as fal_models
 
@@ -358,45 +376,23 @@ async def test_images_models_enriches_public_fal_catalog_with_enabled_base_price
     async def fal_config():
         return SimpleNamespace(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='fal-ai/qwen-image')
 
-    class Scalars:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def all(self):
-            return self._rows
-
-    class Session:
-        """Fake async session.
-
-        get_models now issues two scalars() calls:
-        1. get_enabled_prices -> CreditPrice rows
-        2. apply_model_operations -> ImageModelOperation rows (no overrides seeded)
-        Distinguish them by the statement's queried entity so each returns the
-        right type instead of uniformly returning CreditPrice objects.
-        """
-
-        async def scalars(self, statement):
-            entity = statement.column_descriptions[0]['entity'] if statement.column_descriptions else None
-            if entity is ImageModelOperation:
-                return Scalars([])
-            return Scalars(
-                [
-                    CreditPrice(
-                        service_type='image',
-                        resource_id='fal-ai/qwen-image',
-                        action='text-to-image',
-                        base_price='4',
-                        enabled=True,
-                    )
-                ]
-            )
+    session = _CatalogSession(
+        CreditPrice(
+            service_type='image',
+            resource_id='fal-ai/qwen-image',
+            action='text-to-image',
+            base_price='4',
+            enabled=True,
+        ),
+        ImageModelOperation,
+    )
 
     monkeypatch.setattr(images, 'get_image_config', fal_config)
 
     result = await images.get_models(
         SimpleNamespace(),
         user=SimpleNamespace(role='user'),
-        db=Session(),
+        db=session,
     )
 
     qwen = next(model for model in result if model['id'] == 'qwen-image')
@@ -416,36 +412,23 @@ async def test_images_models_attaches_base_price_for_admin_internal_ids(monkeypa
     async def fal_config():
         return SimpleNamespace(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='fal-ai/qwen-image')
 
-    class Scalars:
-        def __init__(self, rows):
-            self._rows = rows
-
-        def all(self):
-            return self._rows
-
-    class Session:
-        async def scalars(self, statement):
-            entity = statement.column_descriptions[0]['entity'] if statement.column_descriptions else None
-            if entity is ImageModelOperation:
-                return Scalars([])
-            return Scalars(
-                [
-                    CreditPrice(
-                        service_type='image',
-                        resource_id='fal-ai/qwen-image',
-                        action='text-to-image',
-                        base_price='4',
-                        enabled=True,
-                    )
-                ]
-            )
+    session = _CatalogSession(
+        CreditPrice(
+            service_type='image',
+            resource_id='fal-ai/qwen-image',
+            action='text-to-image',
+            base_price='4',
+            enabled=True,
+        ),
+        ImageModelOperation,
+    )
 
     monkeypatch.setattr(images, 'get_image_config', fal_config)
 
     result = await images.get_models(
         SimpleNamespace(),
         user=SimpleNamespace(role='admin'),
-        db=Session(),
+        db=session,
     )
 
     # admin 列表保留内部 fal 路由作 id；base_price 必须仍能注入。

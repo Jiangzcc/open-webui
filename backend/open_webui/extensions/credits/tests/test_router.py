@@ -6,7 +6,6 @@ from .router_test_support import AuthenticatedUser
 
 def test_me_returns_the_verified_users_balance(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
-    from open_webui.extensions.credits import router_admin
 
     app = FastAPI()
     app.include_router(credits_router.router)

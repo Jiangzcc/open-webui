@@ -91,15 +91,21 @@ describe('generation task request errors', () => {
 	//（credits to_envelope）、detail.code、detail 字符串。
 	test.each([
 		['top-level code envelope', { code: 'insufficient_credits' }, 'insufficient_credits'],
-		['nested detail code', { detail: { code: 'idempotency_key_conflict' } }, 'idempotency_key_conflict'],
+		[
+			'nested detail code',
+			{ detail: { code: 'idempotency_key_conflict' } },
+			'idempotency_key_conflict'
+		],
 		['plain detail string', { detail: 'idempotency_key_conflict' }, 'idempotency_key_conflict'],
 		['unparseable body', null, 'image_task_failed']
 	])('throws ImageTaskRequestError with status for %s', async (_label, body, expectedCode) => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn().mockResolvedValue(
-				new Response(body === null ? 'not json' : JSON.stringify(body), { status: 402 })
-			)
+			vi
+				.fn()
+				.mockResolvedValue(
+					new Response(body === null ? 'not json' : JSON.stringify(body), { status: 402 })
+				)
 		);
 
 		const error = await createImageGenerationTask(

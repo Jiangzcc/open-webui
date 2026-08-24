@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from fastapi import FastAPI
+from open_webui.extensions.creations.recovery_request import recovery_request
 from open_webui.extensions.videos.executor import cleanup_stale_fal_video_temp_files
 from open_webui.extensions.videos.service import (
     recover_incomplete_video_tasks,
@@ -13,22 +14,6 @@ from starlette.requests import Request
 
 log = logging.getLogger(__name__)
 _RECOVERY_INTERVAL_SECONDS = 60
-
-
-def _recovery_request(app: FastAPI) -> Request:
-    return Request(
-        {
-            'type': 'http',
-            'app': app,
-            'method': 'GET',
-            'path': '/',
-            'headers': [],
-            'query_string': b'',
-            'scheme': 'http',
-            'server': ('localhost', 80),
-            'client': None,
-        }
-    )
 
 
 async def _video_recovery_worker(request: Request) -> None:
@@ -47,7 +32,7 @@ async def initialize_videos_extension(app: FastAPI) -> None:
     removed = await cleanup_stale_fal_video_temp_files()
     if removed:
         log.info('Removed %s stale FAL video temporary file(s)', removed)
-    request = _recovery_request(app)
+    request = recovery_request(app)
     recovered = await recover_incomplete_video_tasks(request)
     if recovered:
         log.info('Scheduled %s persisted video task(s) for recovery', recovered)

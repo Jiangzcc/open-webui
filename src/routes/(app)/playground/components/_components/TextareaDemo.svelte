@@ -11,7 +11,8 @@
 
 <DemoCard
 	title="Textarea"
-	desc={$i18n.t('Auto-growing textarea. bind:value, onInput/onBlur. field-sizing:content.')}>
+	desc={$i18n.t('Auto-growing textarea. bind:value, onInput/onBlur. field-sizing:content.')}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<Textarea
 			bind:value={text}

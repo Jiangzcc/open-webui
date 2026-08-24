@@ -97,45 +97,76 @@ def _normalize_input(image_input: object) -> CompatImageInput:
     )
 
 
-def _canonical_value(value: object, *, depth: int, counter: list[int], byte_total: list[int], budget: int) -> object:
+def _track_canonical_bytes(value: str, byte_total: list[int], budget: int) -> None:
+    byte_total[0] += len(value.encode('utf-8'))
+    if byte_total[0] > budget:
+        raise ValueError('canonical total bytes exceed budget')
+
+
+def _canonical_mapping(
+    value: Mapping,
+    *,
+    depth: int,
+    counter: list[int],
+    byte_total: list[int],
+    budget: int,
+) -> dict[str, object]:
+    normalized: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError('canonical mapping keys must be strings')
+        _track_canonical_bytes(key, byte_total, budget)
+        normalized[key] = _canonical_value(
+            item,
+            depth=depth + 1,
+            counter=counter,
+            byte_total=byte_total,
+            budget=budget,
+        )
+    return normalized
+
+
+def _canonical_number(value: int | float) -> int | float:
+    if isinstance(value, int):
+        if abs(value) > MAX_CREDIT_VALUE:
+            raise ValueError('canonical integer exceeds credit ceiling')
+        return value
+    if not isfinite(value):
+        raise ValueError('non-finite number')
+    return value
+
+
+def _canonical_value(
+    value: object,
+    *,
+    depth: int,
+    counter: list[int],
+    byte_total: list[int],
+    budget: int,
+) -> object:
     counter[0] += 1
     if counter[0] > MAX_CANONICAL_NODES or depth > MAX_CANONICAL_DEPTH:
         raise ValueError('canonical structure exceeds limits')
     if value is None or isinstance(value, bool):
         return value
-    if isinstance(value, int):
-        # Reject integers whose absolute value exceeds the credit ceiling
-        if abs(value) > MAX_CREDIT_VALUE:
-            raise ValueError('canonical integer exceeds credit ceiling')
-        return value
-    if isinstance(value, float):
+    if isinstance(value, (int, float)):
         # 有限浮点参数（如 guidance_scale=3.5）合法：与视频侧 request_hash 的
         # json.dumps 行为一致，直接进入 canonical JSON（repr 确定性序列化）。
         # NaN/Inf 无稳定表示，仍拒绝。
-        if not isfinite(value):
-            raise ValueError('non-finite number')
-        return value
+        return _canonical_number(value)
     if isinstance(value, str):
-        byte_len = len(value.encode('utf-8'))
-        if byte_len > MAX_CANONICAL_STRING_BYTES:
+        if len(value.encode('utf-8')) > MAX_CANONICAL_STRING_BYTES:
             raise ValueError('canonical string exceeds limit')
-        byte_total[0] += byte_len
-        if byte_total[0] > budget:
-            raise ValueError('canonical total bytes exceed budget')
+        _track_canonical_bytes(value, byte_total, budget)
         return value
     if isinstance(value, Mapping):
-        normalized: dict[str, object] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise ValueError('canonical mapping keys must be strings')
-            key_len = len(key.encode('utf-8'))
-            byte_total[0] += key_len
-            if byte_total[0] > budget:
-                raise ValueError('canonical total bytes exceed budget')
-            normalized[key] = _canonical_value(
-                item, depth=depth + 1, counter=counter, byte_total=byte_total, budget=budget
-            )
-        return normalized
+        return _canonical_mapping(
+            value,
+            depth=depth,
+            counter=counter,
+            byte_total=byte_total,
+            budget=budget,
+        )
     if isinstance(value, (list, tuple)):
         return [
             _canonical_value(item, depth=depth + 1, counter=counter, byte_total=byte_total, budget=budget)
@@ -167,17 +198,18 @@ def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _channel(request: object, metadata: object) -> Literal['web', 'api', 'chat', 'tool']:
+def _trusted_channel(metadata: object) -> Literal['chat', 'tool'] | None:
     if metadata is not None and not isinstance(metadata, Mapping):
         raise _error('credit_service_unavailable', 'invalid_credit_channel')
     trusted = metadata.get('credit_channel') if metadata else None
-    if trusted is not None:
-        if trusted not in ('chat', 'tool'):
-            raise _error('credit_service_unavailable', 'invalid_credit_channel')
-        return trusted
-    headers = getattr(request, 'headers', {})
-    if not isinstance(headers, Mapping):
+    if trusted is None:
+        return None
+    if trusted not in ('chat', 'tool'):
         raise _error('credit_service_unavailable', 'invalid_credit_channel')
+    return trusted
+
+
+def _headers_use_api_key(headers: Mapping) -> bool:
     authorization = headers.get('authorization', '')
     # Bearer scheme is case-insensitive per RFC 6750; credentials starting
     # with "sk-" indicate a service API key, not a JWT web session.
@@ -187,17 +219,19 @@ def _channel(request: object, metadata: object) -> Literal['web', 'api', 'chat',
         if stripped.lower().startswith('bearer '):
             credentials = stripped[len('bearer ') :]
             if credentials.startswith('sk-'):
-                return 'api'
+                return True
     # x-api-key must be present and non-blank to count as API
     api_key = headers.get('x-api-key')
-    if isinstance(api_key, str) and api_key.strip():
-        return 'api'
+    return isinstance(api_key, str) and bool(api_key.strip())
+
+
+def _request_credentials_use_api_key(request: object) -> bool:
     # Cookie token starting with "sk-" also indicates API
     cookies = getattr(request, 'cookies', {})
     if isinstance(cookies, Mapping):
         cookie_token = cookies.get('token', '')
         if isinstance(cookie_token, str) and cookie_token.startswith('sk-'):
-            return 'api'
+            return True
     # request.state.token.credentials starting with "sk-"
     state = getattr(request, 'state', None)
     if state is not None:
@@ -205,8 +239,22 @@ def _channel(request: object, metadata: object) -> Literal['web', 'api', 'chat',
         if state_token is not None:
             credentials = getattr(state_token, 'credentials', None)
             if isinstance(credentials, str) and credentials.startswith('sk-'):
-                return 'api'
-    return 'web'
+                return True
+    return False
+
+
+def _request_uses_api_key(request: object) -> bool:
+    headers = getattr(request, 'headers', {})
+    if not isinstance(headers, Mapping):
+        raise _error('credit_service_unavailable', 'invalid_credit_channel')
+    return _headers_use_api_key(headers) or _request_credentials_use_api_key(request)
+
+
+def _channel(request: object, metadata: object) -> Literal['web', 'api', 'chat', 'tool']:
+    trusted = _trusted_channel(metadata)
+    if trusted is not None:
+        return trusted
+    return 'api' if _request_uses_api_key(request) else 'web'
 
 
 def _pixel_count(value: str | None) -> int | None:
@@ -305,11 +353,11 @@ def _validate_magic_bytes(payload: bytes, mime: str) -> None:
         raise _error('price_rule_incomplete', 'invalid_reference_image')
     if mime == 'image/png' and not payload.startswith(_PNG_SIGNATURE):
         raise _error('price_rule_incomplete', 'invalid_reference_image')
-    elif mime == 'image/jpeg' and not payload.startswith(_JPEG_SIGNATURE):
+    if mime == 'image/jpeg' and not payload.startswith(_JPEG_SIGNATURE):
         raise _error('price_rule_incomplete', 'invalid_reference_image')
-    elif mime == 'image/webp':
-        if not payload[:4] == _WEBP_SIGNATURE_PREFIX or payload[8:12] != _WEBP_SIGNATURE_SUFFIX:
-            raise _error('price_rule_incomplete', 'invalid_reference_image')
+    invalid_webp = payload[:4] != _WEBP_SIGNATURE_PREFIX or payload[8:12] != _WEBP_SIGNATURE_SUFFIX
+    if mime == 'image/webp' and invalid_webp:
+        raise _error('price_rule_incomplete', 'invalid_reference_image')
 
 
 def _decode_data_url(reference: str) -> tuple[bytes, str]:
@@ -344,6 +392,35 @@ def _validated_mime(value: object, fallback_path: str | None = None) -> str:
     return mime
 
 
+def _validate_declared_reference_size(value: object) -> None:
+    if value is None:
+        return
+    try:
+        declared_size = int(value)
+    except (TypeError, ValueError):
+        raise _error('price_rule_incomplete', 'invalid_reference_image') from None
+    if declared_size < 0:
+        raise _error('price_rule_incomplete', 'invalid_reference_image')
+    if declared_size > MAX_REFERENCE_IMAGE_BYTES:
+        raise _error('price_rule_incomplete', 'reference_too_large')
+
+
+async def _read_reference_response(response: object) -> tuple[bytes, str]:
+    response.raise_for_status()
+    mime = _validated_mime(response.headers.get('Content-Type'))
+    _validate_declared_reference_size(response.headers.get('Content-Length'))
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.content.iter_chunked(_READ_CHUNK_SIZE):
+        total += len(chunk)
+        if total > MAX_REFERENCE_IMAGE_BYTES:
+            raise _error('price_rule_incomplete', 'reference_too_large')
+        chunks.append(chunk)
+    payload = b''.join(chunks)
+    _validate_magic_bytes(payload, mime)
+    return payload, mime
+
+
 async def _read_url_reference(reference: str) -> tuple[bytes, str]:
     try:
         await asyncio.to_thread(validate_url, reference)
@@ -351,30 +428,7 @@ async def _read_url_reference(reference: str) -> tuple[bytes, str]:
         raise _error('price_rule_incomplete', 'invalid_reference_image') from None
     try:
         async with asyncio.timeout(REFERENCE_READ_TIMEOUT_SECONDS):
-            async with get_ssrf_safe_session() as session:
-                async with session.get(reference, allow_redirects=False) as response:
-                    response.raise_for_status()
-                    mime = _validated_mime(response.headers.get('Content-Type'))
-                    length = response.headers.get('Content-Length')
-                    if length is not None:
-                        try:
-                            declared_size = int(length)
-                        except (TypeError, ValueError):
-                            raise _error('price_rule_incomplete', 'invalid_reference_image') from None
-                        if declared_size < 0:
-                            raise _error('price_rule_incomplete', 'invalid_reference_image') from None
-                        if declared_size > MAX_REFERENCE_IMAGE_BYTES:
-                            raise _error('price_rule_incomplete', 'reference_too_large') from None
-                    chunks: list[bytes] = []
-                    total = 0
-                    async for chunk in response.content.iter_chunked(_READ_CHUNK_SIZE):
-                        total += len(chunk)
-                        if total > MAX_REFERENCE_IMAGE_BYTES:
-                            raise _error('price_rule_incomplete', 'reference_too_large') from None
-                        chunks.append(chunk)
-                    payload = b''.join(chunks)
-                    _validate_magic_bytes(payload, mime)
-                    return payload, mime
+            return await _fetch_url_reference(reference)
     except CancelledError:
         raise
     except CreditError:
@@ -383,6 +437,12 @@ async def _read_url_reference(reference: str) -> tuple[bytes, str]:
         raise _error('price_rule_incomplete', 'reference_fetch_failed') from None
     except Exception:
         raise _error('price_rule_incomplete', 'reference_fetch_failed') from None
+
+
+async def _fetch_url_reference(reference: str) -> tuple[bytes, str]:
+    async with get_ssrf_safe_session() as session:
+        async with session.get(reference, allow_redirects=False) as response:
+            return await _read_reference_response(response)
 
 
 def _extract_file_id(reference: str) -> str:
@@ -475,6 +535,69 @@ async def _read_references(references: tuple[object, ...], user: object) -> tupl
     return tuple(normalized), tuple(hashes)
 
 
+async def _provider_input(
+    normalized: CompatImageInput,
+    *,
+    transport_model: str,
+    dimensions: Mapping[str, str | int],
+    user: object,
+    action: Literal['text-to-image', 'image-to-image'],
+) -> tuple[CompatImageInput, tuple[str, ...]]:
+    size = dimensions.get('size') if dimensions.get('size') != 'default' else normalized.size
+    image_count = dimensions.get('image_count', normalized.image_count)
+    if action == 'text-to-image':
+        if normalized.image is not None:
+            raise _error('price_rule_incomplete', 'unexpected_reference_image')
+        return replace(normalized, model=transport_model, size=size, image_count=image_count), ()
+    normalized_images, reference_hashes = await _references(normalized.image, user)
+    provider_image: str | tuple[str, ...] = (
+        normalized_images[0] if isinstance(normalized.image, str) else normalized_images
+    )
+    return (
+        replace(
+            normalized,
+            model=transport_model,
+            image=provider_image,
+            size=size,
+            image_count=image_count,
+        ),
+        reference_hashes,
+    )
+
+
+def _prepared_billing_context(
+    *,
+    resource_id: str,
+    action: str,
+    channel: str,
+    dimensions: Mapping[str, str | int],
+    prompt_hash: str,
+    reference_hashes: tuple[str, ...],
+    extra: Mapping[str, object],
+) -> ImageBillingContext:
+    snapshot = {
+        'schema_version': 1,
+        'service_type': 'image',
+        'resource_id': resource_id,
+        'action': action,
+        'channel': channel,
+        'dimensions': dimensions,
+        'prompt_hash': prompt_hash,
+        'reference_hashes': reference_hashes,
+        'extra_hash': _sha256(_canonical_json(extra, reason='invalid_extra')),
+    }
+    return ImageBillingContext(
+        service_type='image',
+        resource_id=resource_id,
+        action=action,
+        channel=channel,
+        dimensions=dimensions,
+        prompt_hash=prompt_hash,
+        reference_hashes=reference_hashes,
+        request_hash=_sha256(_canonical_json(snapshot, reason='invalid_request')),
+    )
+
+
 async def _prepare(
     request: object,
     image_input: object,
@@ -496,55 +619,21 @@ async def _prepare(
     # 避免 billing 层预填的解析值触发 set_image_model 静默切换实例级 checkpoint。
     transport_model = normalized.model if resolution.engine == 'automatic1111' else resolution.transport_model
 
-    if action == 'text-to-image':
-        if normalized.image is not None:
-            raise _error('price_rule_incomplete', 'unexpected_reference_image')
-        # Replace the request model with the resolved transport_model;
-        # dimensions.size is the normalized size, but original None values for
-        # resolution/aspect_ratio/quality stay None in provider_input so the
-        # upstream provider does not receive spurious literal "default".
-        provider_input = replace(
-            normalized,
-            model=transport_model,
-            size=dimensions.get('size') if dimensions.get('size') != 'default' else normalized.size,
-            image_count=dimensions.get('image_count', normalized.image_count),
-        )
-        reference_hashes: tuple[str, ...] = ()
-    else:
-        normalized_images, reference_hashes = await _references(normalized.image, user)
-        provider_image: str | tuple[str, ...] = (
-            normalized_images[0] if isinstance(normalized.image, str) else normalized_images
-        )
-        provider_input = replace(
-            normalized,
-            model=transport_model,
-            image=provider_image,
-            size=dimensions.get('size') if dimensions.get('size') != 'default' else normalized.size,
-            image_count=dimensions.get('image_count', normalized.image_count),
-        )
-
-    extra_hash = _sha256(_canonical_json(normalized.extra, reason='invalid_extra'))
-    snapshot = {
-        'schema_version': 1,
-        'service_type': 'image',
-        'resource_id': resource_id,
-        'action': action,
-        'channel': channel,
-        'dimensions': dimensions,
-        'prompt_hash': prompt_hash,
-        'reference_hashes': reference_hashes,
-        'extra_hash': extra_hash,
-    }
-    request_hash = _sha256(_canonical_json(snapshot, reason='invalid_request'))
-    billing = ImageBillingContext(
-        service_type='image',
+    provider_input, reference_hashes = await _provider_input(
+        normalized,
+        transport_model=transport_model,
+        dimensions=dimensions,
+        user=user,
+        action=action,
+    )
+    billing = _prepared_billing_context(
         resource_id=resource_id,
         action=action,
         channel=channel,
         dimensions=dimensions,
         prompt_hash=prompt_hash,
         reference_hashes=reference_hashes,
-        request_hash=request_hash,
+        extra=normalized.extra,
     )
     return PreparedImageCall(billing=billing, provider_input=provider_input)
 

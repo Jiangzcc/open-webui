@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { trapFocus } from '$lib/actions/focusTrap';
@@ -9,9 +9,10 @@
 		type ImageModelOperation
 	} from '$lib/apis/media-model-ops';
 	import Select from '$lib/components/common/Select.svelte';
-import Spinner from '$lib/components/common/Spinner.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	let items: ImageModelOperation[] = [];
 	let loading = true;
 	let search = '';
@@ -284,7 +285,7 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 		role="presentation"
 		on:click={(event) => event.currentTarget === event.target && !saving && (editing = null)}
 	>
-		<section
+		<div
 			class="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-gray-900 sm:max-w-xl sm:rounded-3xl sm:p-6"
 			role="dialog"
 			aria-modal="true"
@@ -387,6 +388,6 @@ import Spinner from '$lib/components/common/Spinner.svelte';
 					on:click={save}>{saving ? $i18n.t('Saving') : $i18n.t('Save')}</button
 				>
 			</div>
-		</section>
+		</div>
 	</div>
 {/if}

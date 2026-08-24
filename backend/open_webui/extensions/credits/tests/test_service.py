@@ -13,11 +13,10 @@ import open_webui.extensions.credits.repository as credit_repository
 import pytest
 import pytest_asyncio
 from fastapi.encoders import jsonable_encoder
-from open_webui.extensions.credits.compat import ImageBillingContext
 from open_webui.extensions.credits.constants import MAX_CREDIT_VALUE
 from open_webui.extensions.credits.db import CreditBase
 from open_webui.extensions.credits.errors import CreditError
-from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
+from open_webui.extensions.credits.models import CreditAccount, CreditLedger, CreditUsage
 from open_webui.extensions.credits.repository import get_or_create_account, update_account_balance
 from open_webui.extensions.credits.schemas import (
     AdjustmentRequest,
@@ -35,7 +34,7 @@ from open_webui.extensions.credits.service import (
 from open_webui.internal.db import _make_async_url
 from open_webui.models.users import User
 from pydantic import ValidationError
-from sqlalchemy import event, func, insert, select
+from sqlalchemy import event, func, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -60,67 +59,14 @@ async def service_database(tmp_path: Path):
         await engine.dispose()
 
 
-async def create_user(sessions, user_id: str, *, name: str | None = None, email: str | None = None) -> UserSnapshot:
-    snapshot = UserSnapshot(
-        id=user_id,
-        name=name or f'Name {user_id}',
-        email=email or f'{user_id}@example.test',
-    )
-    async with sessions() as session, session.begin():
-        await session.execute(insert(User).values(id=snapshot.id, name=snapshot.name, email=snapshot.email))
-    return snapshot
-
-
 def audit(request_id: str = 'request-1') -> RequestAuditContext:
     return RequestAuditContext(source='internal_admin', request_id=request_id, remote_address_hash='a0' * 32)
-
-
-def image_context(*, request_hash: str = 'b' * 64) -> ImageBillingContext:
-    return ImageBillingContext(
-        service_type='image',
-        resource_id='model-a',
-        action='text-to-image',
-        channel='web',
-        dimensions={'size': '512x512', 'image_count': 1},
-        prompt_hash='a' * 64,
-        reference_hashes=(),
-        request_hash=request_hash,
-    )
 
 
 @asynccontextmanager
 async def credit_session_for_test(sessions):
     async with sessions() as session:
         yield session
-
-
-async def add_price(sessions, *, enabled: bool = True, base_price: str = '3') -> None:
-    now = int(time.time())
-    async with sessions() as session, session.begin():
-        session.add(
-            CreditPrice(
-                id='price-model-a',
-                service_type='image',
-                resource_id='model-a',
-                action='text-to-image',
-                base_price=base_price,
-                rules={'schema_version': 1, 'dimensions': []},
-                enabled=enabled,
-                created_at=now,
-                updated_at=now,
-            )
-        )
-
-
-async def credit_user(sessions, user: UserSnapshot, amount: int = 10) -> None:
-    async with sessions() as session:
-        await adjust_balance(
-            session,
-            user,
-            UserSnapshot(id='admin-1', name='Admin', email='admin@example.test'),
-            adjustment('increase', amount),
-            audit('seed'),
-        )
 
 
 def adjustment(
@@ -130,6 +76,9 @@ def adjustment(
     note: str | None = None,
 ) -> AdjustmentRequest:
     return AdjustmentRequest(direction=direction, amount=amount, reason_code=reason_code, note=note)
+
+
+from .service_test_support import create_user
 
 
 async def add_ledger(

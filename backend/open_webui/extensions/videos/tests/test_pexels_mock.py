@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import sys
 import types
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
+import aiohttp
 import pytest
 from open_webui.extensions.videos import delivery, pexels_mock, service
 from open_webui.extensions.videos.pexels_mock import PexelsMockClip
-from open_webui.extensions.videos.schemas import VideoTaskResponse
+
+from .task_test_support import FileUrlRequest as _FakeRequest
+from .task_test_support import video_task as _task
 
 
 # --------------------------------------------------------------------------- #
@@ -202,11 +207,148 @@ async def test_fetch_returns_clip_with_empty_poster_when_download_fails(monkeypa
     assert clip.duration_seconds == 9
 
 
+class _AsyncContext:
+    def __init__(self, response) -> None:
+        self.response = response
+
+    async def __aenter__(self):
+        return self.response
+
+    async def __aexit__(self, *_args) -> None:
+        return None
+
+
+class _Content:
+    def __init__(self, chunks) -> None:
+        self.chunks = chunks
+
+    async def iter_chunked(self, _size):
+        for chunk in self.chunks:
+            yield chunk
+
+
+@pytest.mark.asyncio
+async def test_low_level_pexels_http_helpers_cover_status_parse_and_size_limits() -> None:
+    class Session:
+        def __init__(self, responses) -> None:
+            self.responses = iter(responses)
+
+        def get(self, *_args, **_kwargs):
+            return _AsyncContext(next(self.responses))
+
+    invalid_json = AsyncMock(
+        side_effect=aiohttp.ContentTypeError(request_info=None, history=())
+    )
+    session = Session(
+        [
+            SimpleNamespace(status=503),
+            SimpleNamespace(status=200, json=invalid_json),
+            SimpleNamespace(status=404),
+            SimpleNamespace(
+                status=200,
+                headers={'Content-Length': '5'},
+                content=_Content([b'abcde']),
+            ),
+            SimpleNamespace(
+                status=200,
+                headers={},
+                content=_Content([b'abc', b'def']),
+            ),
+            SimpleNamespace(
+                status=200,
+                headers={'Content-Length': '3'},
+                content=_Content([b'abc']),
+            ),
+        ]
+    )
+    assert await pexels_mock._request_json(session, 'url', {}, {}) is None
+    assert await pexels_mock._request_json(session, 'url', {}, {}) is None
+    assert await pexels_mock._download_bytes(session, 'url') is None
+    assert await pexels_mock._download_bytes(session, 'url', max_bytes=4) is None
+    assert await pexels_mock._download_bytes(session, 'url', max_bytes=4) is None
+    assert await pexels_mock._download_bytes(session, 'url', max_bytes=4) == b'abc'
+
+
+@pytest.mark.asyncio
+async def test_malformed_pexels_entries_are_skipped(monkeypatch) -> None:
+    for entry in (
+        None,
+        {},
+        {'duration': 0},
+        {'duration': 1, 'video_files': []},
+        {
+            'duration': 1,
+            'video_files': [{'file_type': 'video/mp4', 'link': 'https://video'}],
+        },
+    ):
+        monkeypatch.setattr(pexels_mock, '_download_bytes', AsyncMock(return_value=None))
+        assert await pexels_mock._try_clip_from_video(object(), entry) is None
+
+    assert pexels_mock._picture_url(None) is None
+    assert pexels_mock._picture_url({'picture': 'http://unsafe'}) is None
+    assert pexels_mock._poster_url({'video_pictures': [None, {'picture': 'http://unsafe'}]})[0] is None
+    assert pexels_mock._pick_smallest_mp4(
+        {
+            'video_files': [
+                None,
+                {'file_type': 'text/plain'},
+                {'file_type': 'video/mp4', 'link': 1},
+                {'file_type': 'video/mp4', 'link': 'https://video'},
+            ]
+        }
+    )['link'] == 'https://video'
+
+
+@pytest.mark.asyncio
+async def test_fetch_skips_empty_payloads_and_all_invalid_entries(monkeypatch) -> None:
+    monkeypatch.setattr(pexels_mock, 'pexels_api_key', lambda: 'fake-key')
+    monkeypatch.setattr(pexels_mock, 'get_session', AsyncMock(return_value=object()))
+    for payload in ({}, {'videos': []}, {'videos': [None]}):
+        monkeypatch.setattr(pexels_mock, '_request_json', AsyncMock(return_value=payload))
+        assert await pexels_mock.fetch_random_pexels_clip() is None
+
+
 # --------------------------------------------------------------------------- #
 # poster-from-frame fallback
 # --------------------------------------------------------------------------- #
 def test_extract_poster_returns_none_for_garbage() -> None:
     assert pexels_mock.extract_poster_from_video(b'not a video') is None
+
+
+def test_media_probe_helpers_cover_stream_fallback_and_failures(monkeypatch, tmp_path) -> None:
+    closed = []
+
+    class Container:
+        duration = None
+        streams = SimpleNamespace(
+            video=[SimpleNamespace(duration=6, time_base=0.5)]
+        )
+
+        def close(self):
+            closed.append(True)
+
+    fake_av = types.SimpleNamespace(open=lambda _path: Container(), time_base=1)
+    monkeypatch.setitem(sys.modules, 'av', fake_av)
+    assert pexels_mock.probe_video_duration(tmp_path / 'video.mp4') == 3
+    assert closed
+
+    fake_av.open = Mock(side_effect=RuntimeError)
+    assert pexels_mock.probe_video_duration(tmp_path / 'video.mp4') is None
+    assert pexels_mock.extract_poster_from_video(b'video') is None
+
+
+def test_extract_poster_handles_decode_and_close_failures(monkeypatch) -> None:
+    class Container:
+        streams = SimpleNamespace(video=[object()])
+
+        def decode(self, _stream):
+            raise RuntimeError
+
+        def close(self):
+            raise RuntimeError
+
+    monkeypatch.setitem(sys.modules, 'av', types.SimpleNamespace(open=lambda _source: Container()))
+    assert pexels_mock.extract_poster_from_video(b'video') is None
 
 
 def test_extract_poster_synthesizes_webp_from_real_mp4() -> None:
@@ -235,31 +377,6 @@ class _FakeFile:
 
     async def read(self) -> bytes:
         return self._payload
-
-
-class _FakeRequest:
-    class _App:
-        @staticmethod
-        def url_path_for(name: str, *, id: str) -> str:
-            return f'/api/v1/files/{id}/content'
-
-    app = _App()
-
-
-def _task() -> VideoTaskResponse:
-    return VideoTaskResponse(
-        id='task-1',
-        status='running',
-        task='text-to-video',
-        prompt='A paper boat',
-        model_id='kling-video-v3-pro',
-        params={'duration': '5'},
-        assets=(),
-        result=None,
-        error_code=None,
-        created_at=1,
-        updated_at=1,
-    )
 
 
 class _RecordingSession:

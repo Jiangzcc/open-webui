@@ -7,4 +7,7 @@
 export type GenerationTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 /** 仍在执行中的任务（未终态）。 */
-export const ACTIVE_GENERATION_TASK_STATUSES: readonly GenerationTaskStatus[] = ['queued', 'running'];
+export const ACTIVE_GENERATION_TASK_STATUSES: readonly GenerationTaskStatus[] = [
+	'queued',
+	'running'
+];

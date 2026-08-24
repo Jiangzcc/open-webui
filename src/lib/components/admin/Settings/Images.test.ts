@@ -28,9 +28,9 @@ describe('fal.ai image settings', () => {
 	test('points fal.ai credential management to the operations center', () => {
 		// FAL 的 Key/Base URL/mock 开关已迁移至运营中心（provider-ops）的 FAL 配置区，
 		// Images 设置页只保留引擎选择并给出指引。
-		expect(
-			source.match(/FAL API settings are managed in the operations center\./g)
-		).toHaveLength(2);
+		expect(source.match(/FAL API settings are managed in the operations center\./g)).toHaveLength(
+			2
+		);
 		expect(source).not.toContain('bind:value={config.FAL_API_KEY}');
 		expect(source).not.toContain('bind:value={config.IMAGES_EDIT_FAL_API_KEY}');
 		expect(source).not.toContain('fal.ai API Key is required.');

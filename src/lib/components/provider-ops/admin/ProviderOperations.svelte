@@ -21,7 +21,7 @@
 		type VideoRuntimeStatus
 	} from '$lib/apis/provider-ops';
 	import Select from '$lib/components/common/Select.svelte';
-import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
+	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 
@@ -283,7 +283,9 @@ import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 					/>
 				</div>
 				<div class="flex min-w-0 flex-col gap-1">
-					<span class="text-xs text-gray-500" id="fal-video-key-label">{$i18n.t('Video API Key')}</span>
+					<span class="text-xs text-gray-500" id="fal-video-key-label"
+						>{$i18n.t('Video API Key')}</span
+					>
 					<SensitiveInput
 						variant="plain"
 						outerClassName="w-full"
@@ -301,7 +303,10 @@ import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 					<span class="min-w-0 text-sm dark:text-gray-100" id="fal-image-mock-label">
 						{$i18n.t('Image mock mode')}
 					</span>
-					<Switch bind:state={falConfig.image_mock_enabled} ariaLabelledbyId="fal-image-mock-label" />
+					<Switch
+						bind:state={falConfig.image_mock_enabled}
+						ariaLabelledbyId="fal-image-mock-label"
+					/>
 				</div>
 				<div
 					class="flex items-center justify-between gap-3 rounded-xl border border-gray-100 px-3 py-2 dark:border-gray-800"
@@ -309,7 +314,10 @@ import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 					<span class="min-w-0 text-sm dark:text-gray-100" id="fal-video-mock-label">
 						{$i18n.t('Video mock mode')}
 					</span>
-					<Switch bind:state={falConfig.video_mock_enabled} ariaLabelledbyId="fal-video-mock-label" />
+					<Switch
+						bind:state={falConfig.video_mock_enabled}
+						ariaLabelledbyId="fal-video-mock-label"
+					/>
 				</div>
 			</div>
 		</section>

@@ -11,17 +11,16 @@
 
 <DemoCard
 	title="NativeSelect"
-	desc={$i18n.t('Thin native <select> + custom arrow. options array or slot. bind:value, on:change.')}>
+	desc={$i18n.t(
+		'Thin native <select> + custom arrow. options array or slot. bind:value, on:change.'
+	)}
+>
 	<div class="flex flex-col items-start gap-2 w-full">
 		<NativeSelect
 			bind:value
 			placeholder={$i18n.t('Pick one')}
 			className="w-full rounded-lg py-2 px-3 text-sm bg-gray-50 dark:bg-gray-850 outline-hidden"
-			options={[
-				{ value: 'a', label: 'Apple' },
-				{ value: 'b', label: 'Banana' },
-				'cherry'
-			]}
+			options={[{ value: 'a', label: 'Apple' }, { value: 'b', label: 'Banana' }, 'cherry']}
 			on:change={() => console.log('changed')}
 		/>
 		<span class="text-[11px] text-gray-400">value = {value}</span>

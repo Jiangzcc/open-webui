@@ -15,11 +15,51 @@
 	let dismissedIds: string[] = [];
 
 	const banners = [
-		{ id: 'b-info', type: 'info', title: 'Info', content: '这是一条 **信息** 横幅，支持 Markdown。', url: '', dismissible: true, timestamp: now },
-		{ id: 'b-success', type: 'success', title: 'OK', content: '操作**成功**完成。', url: '', dismissible: true, timestamp: now },
-		{ id: 'b-warning', type: 'warning', title: 'Warn', content: '请注意：该功能为*演示*用途。', url: '', dismissible: true, timestamp: now },
-		{ id: 'b-error', type: 'error', title: 'Error', content: '发生错误，请检查后重试。', url: '', dismissible: true, timestamp: now },
-		{ id: 'b-link', type: 'info', title: 'Link', content: '带链接的横幅，点击可跳转。', url: '#section-overlays', dismissible: true, timestamp: now }
+		{
+			id: 'b-info',
+			type: 'info',
+			title: 'Info',
+			content: '这是一条 **信息** 横幅，支持 Markdown。',
+			url: '',
+			dismissible: true,
+			timestamp: now
+		},
+		{
+			id: 'b-success',
+			type: 'success',
+			title: 'OK',
+			content: '操作**成功**完成。',
+			url: '',
+			dismissible: true,
+			timestamp: now
+		},
+		{
+			id: 'b-warning',
+			type: 'warning',
+			title: 'Warn',
+			content: '请注意：该功能为*演示*用途。',
+			url: '',
+			dismissible: true,
+			timestamp: now
+		},
+		{
+			id: 'b-error',
+			type: 'error',
+			title: 'Error',
+			content: '发生错误，请检查后重试。',
+			url: '',
+			dismissible: true,
+			timestamp: now
+		},
+		{
+			id: 'b-link',
+			type: 'info',
+			title: 'Link',
+			content: '带链接的横幅，点击可跳转。',
+			url: '#section-overlays',
+			dismissible: true,
+			timestamp: now
+		}
 	];
 
 	$: visible = banners.filter((b) => !dismissedIds.includes(b.id));
@@ -27,7 +67,9 @@
 
 <DemoCard
 	title="Banner"
-	desc={$i18n.t('Top banner with type chip (info/success/warning/error). Markdown content. Dismissible.')}
+	desc={$i18n.t(
+		'Top banner with type chip (info/success/warning/error). Markdown content. Dismissible.'
+	)}
 >
 	<div class="w-full flex flex-col gap-2">
 		{#if visible.length === 0}

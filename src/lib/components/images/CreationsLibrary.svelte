@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { deleteCreations, listAdminCreations, listCreations } from '$lib/apis/creations';
@@ -18,6 +17,7 @@
 	} from '$lib/utils/creations-library';
 	import { blobExtension, zipAndDownload } from '$lib/utils/download';
 	import type { ImageCreationDraft } from '$lib/utils/image-generation-batches';
+	import { getI18nContext } from '$lib/i18n/context';
 
 	import { onDestroy, onMount } from 'svelte';
 
@@ -34,7 +34,7 @@
 	export let mediaKind: '' | 'image' | 'video' = '';
 	export let onReuse: (draft: ImageCreationDraft) => void = () => {};
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 
 	const PAGE_SIZE = 20;
 
@@ -400,9 +400,7 @@
 				aria-hidden="true"
 			>
 				{#each Array(10) as _, index (index)}
-					<div
-						class="aspect-[3/4] overflow-hidden rounded-xl bg-stone-100 dark:bg-gray-900/40"
-					>
+					<div class="aspect-[3/4] overflow-hidden rounded-xl bg-stone-100 dark:bg-gray-900/40">
 						<div
 							class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
 						></div>

@@ -12,16 +12,13 @@
 
 <DemoCard
 	title="Dropdown"
-	desc={$i18n.t('Portal dropdown container. trigger slot + content slot. bind:show, auto-flip/shift.')}>
+	desc={$i18n.t(
+		'Portal dropdown container. trigger slot + content slot. bind:show, auto-flip/shift.'
+	)}
+>
 	<div class="flex flex-col items-start gap-2">
 		<div class="inline-block">
-			<Dropdown
-				bind:show
-				align="end"
-				side="bottom"
-				sideOffset={6}
-				closeOnOutsideClick={true}
-			>
+			<Dropdown bind:show align="end" side="bottom" sideOffset={6} closeOnOutsideClick={true}>
 				<button
 					class="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition text-sm"
 				>

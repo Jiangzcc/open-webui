@@ -8,6 +8,7 @@ HTTP 路由直接消费的数据库访问：任务创建（幂等）、查询、
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from uuid import uuid4
 
 from open_webui.extensions.creations.models import VideoGenerationTask
@@ -31,6 +32,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 DELETABLE_STATUSES = ('succeeded', 'failed')
 
 
+class VideoIdempotencyConflictError(ValueError):
+    """The same user/key pair was reused for a different normalized form."""
+
+
+def submission_payload_sha256(submission: VideoTaskSubmitForm) -> str:
+    payload = json.dumps(
+        submission.model_dump(mode='json'),
+        ensure_ascii=False,
+        separators=(',', ':'),
+        sort_keys=True,
+        allow_nan=False,
+    ).encode()
+    return sha256(payload).hexdigest()
+
+
 def _result(value: object) -> VideoTaskResult | None:
     if not isinstance(value, dict):
         return None
@@ -44,6 +60,7 @@ def _response(task: VideoGenerationTask) -> VideoTaskResponse:
     assets = task.assets_json if isinstance(task.assets_json, list) else []
     return VideoTaskResponse(
         id=task.id,
+        payload_sha256=getattr(task, 'payload_sha256', None),
         status=task.status,
         task=task.task,
         prompt=task.prompt,
@@ -79,36 +96,50 @@ async def validate_video_assets(
             raise ValueError(f'video_asset_too_large:{reference.role}')
 
 
-async def create_video_task(
+async def _video_task_by_key(
     session: AsyncSession,
-    *,
     user_id: str,
     idempotency_key: str,
-    submission: VideoTaskSubmitForm,
-) -> tuple[VideoTaskResponse, bool]:
-    existing = await session.scalar(
+) -> VideoGenerationTask | None:
+    return await session.scalar(
         select(VideoGenerationTask).where(
             VideoGenerationTask.user_id == user_id,
             VideoGenerationTask.idempotency_key == idempotency_key,
         )
     )
-    if existing is not None:
-        return _response(existing), False
 
-    definition, _provider_payload, safe_params = build_video_provider_payload(submission)
-    await validate_video_assets(submission, definition, user_id)
+
+def _ensure_matching_submission(task: VideoGenerationTask, payload_sha256: str) -> VideoTaskResponse:
+    response = _response(task)
+    if response.payload_sha256 != payload_sha256:
+        raise VideoIdempotencyConflictError
+    return response
+
+
+def _new_video_task(
+    user_id: str,
+    idempotency_key: str,
+    submission: VideoTaskSubmitForm,
+    *,
+    payload_sha256: str,
+    definition: FalVideoModelDefinition,
+    provider_payload: dict[str, object],
+    safe_params: dict[str, object],
+) -> VideoGenerationTask:
     now = _now()
-    task = VideoGenerationTask(
+    return VideoGenerationTask(
         id=str(uuid4()),
         user_id=user_id,
         idempotency_key=idempotency_key,
+        payload_sha256=payload_sha256,
         status='queued',
         task=submission.task,
-        # prompt/params 即用户输入的纯文本（标签点击时已直接插入 insert_text）。
         prompt=submission.prompt,
         model_id=submission.model,
         params_json=safe_params,
         assets_json=[item.model_dump() for item in submission.assets],
+        provider_definition_json=definition.model_dump(mode='json'),
+        provider_payload_json=provider_payload,
         result_json=None,
         error_code=None,
         usage_id=None,
@@ -117,20 +148,40 @@ async def create_video_task(
         completed_at=None,
         updated_at=now,
     )
+
+
+async def create_video_task(
+    session: AsyncSession,
+    *,
+    user_id: str,
+    idempotency_key: str,
+    submission: VideoTaskSubmitForm,
+) -> tuple[VideoTaskResponse, bool]:
+    payload_sha256 = submission_payload_sha256(submission)
+    existing = await _video_task_by_key(session, user_id, idempotency_key)
+    if existing is not None:
+        return _ensure_matching_submission(existing, payload_sha256), False
+
+    definition, provider_payload, safe_params = build_video_provider_payload(submission)
+    await validate_video_assets(submission, definition, user_id)
+    task = _new_video_task(
+        user_id,
+        idempotency_key,
+        submission,
+        payload_sha256=payload_sha256,
+        definition=definition,
+        provider_payload=provider_payload,
+        safe_params=safe_params,
+    )
     session.add(task)
     try:
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        raced = await session.scalar(
-            select(VideoGenerationTask).where(
-                VideoGenerationTask.user_id == user_id,
-                VideoGenerationTask.idempotency_key == idempotency_key,
-            )
-        )
+        raced = await _video_task_by_key(session, user_id, idempotency_key)
         if raced is None:
             raise
-        return _response(raced), False
+        return _ensure_matching_submission(raced, payload_sha256), False
     return _response(task), True
 
 
@@ -179,17 +230,7 @@ def _submission_from_task(task: VideoTaskResponse) -> VideoTaskSubmitForm:
 
 
 def video_task_matches_submission(task: VideoTaskResponse, submission: VideoTaskSubmitForm) -> bool:
-    try:
-        _definition, _provider_payload, safe_params = build_video_provider_payload(submission)
-    except Exception:
-        return False
-    return bool(
-        task.task == submission.task
-        and task.model_id == submission.model
-        and task.prompt == submission.prompt
-        and task.assets == submission.assets
-        and task.params == safe_params
-    )
+    return task.payload_sha256 == submission_payload_sha256(submission)
 
 
 async def list_video_tasks(

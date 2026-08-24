@@ -1,3 +1,16 @@
+<script context="module" lang="ts">
+	export type SelectableModel = {
+		id: string;
+		name: string;
+		provider?: string | null;
+		recommended?: boolean;
+		tags?: string[];
+		maintenance?: string | null;
+		enabled?: boolean;
+		raw: unknown;
+	};
+</script>
+
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import type { Writable } from 'svelte/store';
@@ -19,18 +32,6 @@
 	 * 字段名差异（图片页 camelCase，视频页 snake_case）由各页在构造 SelectableModel 时
 	 * 归一化，组件内部只依赖归一化后的字段，不耦合任一页的具体模型类型。
 	 */
-	export type SelectableModel = {
-		id: string;
-		name: string;
-		provider?: string | null;
-		recommended?: boolean;
-		tags?: string[];
-		maintenance?: string | null;
-		enabled?: boolean;
-		/** 原始模型对象；各页在 `extras` 槽里把它 cast 回自己的具体类型。 */
-		raw: unknown;
-	};
-
 	/** 双向绑定的展开状态（与 Dropdown 的外部点击关闭联动）。 */
 	export let show = false;
 	/** 触发按钮显示的模型名（由页面计算：加载中 / 短名 / 默认模型）。 */
@@ -45,7 +46,7 @@
 	export let selectedId = '';
 	export let onSelectVendor: (vendor: string) => void = () => {};
 	export let onSelectModel: (model: SelectableModel) => void = () => {};
-	/** 弹出 listbox 的无障碍标签。 */
+	/** 弹出模型选择对话框的无障碍标签。 */
 	export let listboxLabel = '';
 
 	const i18n = getContext<Writable<I18n>>('i18n');
@@ -61,9 +62,9 @@
 >
 	<button
 		type="button"
-		class="inline-flex h-8 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+		class="inline-flex h-11 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 sm:h-8 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
 		aria-expanded={show}
-		aria-haspopup="listbox"
+		aria-haspopup="dialog"
 		aria-label={listboxLabel || $i18n.t('Select model')}
 	>
 		{#if provider}
@@ -78,20 +79,19 @@
 	<div
 		slot="content"
 		class="flex h-[min(60dvh,28rem)] min-h-0 min-w-0 flex-row gap-2 sm:h-80 sm:min-w-[22rem]"
-		role="listbox"
+		role="dialog"
 		aria-label={listboxLabel || $i18n.t('Models')}
 	>
 		<!-- 厂商列（左/上） -->
 		<ul
 			class="flex min-h-0 w-28 shrink-0 flex-col gap-1 overflow-y-auto overflow-x-hidden overscroll-contain border-r border-gray-100 pr-1 dark:border-gray-800 sm:w-40 sm:pr-1"
-			role="group"
 			aria-label={$i18n.t('Brands')}
 		>
 			{#each vendors as vendor}
 				<li class="snap-start">
 					<button
 						type="button"
-						class="flex min-w-0 w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedVendor ===
+						class="flex min-h-11 min-w-0 w-full shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition sm:min-h-0 {selectedVendor ===
 						vendor
 							? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
 							: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
@@ -107,23 +107,21 @@
 		<!-- 模型列（右/下） -->
 		<ul
 			class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain sm:h-full"
-			role="group"
 			aria-label={$i18n.t('Models')}
 		>
 			{#each models as model}
 				<li>
 					<button
 						type="button"
-						class="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition {selectedId ===
+						class="flex min-h-11 w-full items-center gap-2 rounded-xl px-2 py-1.5 text-sm transition sm:min-h-0 {selectedId ===
 						model.id
 							? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
 							: model.enabled === false
 								? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
 								: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-						on:click={() => onSelectModel(model)}
-						role="option"
-						aria-selected={selectedId === model.id}
-						aria-disabled={model.enabled === false}
+						on:click={() => model.enabled !== false && onSelectModel(model)}
+						disabled={model.enabled === false}
+						aria-pressed={selectedId === model.id}
 					>
 						{#if model.provider}
 							<VendorLogo provider={model.provider} className="size-4 shrink-0 rounded-sm" />
@@ -144,7 +142,8 @@
 								>
 							{/if}
 							{#if model.maintenance}
-								<span class="mt-0.5 block line-clamp-2 text-[11px] text-orange-600 dark:text-orange-400"
+								<span
+									class="mt-0.5 block line-clamp-2 text-[11px] text-orange-600 dark:text-orange-400"
 									>{model.maintenance}</span
 								>
 							{/if}

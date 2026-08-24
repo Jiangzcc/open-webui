@@ -1,14 +1,34 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 
-	import { getAdminCreditLedger, type AdminLedgerQuery, type LedgerItem } from '$lib/apis/credits';
+	import {
+		getAdminCreditLedger,
+		type AdminLedgerQuery,
+		type LedgerReason,
+		type LedgerItem
+	} from '$lib/apis/credits';
 	import { translateCreditApiError } from '$lib/components/credits/credits-i18n';
-import Select from '$lib/components/common/Select.svelte';
+	import Select from '$lib/components/common/Select.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { getI18nContext } from '$lib/i18n/context';
 
-	const i18n = getContext('i18n');
+	const i18n = getI18nContext();
 	const pageSize = 25;
+	const ledgerReasons: LedgerReason[] = [
+		'offline_recharge',
+		'promotion_gift',
+		'manual_refund',
+		'accounting_correction',
+		'violation_deduction',
+		'other',
+		'redeem'
+	];
+	const ledgerEntryTypes: NonNullable<AdminLedgerQuery['entry_type']>[] = [
+		'consumption',
+		'admin_adjustment',
+		'system_adjustment'
+	];
 
 	let entries: LedgerItem[] = [];
 	let total = 0;
@@ -92,21 +112,24 @@ import Select from '$lib/components/common/Select.svelte';
 			]}
 			ariaLabel={$i18n.t('credits.admin.allTypes')}
 			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
-			onChange={(value) => (filters.entry_type = value || undefined)}
+			onChange={(value) => {
+				filters.entry_type = ledgerEntryTypes.find((entryType) => entryType === value);
+			}}
 		/>
 		<Select
 			value={filters.reason_code ?? ''}
 			items={[
 				{ value: '', label: $i18n.t('credits.admin.allReasons') },
-				{ value: 'promotion_gift', label: $i18n.t('credits.reasons.promotion_gift') },
-				{ value: 'manual_refund', label: $i18n.t('credits.reasons.manual_refund') },
-				{ value: 'violation_deduction', label: $i18n.t('credits.reasons.violation_deduction') },
-				{ value: 'redeem', label: $i18n.t('credits.reasons.redeem') },
-				{ value: 'other', label: $i18n.t('credits.reasons.other') }
+				...ledgerReasons.map((reason) => ({
+					value: reason,
+					label: $i18n.t(`credits.reasons.${reason}`)
+				}))
 			]}
 			ariaLabel={$i18n.t('credits.admin.allReasons')}
 			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
-			onChange={(value) => (filters.reason_code = value || undefined)}
+			onChange={(value) => {
+				filters.reason_code = ledgerReasons.find((reason) => reason === value);
+			}}
 		/>
 		<input
 			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"

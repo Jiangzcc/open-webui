@@ -28,7 +28,7 @@ async def test_initialization_runs_migration_then_schema_validation(monkeypatch)
 
     monkeypatch.setattr(registration, 'run_creation_migrations', run_creation_migrations)
     monkeypatch.setattr(registration, '_validate_creation_schema', _validate_creation_schema)
-    monkeypatch.setattr(registration, 'fail_incomplete_generation_tasks', lambda: _async_value(0))
+    monkeypatch.setattr(registration, 'recover_incomplete_generation_tasks', lambda _request: _async_value(0))
     app = _app()
     await registration.initialize_creations_extension(app)
     assert calls == [
@@ -38,6 +38,7 @@ async def test_initialization_runs_migration_then_schema_validation(monkeypatch)
         'validated',
     ]
     assert app.state.creation_generation_tasks == {}
+    await registration.shutdown_creations_extension(app)
 
 
 @pytest.mark.asyncio
@@ -55,10 +56,11 @@ async def test_initialization_registers_generation_task_registry(monkeypatch) ->
     app = _app()
     monkeypatch.setattr(registration, 'run_creation_migrations', lambda: None)
     monkeypatch.setattr(registration, '_validate_creation_schema', lambda: None)
-    monkeypatch.setattr(registration, 'fail_incomplete_generation_tasks', lambda: _async_value(0))
+    monkeypatch.setattr(registration, 'recover_incomplete_generation_tasks', lambda _request: _async_value(0))
     await registration.initialize_creations_extension(app)
     assert app.state.creation_generation_tasks == {}
     assert not hasattr(app.state, 'credit_recovery_task')
+    await registration.shutdown_creations_extension(app)
 
 
 async def _async_value(value):
