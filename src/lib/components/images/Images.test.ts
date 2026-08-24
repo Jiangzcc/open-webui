@@ -188,7 +188,7 @@ describe('images page controls', () => {
 		const toolbar = form.slice(toolbarStart, toolbarEnd);
 
 		expect(toolbar.indexOf('<ImageCreditQuoteBadge')).toBeGreaterThan(
-			toolbar.indexOf('bind:this={imageOptionsElement}')
+			toolbar.indexOf('aria-controls={IMAGE_OPTIONS_DIALOG_ID}')
 		);
 		expect(toolbar.indexOf('<ImageCreditQuoteBadge')).toBeLessThan(
 			toolbar.indexOf('<GenerationSubmitButton')
@@ -413,8 +413,8 @@ describe('images page controls', () => {
 	});
 
 	test('makes the image options popover keyboard-dismissible and semantically related', () => {
-		expect(form).toContain("event.key !== 'Escape' || !showAspectRatioPicker");
-		expect(form).toContain('imageOptionsTriggerElement?.focus()');
+		// 开关/外点关闭/Esc/焦点归还统一由 Dropdown 组件提供（与标签、模型选择器一致）。
+		expect(form).toContain('bind:show={showAspectRatioPicker}');
 		expect(form).toContain('aria-haspopup="dialog"');
 		expect(form).toContain('aria-controls={IMAGE_OPTIONS_DIALOG_ID}');
 		expect(form).toContain('role="dialog"');

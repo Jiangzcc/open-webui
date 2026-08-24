@@ -439,11 +439,6 @@
 		selectedResolution = resolution;
 	};
 
-	const toggleAspectRatioPicker = () => {
-		showAspectRatioPicker = !showAspectRatioPicker;
-		showModelSelector = false;
-	};
-
 	const removeGenerationBatch = (batchId: string) => {
 		generationBatches = generationBatches.filter((item) => item.id !== batchId);
 		libraryRevision += 1;
@@ -709,6 +704,7 @@
 					bind:negativePrompt
 					bind:showModelSelector
 					bind:showAspectRatioPicker
+					onOptionsOpen={() => (showModelSelector = false)}
 					bind:showAdvancedSettings
 					bind:draggedOver
 					bind:this={promptFormElement}
@@ -745,7 +741,6 @@
 					{selectModelIfEnabled}
 					{selectAspectRatio}
 					{selectResolution}
-					{toggleAspectRatioPicker}
 					{handleFileUpload}
 					{handleDrop}
 					{removeImage}

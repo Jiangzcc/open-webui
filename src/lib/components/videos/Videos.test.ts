@@ -79,7 +79,7 @@ describe('video creation page', () => {
 	});
 
 	test('matches the image parameter popover visual system', () => {
-		expect(form).toContain('w-[min(27rem,calc(100vw-4rem))]');
+		expect(form).toContain('w-[min(27rem,calc(100vw-1.5rem))]');
 		expect(form).toContain('rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:p-4');
 		expect(form).toContain('flex h-14 min-w-0 flex-col items-center');
 		expect(form).toContain('aspectRatioPreviewStyle(value)');

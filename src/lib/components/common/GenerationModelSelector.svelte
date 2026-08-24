@@ -16,7 +16,6 @@
 	import type { Writable } from 'svelte/store';
 	import type { i18n as I18n } from 'i18next';
 
-	import { mobile } from '$lib/stores';
 	import Dropdown from './Dropdown.svelte';
 	import VendorLogo from './VendorLogo.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
@@ -56,9 +55,9 @@
 	bind:show
 	side="top"
 	align="start"
-	visualViewportAware={$mobile}
-	maxHeight="min(60dvh, 28rem)"
-	contentClass="z-50 w-[min(32rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-900/98"
+	contentRole="dialog"
+	maxHeight="min(55dvh, 24rem)"
+	contentClass="z-50 h-[min(55dvh,24rem)] w-[min(32rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl sm:h-80 sm:min-w-[22rem] dark:border-gray-700 dark:bg-gray-900/98"
 >
 	<button
 		type="button"
@@ -76,9 +75,10 @@
 		<span class="shrink-0 text-xs text-gray-500 dark:text-gray-400">⌄</span>
 	</button>
 
+	<!-- 高度单源：外层 Dropdown 定高，内层 h-full 撑满，避免双高度差裁切底部 -->
 	<div
 		slot="content"
-		class="flex h-[min(60dvh,28rem)] min-h-0 min-w-0 flex-row gap-2 sm:h-80 sm:min-w-[22rem]"
+		class="flex h-full min-h-0 min-w-0 flex-row gap-2"
 		role="dialog"
 		aria-label={listboxLabel || $i18n.t('Models')}
 	>

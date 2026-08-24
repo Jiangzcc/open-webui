@@ -72,10 +72,11 @@
 		if (open) loadCatalog();
 	}
 
-	// 点击即插入：把标签的 insert_text 文本交给页面，追加到对应的提示词
-	// 输入框（负面标签进负向框）。无选中态，可连续点击多个标签。
+	// 点击即插入并关闭：把标签文本交给页面追加到提示词输入框（负面标签进负向框）。
+	// 选中即收起弹窗，与参数/模型弹窗的交互节奏一致。
 	function insertTag(tag: { insert_text: string; is_negative: boolean }) {
 		dispatch('insert', { text: tag.insert_text, isNegative: tag.is_negative });
+		show = false;
 	}
 
 	function selectCategory(id: string) {
@@ -134,9 +135,10 @@
 	bind:show
 	side="top"
 	align="start"
+	contentRole="dialog"
 	{onOpenChange}
-	maxHeight="min(calc(100dvh - 5rem), 36rem)"
-	contentClass="z-50 w-[min(32rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-900/98"
+	maxHeight="min(70dvh, 30rem)"
+	contentClass="z-50 h-[min(70dvh,30rem)] w-[min(32rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-gray-200/90 bg-white/98 p-2 shadow-2xl backdrop-blur-xl sm:h-96 dark:border-gray-700 dark:bg-gray-900/98"
 >
 	<button
 		type="button"
@@ -159,9 +161,10 @@
 		<span class="hidden sm:inline">{$i18n.t('promptTags.picker.label')}</span>
 	</button>
 
+	<!-- 高度单源：外层 Dropdown 定高，内层 h-full 撑满，杜绝双高度差导致底部裁切 -->
 	<div
 		slot="content"
-		class="flex h-[min(calc(100dvh-5rem),36rem)] min-h-0 min-w-0 flex-col sm:h-96"
+		class="flex h-full min-h-0 min-w-0 flex-col"
 	>
 		<!-- search -->
 		<div class="px-1 pb-2 pt-1">

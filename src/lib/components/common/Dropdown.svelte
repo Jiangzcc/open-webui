@@ -23,6 +23,9 @@
 	/** Max height for the dropdown content */
 	export let maxHeight = 'min(32rem, calc(100dvh - 2rem))';
 
+	/** Accessible role of the portal container; dialogs with labelled content use "dialog". */
+	export let contentRole: 'menu' | 'dialog' = 'menu';
+
 	/** Side offset in px */
 	export let sideOffset = 4;
 
@@ -346,7 +349,7 @@
 		use:portal
 		bind:this={contentEl}
 		class={contentClass}
-		role="menu"
+		role={contentRole}
 		tabindex="-1"
 		style:max-height={resolvedMaxHeight}
 		style:overflow-y="auto"

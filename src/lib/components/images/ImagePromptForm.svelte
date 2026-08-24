@@ -4,6 +4,7 @@
 	import type { i18n as I18n } from 'i18next';
 
 	import ImageCreditQuoteBadge from '$lib/components/credits/ImageCreditQuoteBadge.svelte';
+	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import GenerationModelSelector from '$lib/components/common/GenerationModelSelector.svelte';
 	import GenerationSubmitButton from '$lib/components/common/GenerationSubmitButton.svelte';
 	import {
@@ -103,7 +104,8 @@
 	export let selectModelIfEnabled: (model: ImageGenerationModel) => void = () => {};
 	export let selectAspectRatio: (ratio: ImageAspectRatio) => void = () => {};
 	export let selectResolution: (resolution: string) => void = () => {};
-	export let toggleAspectRatioPicker: () => void = () => {};
+	// 参数弹窗打开时由父组件关闭相邻弹窗（如模型选择器），保持互斥。
+	export let onOptionsOpen: () => void = () => {};
 	export let handleFileUpload: (event: Event) => void = () => {};
 	export let handleDrop: (event: DragEvent) => void = () => {};
 	export let removeImage: (index: number) => void = () => {};
@@ -112,26 +114,10 @@
 	) => void = () => {};
 	export let submitHandler: () => void = () => {};
 
-	// ---- 本地元素引用与外点关闭 ----
+	// ---- 本地元素引用 ----
 	let fileInputElement: HTMLInputElement;
 	let promptEditorElement: HTMLTextAreaElement | null = null;
-	let imageOptionsElement: HTMLDivElement;
-	let imageOptionsTriggerElement: HTMLButtonElement;
 	const IMAGE_OPTIONS_DIALOG_ID = 'image-generation-options';
-
-	const handleWindowPointerDown = (event: PointerEvent) => {
-		const target = event.target as Node;
-		if (showAspectRatioPicker && imageOptionsElement && !imageOptionsElement.contains(target)) {
-			showAspectRatioPicker = false;
-		}
-	};
-
-	const handleWindowKeydown = (event: KeyboardEvent) => {
-		if (event.key !== 'Escape' || !showAspectRatioPicker) return;
-		event.preventDefault();
-		showAspectRatioPicker = false;
-		imageOptionsTriggerElement?.focus();
-	};
 
 	// 草稿复用后把焦点还给提示词输入框（父组件 applyCreationDraft 调用）。
 	export function focusPromptEditor() {
@@ -184,7 +170,7 @@
 	};
 </script>
 
-<svelte:window on:pointerdown={handleWindowPointerDown} on:keydown={handleWindowKeydown} />
+	<!-- 参数弹窗的开关/外点关闭/Esc/定位统一由 Dropdown 组件处理（与标签、模型选择器一致） -->
 
 <div
 	class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
@@ -326,12 +312,18 @@
 
 				<div class="mt-2 flex min-w-0 items-center justify-between gap-2">
 					<div class="flex min-w-0 items-center gap-2">
-						<div class="relative" bind:this={imageOptionsElement}>
+						<Dropdown
+							bind:show={showAspectRatioPicker}
+							side="top"
+							align="start"
+							contentRole="dialog"
+							maxHeight="min(75dvh, 34rem)"
+							onOpenChange={(open) => open && onOptionsOpen()}
+							contentClass="z-50 w-[min(27rem,calc(100vw-1.5rem))] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:p-4 dark:border-gray-800 dark:bg-gray-900"
+						>
 							<button
-								bind:this={imageOptionsTriggerElement}
 								type="button"
 								class="inline-flex h-11 min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-[10px] bg-gray-100 px-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 sm:h-8 sm:gap-4 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-								on:click={toggleAspectRatioPicker}
 								aria-expanded={showAspectRatioPicker}
 								aria-haspopup="dialog"
 								aria-controls={IMAGE_OPTIONS_DIALOG_ID}
@@ -347,13 +339,13 @@
 								<span class="truncate">{imageOptionsLabel}</span>
 							</button>
 
-							{#if showAspectRatioPicker}
-								<div
-									id={IMAGE_OPTIONS_DIALOG_ID}
-									class="fixed inset-x-3 bottom-14 z-50 max-h-[calc(100dvh-5rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:absolute sm:inset-x-auto sm:bottom-10 sm:left-0 sm:z-30 sm:w-[27rem] sm:max-w-[calc(100vw-2rem)] sm:p-4 dark:border-gray-800 dark:bg-gray-900"
-									role="dialog"
-									aria-label={$i18n.t('Parameters')}
-								>
+							<div
+								slot="content"
+								id={IMAGE_OPTIONS_DIALOG_ID}
+								class="min-w-0"
+								role="dialog"
+								aria-label={$i18n.t('Parameters')}
+							>
 									{#if aspectRatioOptions.length > 0}
 										<section>
 											<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -683,14 +675,13 @@
 																aria-label={$i18n.t('Negative Prompt')}
 															></textarea>
 														</label>
-													{/if}
-												</div>
-											{/if}
-										</section>
+										{/if}
+										</div>
 									{/if}
+									</section>
+								{/if}
 								</div>
-							{/if}
-						</div>
+						</Dropdown>
 						<!-- 标签选择入口在参数按钮右侧：点击标签即插入实际文本 -->
 						<PromptTagPicker
 							mediaKind="image"

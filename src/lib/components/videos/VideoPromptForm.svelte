@@ -377,8 +377,8 @@
 						bind:show={showVideoOptions}
 						side="top"
 						align="start"
-						maxHeight="min(calc(100dvh - 5rem), 42rem)"
-						contentClass="z-50 w-[min(27rem,calc(100vw-4rem))] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:p-4 dark:border-gray-800 dark:bg-gray-900"
+						maxHeight="min(75dvh, 34rem)"
+						contentClass="z-50 w-[min(27rem,calc(100vw-1.5rem))] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-gray-100 bg-white p-3 shadow-xl sm:p-4 dark:border-gray-800 dark:bg-gray-900"
 					>
 						<button
 							type="button"
