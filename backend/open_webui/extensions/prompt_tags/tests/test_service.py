@@ -7,12 +7,14 @@ from open_webui.extensions.prompt_tags.schemas import (
     PromptTagCategoryCreate,
     PromptTagCategoryUpdate,
     PromptTagCreate,
+    PromptTagImportRequest,
     PromptTagUpdate,
 )
 from open_webui.extensions.prompt_tags.service import (
     create_category,
     create_tag,
     get_public_catalog,
+    import_catalog,
     update_category,
     update_tag,
 )
@@ -185,3 +187,47 @@ async def test_public_catalog_exposes_insert_text(prompt_tag_sessions) -> None:
         tag = catalog.categories[0].tags[0]
         assert tag.label_zh == '电影感光效'
         assert tag.insert_text == 'cinematic lighting, dramatic shadows'
+
+
+def _import_form(category_slug: str, *, upsert: bool = False) -> PromptTagImportRequest:
+    return PromptTagImportRequest(
+        categories=[
+            PromptTagCategoryCreate(
+                slug=category_slug,
+                name_zh='分类',
+                name_en='Category',
+                sort_order=10,
+            )
+        ],
+        tags=[
+            {
+                'slug': 'probe-tag',
+                'category_slug': category_slug,
+                'label_zh': '探针',
+                'label_en': 'Probe',
+                'insert_text': '探针',
+                'sort_order': 10,
+            }
+        ],
+        upsert=upsert,
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_catalog_flushes_categories_before_tags(prompt_tag_sessions) -> None:
+    """回归：分类与标签之间只有外键列、没有 relationship()，flush 按表名排序时
+    ext_prompt_tag 先于 ext_prompt_tag_category 执行，新分类 + 标签的导入会触发
+    外键约束失败（对外表现为 409 prompt_tag_import_conflict）。导入必须先把分类
+    写入事务再处理标签。"""
+    async with prompt_tag_sessions() as session:
+        result = await import_catalog(session, _import_form('cat-a'), _user())
+        assert result.categories_created == 1
+        assert result.tags_created == 1
+
+        catalog = await get_public_catalog(session, media_kind='image')
+        assert catalog.categories[0].tags[0].slug == 'probe-tag'
+
+        # upsert：把已有标签移动到另一个新分类，同样依赖分类先落库。
+        result = await import_catalog(session, _import_form('cat-b', upsert=True), _user())
+        assert result.categories_created == 1
+        assert result.tags_updated == 1

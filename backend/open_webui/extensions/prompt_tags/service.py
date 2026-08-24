@@ -468,9 +468,17 @@ def _upsert_import_tag(
     return created
 
 
-async def _finish_catalog_import(session: AsyncSession, *, dry_run: bool) -> None:
+async def _finish_catalog_import(
+    session: AsyncSession,
+    *,
+    dry_run: bool,
+    flush_only: bool = False,
+) -> None:
     try:
         await session.flush()
+        if flush_only:
+            # 仅把已暂存的分类写入事务，不提交也不回滚：标签还要在同一事务里继续处理。
+            return
         if dry_run:
             await session.rollback()
         else:
@@ -508,6 +516,10 @@ async def import_catalog(
         )
         for item in form.categories
     ]
+    # 分类必须先落库：两个模型之间只有外键列、没有 relationship()，flush 不会
+    # 据此排序（按表名排序时 ext_prompt_tag 恰好排在 ext_prompt_tag_category
+    # 之前），标签的 INSERT/UPDATE 会先于新分类执行导致外键约束失败。
+    await _finish_catalog_import(session, dry_run=True, flush_only=True)
     tag_results = [
         _upsert_import_tag(
             session,

@@ -59,6 +59,13 @@ async def test_catalog_import_finisher_commits_rolls_back_and_maps_conflicts() -
     await service._finish_catalog_import(session, dry_run=True)
     session.rollback.assert_awaited()
 
+    # flush_only：只 flush 保持事务打开，既不提交也不回滚（导入中途先落库分类用）。
+    session.rollback.reset_mock()
+    await service._finish_catalog_import(session, dry_run=False, flush_only=True)
+    session.flush.assert_awaited()
+    session.commit.assert_not_awaited()
+    session.rollback.assert_not_awaited()
+
     session.flush.side_effect = IntegrityError('statement', {}, RuntimeError('constraint'))
     with pytest.raises(service.PromptTagConflictError):
         await service._finish_catalog_import(session, dry_run=False)
