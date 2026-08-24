@@ -41,6 +41,16 @@
 		</script>
 
 		<script>
+			// EXT: 二开新增 —— 首屏前同步 <html lang>，避免移动端浏览器误弹"翻译此页"提示。
+			// i18n 初始化（异步加载语言包）在 languageChanged 里才更新 lang，移动网络下
+			// 首屏仍是 lang="en" + 英文界面，浏览器据此判定为英文页面。此处提前读取
+			// i18next 检测缓存键（localStorage.locale，见 src/lib/i18n/index.ts）消除窗口期。
+			if (localStorage?.locale) {
+				document.documentElement.setAttribute('lang', localStorage.locale);
+			}
+		</script>
+
+		<script>
 			// On page load or when changing themes, best to add inline in `head` to avoid FOUC
 			(() => {
 				const metaThemeColorTag = document.querySelector('meta[name="theme-color"]');
