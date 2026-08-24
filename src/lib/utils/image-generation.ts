@@ -562,9 +562,18 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 					: undefined
 		);
 
+		const publicId = trimOptional(
+			typeof model.publicId === 'string'
+				? model.publicId
+				: typeof model.public_id === 'string'
+					? model.public_id
+					: undefined
+		);
+
 		return [
 			{
 				id,
+				...(publicId && { publicId }),
 				name: typeof model.name === 'string' ? model.name : undefined,
 				...(provider && { provider }),
 				...(task && { task }),

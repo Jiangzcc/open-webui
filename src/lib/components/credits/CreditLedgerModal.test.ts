@@ -111,14 +111,18 @@ describe('CreditLedgerModal', () => {
 		expect(modalSource).not.toContain('<label class="flex items-center');
 	});
 
-	test('maps resource ids to model names without exposing the raw id', () => {
+	test('maps resource ids to model display names across id namespaces', () => {
 		const models = [
 			{ id: 'fal-ai/z-image/turbo', name: 'fal.ai / Z Image Turbo' },
+			{ id: 'fal-ai/wan/v2.6/text-to-image', publicId: 'wan-2.6', name: 'Alibaba / Wan 2.6' },
 			{ id: 'fal-ai/other', name: 'Other Model' }
 		];
 
 		expect(ledgerResourceName('fal-ai/z-image/turbo', models)).toBe('Z Image Turbo');
-		expect(ledgerResourceName('fal-ai/missing', models)).toBe('—');
+		// 管理端列表 id 为内部 ID，账目 resource_id 为公开 ID，需按 publicId 关联。
+		expect(ledgerResourceName('wan-2.6', models)).toBe('Wan 2.6');
+		// 匹配不到时回退显示资源 ID 本身（后端已保证是公开 ID），避免资源列为空。
+		expect(ledgerResourceName('wan-2.7-video', models)).toBe('wan-2.7-video');
 		expect(ledgerResourceName(null, models)).toBe('—');
 		expect(modalSource).toContain('normalizeImageGenerationModels,');
 		expect(modalSource).toContain("from '$lib/utils/image-generation';");
@@ -140,6 +144,19 @@ describe('CreditLedgerModal', () => {
 				image_base64: 'data:image/png;base64,secret'
 			})
 		).toBe('size: 1024x1024 · image_count: 2');
+	});
+
+	test('translates pricing factor keys to user-facing dimension labels', () => {
+		const labelFor = (key: string) =>
+			({ image_count: '图片数量', resolution: '分辨率' })[key] ?? key;
+
+		expect(
+			formatPricingSnapshot(
+				{ factors: [{ key: 'image_count', value: 1 }, { key: 'custom_key', value: 'x' }] },
+				labelFor
+			)
+		).toBe('图片数量: 1 · custom_key: x');
+		expect(modalSource).toContain('pricingFactorLabel = (key: string)');
 	});
 
 	test('uses credit-specific filter and failed-charge translations', () => {

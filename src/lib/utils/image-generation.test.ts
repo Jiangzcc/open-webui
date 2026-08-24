@@ -173,6 +173,18 @@ describe('image generation utils', () => {
 		expect(model).toMatchObject({ basePrice: '4', editBasePrice: '7' });
 	});
 
+	test('passes through the admin catalog public id for ledger lookups', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'fal-ai/wan/v2.6/text-to-image',
+				public_id: 'wan-2.6',
+				name: 'Alibaba / Wan 2.6'
+			}
+		]);
+
+		expect(model).toMatchObject({ id: 'fal-ai/wan/v2.6/text-to-image', publicId: 'wan-2.6' });
+	});
+
 	test('preserves image model operation metadata for the user selector', () => {
 		const [model] = normalizeImageGenerationModels([
 			{

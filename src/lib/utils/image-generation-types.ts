@@ -62,6 +62,8 @@ export type GeneratedImage = {
 
 export type ImageGenerationModel = {
 	id: string;
+	/** 管理端列表保留内部 ID 作 id，publicId 用于关联公开命名空间（如积分明细）。 */
+	publicId?: string;
 	name?: string;
 	provider?: string;
 	task?: 'text-to-image' | 'image-to-image' | string;

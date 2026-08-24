@@ -84,7 +84,17 @@ export const ledgerDateRangeError = ({ since, until }: Pick<LedgerQuery, 'since'
 
 type LedgerResourceModel = {
 	id: string;
+	/** 管理端模型列表以内部 ID 作 id，publicId 是同一模型的公开 ID。 */
+	publicId?: string;
 	name?: string;
+};
+
+const displayModelName = (name: string | undefined, id: string) => {
+	const trimmed = name?.trim();
+	if (!trimmed || trimmed === id) return null;
+
+	const separatorIndex = trimmed.indexOf(' / ');
+	return separatorIndex === -1 ? trimmed : trimmed.slice(separatorIndex + 3);
 };
 
 export const ledgerResourceName = (
@@ -93,14 +103,12 @@ export const ledgerResourceName = (
 ): string => {
 	if (!resourceId) return '—';
 
-	const model = models.find((item) => item.id === resourceId);
-	if (!model) return '—';
-
-	const name = model.name?.trim();
-	if (!name || name === model.id) return '—';
-
-	const separatorIndex = name.indexOf(' / ');
-	return separatorIndex === -1 ? name : name.slice(separatorIndex + 3);
+	// 账目 resource_id 是公开 ID；管理端模型列表的 id 是内部 ID，需按 publicId 关联。
+	const model = models.find(
+		(item) => item.id === resourceId || item.publicId === resourceId
+	);
+	const name = model ? displayModelName(model.name, model.id) : null;
+	return name ?? resourceId;
 };
 
 export const failedUsageNotice = (status: string | null) => status === 'failed';
@@ -115,11 +123,15 @@ const isPricingFactor = (value: unknown): value is { key: string; value: string 
 	);
 };
 
-export const formatPricingSnapshot = (snapshot: Record<string, unknown> | null) => {
+export const formatPricingSnapshot = (
+	snapshot: Record<string, unknown> | null,
+	labelFor: (key: string) => string = (key) => key
+) => {
 	if (!snapshot || !Array.isArray(snapshot.factors)) return null;
 
 	const factors = snapshot.factors.filter(isPricingFactor).slice(0, 4);
 	if (factors.length === 0) return null;
 
-	return factors.map((factor) => `${factor.key}: ${factor.value}`).join(' · ');
+	// 因子 key 是计费维度键（image_count、resolution…），必须翻译成用户可读文案。
+	return factors.map((factor) => `${labelFor(factor.key)}: ${factor.value}`).join(' · ');
 };

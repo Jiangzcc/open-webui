@@ -76,7 +76,11 @@ from open_webui.utils.images.fal import (
 )
 
 # EXT: 二开新增 —— 暴露高级参数字段给管理端模型列表
-from open_webui.utils.images.fal_models import public_fal_image_advanced_fields, public_fal_image_models
+from open_webui.utils.images.fal_models import (
+    public_fal_image_advanced_fields,
+    public_fal_image_model_id,
+    public_fal_image_models,
+)
 from open_webui.utils.session_pool import get_session
 from PIL import Image, ImageOps
 from pydantic import BaseModel
@@ -436,11 +440,14 @@ async def get_models(
                 public_fal_image_models(default_model)
                 if user.role != 'admin'
                 else [
-                    # EXT: 二开新增 —— 管理端模型列表附带高级参数字段并应用模型运营状态过滤
+                    # EXT: 二开新增 —— 管理端模型列表附带高级参数字段并应用模型运营状态过滤。
+                    # id 保留内部路由 ID（管理端配置/计价均按内部 ID 存储），同时附带
+                    # public_id 供前端（如积分明细）在两个命名空间之间关联同一模型。
                     {
                         **model,
                         'is_default': model['id'] == default_model,
                         'advanced_fields': public_fal_image_advanced_fields(model),
+                        'public_id': public_fal_image_model_id(model['id']),
                     }
                     for model in get_fal_image_models()
                 ]

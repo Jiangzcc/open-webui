@@ -113,6 +113,11 @@
 			? $i18n.t(`credits.${group}.${value}`)
 			: (value ?? '—');
 
+	const pricingFactorLabel = (key: string) =>
+		$i18n.exists(`credits.dimensionKeys.${key}`)
+			? $i18n.t(`credits.dimensionKeys.${key}`)
+			: key;
+
 	const resetPagination = () => {
 		page = 1;
 		requestedPage = 1;
@@ -289,9 +294,9 @@
 										</td>
 										<td class="px-4 py-3">
 											<div>{ledgerResourceName(entry.resource_id, imageModels)}</div>
-											{#if formatPricingSnapshot(entry.pricing_snapshot)}
+											{#if formatPricingSnapshot(entry.pricing_snapshot, pricingFactorLabel)}
 												<div class="mt-1 max-w-64 truncate text-xs text-gray-500">
-													{formatPricingSnapshot(entry.pricing_snapshot)}
+													{formatPricingSnapshot(entry.pricing_snapshot, pricingFactorLabel)}
 												</div>
 											{/if}
 										</td>

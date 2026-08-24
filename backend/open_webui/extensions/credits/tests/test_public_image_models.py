@@ -317,6 +317,53 @@ def test_user_ledger_serializes_public_resource_ids_and_sanitized_snapshots(monk
     assert 'fal-ai/' not in json.dumps(body)
 
 
+def test_user_ledger_resource_id_keeps_video_and_unknown_ids_visible(monkeypatch) -> None:
+    """积分明细的资源 ID 序列化边界。
+
+    图片内部 ID → 公开 ID；图片目录未命中时按视频目录映射；两个目录都未命中
+    （非 fal 引擎、目录未收录）保留原始 ID，保证明细里资源信息不为空。
+    """
+    from open_webui.extensions import fal_catalog
+    from open_webui.extensions.credits import router_support
+
+    assert router_support._public_user_ledger_resource_id('fal-ai/z-image/turbo') == 'z-image-turbo'
+
+    monkeypatch.setattr(
+        fal_catalog,
+        'load_video_catalog_cached',
+        lambda: SimpleNamespace(internal_to_public={'fal-ai/wan/fake': 'wan-fake'}),
+    )
+    assert router_support._public_user_ledger_resource_id('fal-ai/wan/fake') == 'wan-fake'
+    assert router_support._public_user_ledger_resource_id('openai-direct-model') == 'openai-direct-model'
+    assert router_support._public_user_ledger_resource_id(None) is None
+
+
+def test_admin_image_models_catalog_attaches_public_id_for_ledger_lookup() -> None:
+    """管理端 /images/models 保留内部 ID 作 id，但必须附带 public_id。
+
+    积分明细的 resource_id 是公开 ID，管理端模型列表的 id 是内部 ID；没有
+    public_id 字段前端就无法在两个命名空间之间关联同一模型（资源列显示为空）。
+    """
+    import ast
+    from pathlib import Path
+
+    images_path = Path(__file__).resolve().parents[3] / 'routers' / 'images.py'
+    module = ast.parse(images_path.read_text(encoding='utf-8'))
+
+    get_models = next(
+        node
+        for node in ast.walk(module)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == 'get_models'
+    )
+    source_lines = images_path.read_text(encoding='utf-8').splitlines()
+    admin_branch = '\n'.join(
+        '\n'.join(source_lines[node.lineno - 1 : node.end_lineno])
+        for node in ast.walk(get_models)
+        if isinstance(node, ast.ListComp)
+    )
+    assert "'public_id': public_fal_image_model_id(model['id'])," in admin_branch
+
+
 def test_user_credit_errors_do_not_echo_internal_resource_context(monkeypatch) -> None:
     from open_webui.extensions.credits import router as credits_router
     from open_webui.extensions.credits.errors import CreditError

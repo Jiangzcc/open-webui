@@ -168,13 +168,27 @@ def _public_pricing_snapshot(snapshot: Mapping[str, object] | None) -> dict[str,
     return {key: value for key, value in snapshot.items() if key in {'factors', 'charged_credits', 'rounding'}}
 
 
-def _public_user_ledger_item(item: object) -> dict[str, object]:
+def _public_user_ledger_resource_id(resource_id: object) -> str | None:
+    """Map an internal billing resource id to the user-facing public id.
+
+    图片和视频目录各自维护内部 ID → 公开 ID 的映射；都不命中时（非 fal 引擎、
+    目录未收录的资源）保留原始 ID，避免明细里的资源信息被置空无法辨认。
+    """
+    if not isinstance(resource_id, str):
+        return None
+
+    from open_webui.extensions.fal_catalog import load_video_catalog_cached
     from open_webui.extensions.fal_images.models import public_fal_image_model_id
 
+    public_id = public_fal_image_model_id(resource_id)
+    if public_id is not None:
+        return public_id
+    return load_video_catalog_cached().internal_to_public.get(resource_id, resource_id)
+
+
+def _public_user_ledger_item(item: object) -> dict[str, object]:
     serialized = item.model_dump(mode='json') if hasattr(item, 'model_dump') else dict(item)
-    resource_id = serialized.get('resource_id')
-    public_resource_id = public_fal_image_model_id(resource_id) if isinstance(resource_id, str) else None
-    serialized['resource_id'] = public_resource_id
+    serialized['resource_id'] = _public_user_ledger_resource_id(serialized.get('resource_id'))
     serialized['pricing_snapshot'] = _public_pricing_snapshot(serialized.get('pricing_snapshot'))
     serialized['metadata_snapshot'] = None
     return serialized
