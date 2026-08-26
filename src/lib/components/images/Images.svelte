@@ -35,6 +35,11 @@
 		type ImageCreationDraft,
 		type ImageGenerationBatch
 	} from '$lib/utils/image-generation-batches';
+	import {
+		createImageCustomSizeState,
+		updateImageCustomSizeState,
+		type ImageCustomSizeAction
+	} from '$lib/utils/image-generation-custom-size-state';
 
 	import { groupByVendor } from '$lib/utils/images-dropdown';
 	import ImagePromptForm from '$lib/components/images/ImagePromptForm.svelte';
@@ -120,9 +125,7 @@
 	let guidanceScaleInput = '',
 		strengthInput = '';
 	let showAdvancedSettings = false;
-	let customWidth: number | null = null,
-		customHeight: number | null = null;
-	let useCustomSize = false;
+	let customSize = createImageCustomSizeState();
 	let imageQuoteState: ImageQuoteState = { status: 'loading' };
 	let quoteInput: ImageQuoteInput | null = null;
 
@@ -288,35 +291,36 @@
 	}
 	$: customSizeConstraints = selectedModelCapability.customSize;
 	$: supportsCustomSize = Boolean(customSizeConstraints);
+	const applyCustomSizeAction = (action: ImageCustomSizeAction, ratio = selectedAspectRatio) => {
+		customSize = updateImageCustomSizeState(customSize, action, {
+			aspectRatio: ratio,
+			ratioSize: selectedModelCapability.aspectRatioSizes[ratio],
+			fallbackSize: selectedModelCapability.aspectRatioSizes['1:1'],
+			multipleOf: customSizeConstraints?.multipleOf
+		});
+	};
 	// 清空旧模型尺寸，避免切换后把不合法 size 带进新请求。
-	$: if (loaded && !supportsCustomSize && useCustomSize) {
-		useCustomSize = false;
-		customWidth = null;
-		customHeight = null;
-	}
-	// 勾选自定义尺寸时用当前比例的基线尺寸预填宽高，减少从零手输。
-	$: if (loaded && useCustomSize && customWidth === null && customHeight === null) {
-		const match = selectedRatioSize?.match(/^(\d+)x(\d+)$/);
-		if (match) {
-			customWidth = Number(match[1]);
-			customHeight = Number(match[2]);
-		}
+	$: if (loaded && !supportsCustomSize && customSize.enabled) {
+		customSize = createImageCustomSizeState();
 	}
 	$: if (loaded && selectedResolution) {
 		const match = selectedResolution.match(/^(\d+)x(\d+)$/);
 		if (match) {
-			customWidth = Number(match[1]);
-			customHeight = Number(match[2]);
+			applyCustomSizeAction({
+				type: 'set-dimensions',
+				width: Number(match[1]),
+				height: Number(match[2])
+			});
 		}
 	}
-	$: customWidthNum = Number(customWidth);
-	$: customHeightNum = Number(customHeight);
+	$: customWidthNum = Number(customSize.width);
+	$: customHeightNum = Number(customSize.height);
 	$: customSizeError =
-		useCustomSize && customWidth && customHeight
+		customSize.enabled && customSize.width && customSize.height
 			? validateCustomSize(customWidthNum, customHeightNum, customSizeConstraints)
 			: null;
 	$: customSizeValue =
-		useCustomSize && customWidth && customHeight && !customSizeError
+		customSize.enabled && customSize.width && customSize.height && !customSizeError
 			? `${customWidthNum}x${customHeightNum}`
 			: null;
 
@@ -418,6 +422,7 @@
 	};
 
 	const selectAspectRatio = (ratio: ImageAspectRatio) => {
+		applyCustomSizeAction({ type: 'select-aspect-ratio' }, ratio);
 		selectedAspectRatio = ratio;
 	};
 
@@ -437,9 +442,7 @@
 		selectedAspectRatio = capability.defaultAspectRatio;
 		selectedResolution = capability.defaultResolution ?? '';
 		imageCount = capability.imageCounts[0] ?? 1;
-		useCustomSize = false;
-		customWidth = null;
-		customHeight = null;
+		customSize = createImageCustomSizeState();
 	};
 
 	const selectModelIfEnabled = (model: ImageGenerationModel) => {
@@ -708,9 +711,10 @@
 					bind:prompt
 					bind:selectedQuality
 					bind:imageCount
-					bind:useCustomSize
-					bind:customWidth
-					bind:customHeight
+					useCustomSize={customSize.enabled}
+					customWidth={customSize.width}
+					customHeight={customSize.height}
+					customSizeAspectRatioLocked={customSize.aspectRatioLocked}
 					bind:selectedOutputFormat
 					bind:seedInput
 					bind:stepsInput
@@ -756,6 +760,14 @@
 					{selectModelIfEnabled}
 					{selectAspectRatio}
 					{selectResolution}
+					onCustomSizeEnabledChange={(enabled) =>
+						applyCustomSizeAction({ type: 'set-enabled', enabled })}
+					onCustomWidthInput={(value) =>
+						applyCustomSizeAction({ type: 'set-dimension', dimension: 'width', value })}
+					onCustomHeightInput={(value) =>
+						applyCustomSizeAction({ type: 'set-dimension', dimension: 'height', value })}
+					onCustomSizeAspectRatioToggle={() =>
+						applyCustomSizeAction({ type: 'toggle-aspect-ratio-lock' })}
 					{handleFileUpload}
 					{handleDrop}
 					{removeImage}

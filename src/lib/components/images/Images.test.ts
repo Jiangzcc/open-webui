@@ -427,6 +427,24 @@ describe('images page controls', () => {
 		expect(form).toContain('class="flex min-h-11 items-center gap-1.5');
 	});
 
+	test('wires custom dimensions through a toggleable aspect-ratio lock', () => {
+		expect(source).toContain("applyCustomSizeAction({ type: 'select-aspect-ratio' }, ratio)");
+		expect(source).toContain("type: 'set-dimension', dimension: 'width', value");
+		expect(source).toContain("type: 'set-dimension', dimension: 'height', value");
+		expect(form).toContain('on:input={(event) => onCustomWidthInput(numericInputValue(event))}');
+		expect(form).toContain('on:input={(event) => onCustomHeightInput(numericInputValue(event))}');
+		expect(form).toContain('aria-pressed={customSizeAspectRatioLocked}');
+		expect(form).toContain('<Link className="size-4" strokeWidth="2" />');
+		expect(form).toContain('<LinkSlash className="size-4" strokeWidth="2" />');
+		expect(form).not.toContain('<span class="text-sm text-gray-400">×</span>');
+	});
+
+	test('keeps custom dimension inputs and the lock button touch-friendly on mobile', () => {
+		expect(form.match(/class="h-11 min-w-0 flex-1[^\n]+sm:h-9"/g)).toHaveLength(2);
+		expect(form).toContain('class="inline-flex size-11 shrink-0');
+		expect(form).toContain('sm:size-9');
+	});
+
 	// --- Task #17: cap reference-image uploads to the selected model’s capacity -----
 	test('#17 tightens the reference-image quota for single-image-family models', () => {
 		// 有效上限派生自 selectedModelConfig.imageInputMaxCount,缺省回退到全局 4

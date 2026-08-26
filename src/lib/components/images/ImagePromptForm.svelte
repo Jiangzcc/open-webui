@@ -13,6 +13,8 @@
 	} from '$lib/components/credits/quote-state';
 	import Image from '$lib/components/common/Image.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import Link from '$lib/components/icons/Link.svelte';
+	import LinkSlash from '$lib/components/icons/LinkSlash.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -41,6 +43,7 @@
 	export let useCustomSize = false;
 	export let customWidth: number | null = null;
 	export let customHeight: number | null = null;
+	export let customSizeAspectRatioLocked = true;
 	export let selectedOutputFormat: string | null = null;
 	export let seedInput = '';
 	export let stepsInput = '';
@@ -104,6 +107,10 @@
 	export let selectModelIfEnabled: (model: ImageGenerationModel) => void = () => {};
 	export let selectAspectRatio: (ratio: ImageAspectRatio) => void = () => {};
 	export let selectResolution: (resolution: string) => void = () => {};
+	export let onCustomSizeEnabledChange: (enabled: boolean) => void = () => {};
+	export let onCustomWidthInput: (value: number | null) => void = () => {};
+	export let onCustomHeightInput: (value: number | null) => void = () => {};
+	export let onCustomSizeAspectRatioToggle: () => void = () => {};
 	// 参数弹窗打开时由父组件关闭相邻弹窗（如模型选择器），保持互斥。
 	export let onOptionsOpen: () => void = () => {};
 	export let handleFileUpload: (event: Event) => void = () => {};
@@ -137,6 +144,10 @@
 	) => (field ? validateAdvancedNumber(value, field, translate) : null);
 	const advancedRangeLabel = (field: { min?: number; max?: number } | null) =>
 		formatAdvancedRangeLabel(field, translate);
+	const numericInputValue = (event: Event) => {
+		const value = (event.currentTarget as HTMLInputElement).valueAsNumber;
+		return Number.isFinite(value) ? value : null;
+	};
 	const modelBasePrice = (model: ImageGenerationModel) =>
 		referenceImages.length ? resolveImageEditModel(model, models)?.basePrice : model.basePrice;
 	// 参数按钮摘要：与视频侧一致，用「·」分隔当前参数值。
@@ -170,7 +181,7 @@
 	};
 </script>
 
-	<!-- 参数弹窗的开关/外点关闭/Esc/定位统一由 Dropdown 组件处理（与标签、模型选择器一致） -->
+<!-- 参数弹窗的开关/外点关闭/Esc/定位统一由 Dropdown 组件处理（与标签、模型选择器一致） -->
 
 <div
 	class="sticky bottom-0 z-20 -mx-3 md:-mx-6 px-3 md:px-6 pt-10 pb-3 bg-gradient-to-t from-white via-white/95 to-white/0 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0"
@@ -346,341 +357,364 @@
 								role="dialog"
 								aria-label={$i18n.t('Parameters')}
 							>
-									{#if aspectRatioOptions.length > 0}
-										<section>
-											<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-												{$i18n.t('Ratio')}
-											</h3>
-											<div class="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5">
-												{#each aspectRatioOptions as ratio}
-													<button
-														type="button"
-														class="flex h-14 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition {selectedAspectRatio ===
-														ratio
-															? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-															: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-														on:click={() => selectAspectRatio(ratio)}
-														aria-pressed={selectedAspectRatio === ratio}
-													>
-														<span class="flex size-6 items-center justify-center">
-															<span
-																class="border border-current/60 {getAspectRatioPreviewClass(ratio)}"
-																style={getAspectRatioPreviewStyle(ratio)}
-															></span>
-														</span>
-														<span class="min-w-0 truncate">{getAspectRatioLabel(ratio)}</span>
-													</button>
-												{/each}
-											</div>
-										</section>
-									{/if}
-
-									{#if resolutionOptions.length > 0}
-										<section class="mt-5">
-											<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-												{$i18n.t('Resolution')}
-											</h3>
-											<div class="grid grid-cols-3 gap-1.5">
-												{#each resolutionOptions as resolution}
-													<button
-														type="button"
-														class="h-11 rounded-xl border text-sm transition sm:h-9 {selectedResolution ===
-														resolution
-															? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-															: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-														on:click={() => selectResolution(resolution)}
-														aria-pressed={selectedResolution === resolution}
-													>
-														{getResolutionLabel(resolution)}
-													</button>
-												{/each}
-											</div>
-										</section>
-									{/if}
-
-									{#if supportsCustomSize}
-										<section class="mt-5">
-											<div class="flex items-center justify-between px-1 pb-2">
-												<h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">
-													{$i18n.t('Custom Size')}
-												</h3>
-												<label
-													class="flex min-h-11 items-center gap-1.5 text-xs text-gray-500 sm:min-h-0 dark:text-gray-400"
+								{#if aspectRatioOptions.length > 0}
+									<section>
+										<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+											{$i18n.t('Ratio')}
+										</h3>
+										<div class="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-5">
+											{#each aspectRatioOptions as ratio}
+												<button
+													type="button"
+													class="flex h-14 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition {selectedAspectRatio ===
+													ratio
+														? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+														: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+													on:click={() => selectAspectRatio(ratio)}
+													aria-pressed={selectedAspectRatio === ratio}
 												>
-													<input
-														type="checkbox"
-														class="size-3.5 rounded border-gray-300 dark:border-gray-600"
-														bind:checked={useCustomSize}
-													/>
-													{$i18n.t('Enable')}
-												</label>
-											</div>
-											{#if useCustomSize}
-												<div class="flex items-center gap-2">
-													<input
-														type="number"
-														inputmode="numeric"
-														min="1"
-														bind:value={customWidth}
-														placeholder="1024"
-														aria-label={$i18n.t('Width')}
-														class="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100"
-													/>
-													<span class="text-sm text-gray-400">×</span>
-													<input
-														type="number"
-														inputmode="numeric"
-														min="1"
-														bind:value={customHeight}
-														placeholder="1024"
-														aria-label={$i18n.t('Height')}
-														class="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100"
-													/>
-												</div>
-												{#if customSizeError}
-													<p class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">
-														{$i18n.t(customSizeError.message, customSizeError.messageParams)}
-													</p>
-												{:else if customWidth && customHeight}
-													<p class="mt-2 px-1 text-xs text-gray-400 dark:text-gray-500">
-														{customWidthNum * customHeightNum >= 0
-															? (customWidthNum * customHeightNum).toLocaleString()
-															: ''} px · {customWidthNum || 0}:{customHeightNum || 0}
-													</p>
-												{/if}
-											{/if}
-										</section>
-									{/if}
-
-									{#if qualityOptions.length > 0}
-										<section class={hasImageSizingOptions ? 'mt-5' : ''}>
-											<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-												{$i18n.t('Quality')}
-											</h3>
-											<div class="grid grid-cols-4 gap-1.5">
-												{#each qualityOptions as quality}
-													<button
-														type="button"
-														class="h-11 rounded-xl border text-sm capitalize transition sm:h-9 {selectedQuality ===
-														quality
-															? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-															: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-														on:click={() => {
-															selectedQuality = quality;
-														}}
-														aria-pressed={selectedQuality === quality}
-													>
-														{getQualityLabel(quality)}
-													</button>
-												{/each}
-											</div>
-										</section>
-									{/if}
-
-									{#if imageCountOptions.length > 1}
-										<section class={hasImageSizingOptions ? 'mt-5' : ''}>
-											<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-												{$i18n.t('Quantity')}
-											</h3>
-											<div class="grid grid-cols-4 gap-1.5">
-												{#each imageCountOptions as count}
-													<button
-														type="button"
-														class="h-11 rounded-xl border text-sm transition sm:h-9 {Number(
-															imageCount
-														) === count
-															? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-															: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-														on:click={() => {
-															imageCount = count;
-														}}
-														aria-pressed={Number(imageCount) === count}
-													>
-														{count}
-													</button>
-												{/each}
-											</div>
-										</section>
-									{/if}
-
-									{#if hasAdvancedSettings}
-										<section class="mt-5 border-t border-gray-100 pt-3 dark:border-gray-800">
-											<button
-												type="button"
-												class="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-medium text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:text-gray-100"
-												on:click={() => (showAdvancedSettings = !showAdvancedSettings)}
-												aria-expanded={showAdvancedSettings}
-												aria-controls="image-advanced-settings"
-											>
-												<span>{$i18n.t('Advanced')}</span>
-												<span class="text-gray-400" aria-hidden="true"
-													>{showAdvancedSettings ? '−' : '+'}</span
-												>
-											</button>
-
-											{#if showAdvancedSettings}
-												<div
-													id="image-advanced-settings"
-													class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"
-												>
-													{#if outputFormatOptions.length > 0}
-														<div class="min-w-0 sm:col-span-2">
-															<div
-																class="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-300"
-															>
-																{$i18n.t('Output Format')}
-															</div>
-															<div class="grid grid-cols-3 gap-1.5">
-																{#each outputFormatOptions as format}
-																	<button
-																		type="button"
-																		class="min-h-11 rounded-xl border text-sm uppercase transition {selectedOutputFormat ===
-																		format
-																			? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
-																			: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
-																		on:click={() => (selectedOutputFormat = format)}
-																		aria-pressed={selectedOutputFormat === format}
-																	>
-																		{format}
-																	</button>
-																{/each}
-															</div>
-														</div>
-													{/if}
-
-													{#if seedField}
-														<label
-															class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-														>
-															<span class="flex justify-between gap-2"
-																><span>{$i18n.t('Seed')}</span><span
-																	class="font-normal text-gray-400"
-																	>{advancedRangeLabel(seedField)}</span
-																></span
-															>
-															<input
-																type="text"
-																inputmode="numeric"
-																value={seedInput}
-																on:input={(event) => (seedInput = event.currentTarget.value)}
-																placeholder={$i18n.t('Model default')}
-																aria-invalid={Boolean(getAdvancedNumberError(seedInput, seedField))}
-																class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-															/>
-															{#if getAdvancedNumberError(seedInput, seedField)}<span
-																	class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																	>{getAdvancedNumberError(seedInput, seedField)}</span
-																>{/if}
-														</label>
-													{/if}
-
-													{#if stepsField}
-														<label
-															class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-														>
-															<span class="flex justify-between gap-2"
-																><span>{$i18n.t('Steps')}</span><span
-																	class="font-normal text-gray-400"
-																	>{advancedRangeLabel(stepsField)}</span
-																></span
-															>
-															<input
-																type="text"
-																inputmode="numeric"
-																value={stepsInput}
-																on:input={(event) => (stepsInput = event.currentTarget.value)}
-																placeholder={$i18n.t('Model default')}
-																aria-invalid={Boolean(
-																	getAdvancedNumberError(stepsInput, stepsField)
-																)}
-																class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-															/>
-															{#if getAdvancedNumberError(stepsInput, stepsField)}<span
-																	class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																	>{getAdvancedNumberError(stepsInput, stepsField)}</span
-																>{/if}
-														</label>
-													{/if}
-
-													{#if guidanceScaleField}
-														<label
-															class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-														>
-															<span class="flex justify-between gap-2"
-																><span>{$i18n.t('Guidance scale')}</span><span
-																	class="font-normal text-gray-400"
-																	>{advancedRangeLabel(guidanceScaleField)}</span
-																></span
-															>
-															<input
-																type="text"
-																inputmode="decimal"
-																value={guidanceScaleInput}
-																on:input={(event) =>
-																	(guidanceScaleInput = event.currentTarget.value)}
-																placeholder={$i18n.t('Model default')}
-																aria-invalid={Boolean(
-																	getAdvancedNumberError(guidanceScaleInput, guidanceScaleField)
-																)}
-																class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-															/>
-															{#if getAdvancedNumberError(guidanceScaleInput, guidanceScaleField)}<span
-																	class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																	>{getAdvancedNumberError(
-																		guidanceScaleInput,
-																		guidanceScaleField
-																	)}</span
-																>{/if}
-														</label>
-													{/if}
-
-													{#if strengthField}
-														<label
-															class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
-														>
-															<span class="flex justify-between gap-2"
-																><span>{$i18n.t('Strength')}</span><span
-																	class="font-normal text-gray-400"
-																	>{advancedRangeLabel(strengthField)}</span
-																></span
-															>
-															<input
-																type="text"
-																inputmode="decimal"
-																value={strengthInput}
-																on:input={(event) => (strengthInput = event.currentTarget.value)}
-																placeholder={$i18n.t('Model default')}
-																aria-invalid={Boolean(
-																	getAdvancedNumberError(strengthInput, strengthField)
-																)}
-																class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-															/>
-															{#if getAdvancedNumberError(strengthInput, strengthField)}<span
-																	class="mt-1 block font-normal text-red-600 dark:text-red-400"
-																	>{getAdvancedNumberError(strengthInput, strengthField)}</span
-																>{/if}
-														</label>
-													{/if}
-
-													{#if negativePromptField}
-														<label
-															class="min-w-0 text-xs font-medium text-gray-600 sm:col-span-2 dark:text-gray-300"
-														>
-															<span>{$i18n.t('Negative Prompt')}</span>
-															<textarea
-																bind:value={negativePrompt}
-																rows="3"
-																class="mt-1 w-full resize-y rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm font-normal text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
-																placeholder={$i18n.t('Describe what should not appear')}
-																aria-label={$i18n.t('Negative Prompt')}
-															></textarea>
-														</label>
-										{/if}
+													<span class="flex size-6 items-center justify-center">
+														<span
+															class="border border-current/60 {getAspectRatioPreviewClass(ratio)}"
+															style={getAspectRatioPreviewStyle(ratio)}
+														></span>
+													</span>
+													<span class="min-w-0 truncate">{getAspectRatioLabel(ratio)}</span>
+												</button>
+											{/each}
 										</div>
-									{/if}
 									</section>
 								{/if}
-								</div>
+
+								{#if resolutionOptions.length > 0}
+									<section class="mt-5">
+										<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+											{$i18n.t('Resolution')}
+										</h3>
+										<div class="grid grid-cols-3 gap-1.5">
+											{#each resolutionOptions as resolution}
+												<button
+													type="button"
+													class="h-11 rounded-xl border text-sm transition sm:h-9 {selectedResolution ===
+													resolution
+														? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+														: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+													on:click={() => selectResolution(resolution)}
+													aria-pressed={selectedResolution === resolution}
+												>
+													{getResolutionLabel(resolution)}
+												</button>
+											{/each}
+										</div>
+									</section>
+								{/if}
+
+								{#if supportsCustomSize}
+									<section class="mt-5">
+										<div class="flex items-center justify-between px-1 pb-2">
+											<h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">
+												{$i18n.t('Custom Size')}
+											</h3>
+											<label
+												class="flex min-h-11 items-center gap-1.5 text-xs text-gray-500 sm:min-h-0 dark:text-gray-400"
+											>
+												<input
+													type="checkbox"
+													class="size-3.5 rounded border-gray-300 dark:border-gray-600"
+													checked={useCustomSize}
+													on:change={(event) =>
+														onCustomSizeEnabledChange(event.currentTarget.checked)}
+												/>
+												{$i18n.t('Enable')}
+											</label>
+										</div>
+										{#if useCustomSize}
+											<div class="flex items-center gap-2">
+												<input
+													type="number"
+													inputmode="numeric"
+													min="1"
+													value={customWidth ?? ''}
+													on:input={(event) => onCustomWidthInput(numericInputValue(event))}
+													placeholder="1024"
+													aria-label={$i18n.t('Width')}
+													class="h-11 min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100 sm:h-9"
+												/>
+												<Tooltip
+													className="flex shrink-0"
+													content={$i18n.t(
+														customSizeAspectRatioLocked
+															? 'Unlock aspect ratio'
+															: 'Lock aspect ratio'
+													)}
+												>
+													<button
+														type="button"
+														class="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-9 {customSizeAspectRatioLocked
+															? 'border-gray-300 bg-gray-100 text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'
+															: 'border-gray-200 bg-transparent text-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-500 dark:hover:bg-gray-800'}"
+														on:click={onCustomSizeAspectRatioToggle}
+														aria-label={$i18n.t('Keep aspect ratio')}
+														aria-pressed={customSizeAspectRatioLocked}
+													>
+														{#if customSizeAspectRatioLocked}
+															<Link className="size-4" strokeWidth="2" />
+														{:else}
+															<LinkSlash className="size-4" strokeWidth="2" />
+														{/if}
+													</button>
+												</Tooltip>
+												<input
+													type="number"
+													inputmode="numeric"
+													min="1"
+													value={customHeight ?? ''}
+													on:input={(event) => onCustomHeightInput(numericInputValue(event))}
+													placeholder="1024"
+													aria-label={$i18n.t('Height')}
+													class="h-11 min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums dark:border-gray-700 dark:text-gray-100 sm:h-9"
+												/>
+											</div>
+											{#if customSizeError}
+												<p class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">
+													{$i18n.t(customSizeError.message, customSizeError.messageParams)}
+												</p>
+											{:else if customWidth && customHeight}
+												<p class="mt-2 px-1 text-xs text-gray-400 dark:text-gray-500">
+													{customWidthNum * customHeightNum >= 0
+														? (customWidthNum * customHeightNum).toLocaleString()
+														: ''} px · {customWidthNum || 0}:{customHeightNum || 0}
+												</p>
+											{/if}
+										{/if}
+									</section>
+								{/if}
+
+								{#if qualityOptions.length > 0}
+									<section class={hasImageSizingOptions ? 'mt-5' : ''}>
+										<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+											{$i18n.t('Quality')}
+										</h3>
+										<div class="grid grid-cols-4 gap-1.5">
+											{#each qualityOptions as quality}
+												<button
+													type="button"
+													class="h-11 rounded-xl border text-sm capitalize transition sm:h-9 {selectedQuality ===
+													quality
+														? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+														: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+													on:click={() => {
+														selectedQuality = quality;
+													}}
+													aria-pressed={selectedQuality === quality}
+												>
+													{getQualityLabel(quality)}
+												</button>
+											{/each}
+										</div>
+									</section>
+								{/if}
+
+								{#if imageCountOptions.length > 1}
+									<section class={hasImageSizingOptions ? 'mt-5' : ''}>
+										<h3 class="px-1 pb-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+											{$i18n.t('Quantity')}
+										</h3>
+										<div class="grid grid-cols-4 gap-1.5">
+											{#each imageCountOptions as count}
+												<button
+													type="button"
+													class="h-11 rounded-xl border text-sm transition sm:h-9 {Number(
+														imageCount
+													) === count
+														? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+														: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+													on:click={() => {
+														imageCount = count;
+													}}
+													aria-pressed={Number(imageCount) === count}
+												>
+													{count}
+												</button>
+											{/each}
+										</div>
+									</section>
+								{/if}
+
+								{#if hasAdvancedSettings}
+									<section class="mt-5 border-t border-gray-100 pt-3 dark:border-gray-800">
+										<button
+											type="button"
+											class="flex min-h-11 w-full items-center justify-between rounded-xl px-1 text-left text-sm font-medium text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 dark:text-gray-100"
+											on:click={() => (showAdvancedSettings = !showAdvancedSettings)}
+											aria-expanded={showAdvancedSettings}
+											aria-controls="image-advanced-settings"
+										>
+											<span>{$i18n.t('Advanced')}</span>
+											<span class="text-gray-400" aria-hidden="true"
+												>{showAdvancedSettings ? '−' : '+'}</span
+											>
+										</button>
+
+										{#if showAdvancedSettings}
+											<div
+												id="image-advanced-settings"
+												class="mt-2 grid min-w-0 gap-4 sm:grid-cols-2"
+											>
+												{#if outputFormatOptions.length > 0}
+													<div class="min-w-0 sm:col-span-2">
+														<div
+															class="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-300"
+														>
+															{$i18n.t('Output Format')}
+														</div>
+														<div class="grid grid-cols-3 gap-1.5">
+															{#each outputFormatOptions as format}
+																<button
+																	type="button"
+																	class="min-h-11 rounded-xl border text-sm uppercase transition {selectedOutputFormat ===
+																	format
+																		? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+																		: 'border-gray-100 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300 dark:hover:bg-gray-850'}"
+																	on:click={() => (selectedOutputFormat = format)}
+																	aria-pressed={selectedOutputFormat === format}
+																>
+																	{format}
+																</button>
+															{/each}
+														</div>
+													</div>
+												{/if}
+
+												{#if seedField}
+													<label
+														class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+													>
+														<span class="flex justify-between gap-2"
+															><span>{$i18n.t('Seed')}</span><span class="font-normal text-gray-400"
+																>{advancedRangeLabel(seedField)}</span
+															></span
+														>
+														<input
+															type="text"
+															inputmode="numeric"
+															value={seedInput}
+															on:input={(event) => (seedInput = event.currentTarget.value)}
+															placeholder={$i18n.t('Model default')}
+															aria-invalid={Boolean(getAdvancedNumberError(seedInput, seedField))}
+															class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+														/>
+														{#if getAdvancedNumberError(seedInput, seedField)}<span
+																class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																>{getAdvancedNumberError(seedInput, seedField)}</span
+															>{/if}
+													</label>
+												{/if}
+
+												{#if stepsField}
+													<label
+														class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+													>
+														<span class="flex justify-between gap-2"
+															><span>{$i18n.t('Steps')}</span><span
+																class="font-normal text-gray-400"
+																>{advancedRangeLabel(stepsField)}</span
+															></span
+														>
+														<input
+															type="text"
+															inputmode="numeric"
+															value={stepsInput}
+															on:input={(event) => (stepsInput = event.currentTarget.value)}
+															placeholder={$i18n.t('Model default')}
+															aria-invalid={Boolean(getAdvancedNumberError(stepsInput, stepsField))}
+															class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+														/>
+														{#if getAdvancedNumberError(stepsInput, stepsField)}<span
+																class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																>{getAdvancedNumberError(stepsInput, stepsField)}</span
+															>{/if}
+													</label>
+												{/if}
+
+												{#if guidanceScaleField}
+													<label
+														class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+													>
+														<span class="flex justify-between gap-2"
+															><span>{$i18n.t('Guidance scale')}</span><span
+																class="font-normal text-gray-400"
+																>{advancedRangeLabel(guidanceScaleField)}</span
+															></span
+														>
+														<input
+															type="text"
+															inputmode="decimal"
+															value={guidanceScaleInput}
+															on:input={(event) => (guidanceScaleInput = event.currentTarget.value)}
+															placeholder={$i18n.t('Model default')}
+															aria-invalid={Boolean(
+																getAdvancedNumberError(guidanceScaleInput, guidanceScaleField)
+															)}
+															class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+														/>
+														{#if getAdvancedNumberError(guidanceScaleInput, guidanceScaleField)}<span
+																class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																>{getAdvancedNumberError(
+																	guidanceScaleInput,
+																	guidanceScaleField
+																)}</span
+															>{/if}
+													</label>
+												{/if}
+
+												{#if strengthField}
+													<label
+														class="min-w-0 text-xs font-medium text-gray-600 dark:text-gray-300"
+													>
+														<span class="flex justify-between gap-2"
+															><span>{$i18n.t('Strength')}</span><span
+																class="font-normal text-gray-400"
+																>{advancedRangeLabel(strengthField)}</span
+															></span
+														>
+														<input
+															type="text"
+															inputmode="decimal"
+															value={strengthInput}
+															on:input={(event) => (strengthInput = event.currentTarget.value)}
+															placeholder={$i18n.t('Model default')}
+															aria-invalid={Boolean(
+																getAdvancedNumberError(strengthInput, strengthField)
+															)}
+															class="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm tabular-nums outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+														/>
+														{#if getAdvancedNumberError(strengthInput, strengthField)}<span
+																class="mt-1 block font-normal text-red-600 dark:text-red-400"
+																>{getAdvancedNumberError(strengthInput, strengthField)}</span
+															>{/if}
+													</label>
+												{/if}
+
+												{#if negativePromptField}
+													<label
+														class="min-w-0 text-xs font-medium text-gray-600 sm:col-span-2 dark:text-gray-300"
+													>
+														<span>{$i18n.t('Negative Prompt')}</span>
+														<textarea
+															bind:value={negativePrompt}
+															rows="3"
+															class="mt-1 w-full resize-y rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm font-normal text-gray-900 outline-none focus:border-gray-400 dark:border-gray-700 dark:text-gray-100"
+															placeholder={$i18n.t('Describe what should not appear')}
+															aria-label={$i18n.t('Negative Prompt')}
+														></textarea>
+													</label>
+												{/if}
+											</div>
+										{/if}
+									</section>
+								{/if}
+							</div>
 						</Dropdown>
 						<!-- 标签选择入口在参数按钮右侧：点击标签即插入实际文本 -->
 						<PromptTagPicker
