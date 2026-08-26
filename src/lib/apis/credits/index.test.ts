@@ -91,7 +91,9 @@ describe('credit API client', () => {
 				reason_code: 'promotion_gift'
 			})
 		).resolves.toEqual({ ledger_id: 'ledger-1', source: 'api', request_id: 'request-1' });
-		await expect(getAdminCreditLedger('token', { user_id: 'user-1', limit: 50 })).resolves.toEqual({
+		await expect(
+			getAdminCreditLedger('token', { user_query: 'user-1', limit: 50 })
+		).resolves.toEqual({
 			items: [],
 			total: 0
 		});
@@ -152,7 +154,7 @@ describe('credit API client', () => {
 		expect(fetchMock.mock.calls[4][1].body).toBe(
 			JSON.stringify({ direction: 'increase', amount: 25, reason_code: 'promotion_gift' })
 		);
-		expect(fetchMock.mock.calls[5][0]).toBe('/api/v1/credits/admin/ledger?user_id=user-1&limit=50');
+		expect(fetchMock.mock.calls[5][0]).toBe('/api/v1/credits/admin/ledger?user_query=user-1&limit=50');
 		expect(fetchMock.mock.calls[6][0]).toBe('/api/v1/credits/admin/prices?skip=0&limit=50');
 		expect(fetchMock.mock.calls[7][0]).toBe('/api/v1/credits/admin/prices');
 		expect(fetchMock.mock.calls[8][0]).toBe('/api/v1/credits/admin/prices/price-1');
@@ -239,5 +241,23 @@ describe('credit API client', () => {
 			'/api/v1/credits/admin/reconciliation/usage-1/compensate'
 		);
 		expect(fetchMock.mock.calls[1][1].body).toBe(JSON.stringify({ note: 'manual refund' }));
+	});
+
+	test('omits empty string filters instead of sending blank query params', async () => {
+		// 管理员清空搜索框后点“应用筛选”：空串筛选必须整体不下发，
+		// 否则后端 min_length=1 的参数校验会返回 422。
+		fetchMock.mockResolvedValueOnce(success({ items: [], total: 0 }));
+
+		await expect(
+			getAdminCreditLedger('token', {
+				user_query: '',
+				resource_id: '',
+				action: '',
+				entry_type: undefined,
+				limit: 25
+			})
+		).resolves.toEqual({ items: [], total: 0 });
+
+		expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/credits/admin/ledger?limit=25');
 	});
 });

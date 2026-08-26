@@ -52,6 +52,10 @@
 		try {
 			const result = await getAdminCreditLedger(localStorage.token, {
 				...filters,
+				// 文本筛选 trim 后为空则整体不下发，避免清空搜索框后触发 422。
+				user_query: filters.user_query?.trim() || undefined,
+				resource_id: filters.resource_id?.trim() || undefined,
+				action: filters.action?.trim() || undefined,
 				skip: (page - 1) * pageSize,
 				limit: pageSize
 			});
@@ -99,8 +103,8 @@
 	<div class="grid gap-2 md:grid-cols-3 lg:grid-cols-6">
 		<input
 			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={filters.user_id}
-			placeholder={$i18n.t('credits.admin.userId')}
+			bind:value={filters.user_query}
+			placeholder={$i18n.t('credits.admin.userQuery')}
 		/>
 		<Select
 			value={filters.entry_type ?? ''}

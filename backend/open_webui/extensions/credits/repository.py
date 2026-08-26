@@ -11,6 +11,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from open_webui.models.users import User
+
 from .constants import MAX_CREDIT_VALUE
 from .models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
 from .schemas import (
@@ -265,7 +267,7 @@ def _ledger_item(ledger: CreditLedger, usage_status: str | None) -> LedgerItem:
 
 async def list_ledger(
     session: AsyncSession,
-    query: UserLedgerQuery | AdminLedgerQuery,
+    query: UserLedgerQuery,
     *,
     user_id: str | None = None,
 ) -> tuple[tuple[LedgerItem, ...], LedgerCursor | None]:
@@ -273,10 +275,7 @@ async def list_ledger(
     conditions = _query_conditions(query)
     if user_id is not None:
         conditions.append(CreditLedger.user_id == user_id)
-    if isinstance(query, UserLedgerQuery):
-        conditions.extend(_user_ledger_conditions(query))
-    if isinstance(query, AdminLedgerQuery):
-        conditions.extend(_admin_ledger_conditions(query))
+    conditions.extend(_user_ledger_conditions(query))
 
     statement = (
         select(CreditLedger, CreditUsage.status)
@@ -305,16 +304,19 @@ def _user_ledger_conditions(query: UserLedgerQuery) -> list:
     return []
 
 
-def _admin_ledger_conditions(query: AdminLedgerQuery) -> list:
-    filters = (
-        (CreditLedger.user_id, query.user_id),
-        (CreditLedger.entry_type, query.entry_type),
-        (CreditLedger.reason_code, query.reason_code),
-        (CreditLedger.service_type, query.service_type),
-        (CreditLedger.resource_id, query.resource_id),
-        (CreditLedger.action, query.action),
-    )
-    return [column == value for column, value in filters if value is not None]
+_LIKE_ESCAPE_CHARS = str.maketrans({chr(92): chr(92) * 2, '%': chr(92) + '%', '_': chr(92) + '_'})
+_LIKE_ESCAPE = chr(92)
+
+
+def _like_contains(value: str) -> str:
+    """Build an escaped ``%value%`` LIKE pattern.
+
+    用户输入里的 ``%`` / ``_`` / ``\`` 按字面匹配而非通配符，避免管理员搜索
+    语义被特殊字符改变（例如搜索 ``100%`` 时不应匹配任意长度内容）。
+    调用方需配合 ``ilike(pattern, escape=_LIKE_ESCAPE)``：PostgreSQL 默认把
+    反斜杠当转义符，SQLite 则必须显式 ``ESCAPE`` 子句才生效。
+    """
+    return f"%{value.translate(_LIKE_ESCAPE_CHARS)}%"
 
 
 async def list_admin_ledger_page(
@@ -329,15 +331,38 @@ async def list_admin_ledger_page(
     """
     conditions = _query_conditions(query)
     for column, value in (
-        (CreditLedger.user_id, query.user_id),
         (CreditLedger.entry_type, query.entry_type),
         (CreditLedger.reason_code, query.reason_code),
         (CreditLedger.service_type, query.service_type),
-        (CreditLedger.resource_id, query.resource_id),
         (CreditLedger.action, query.action),
     ):
         if value is not None:
             conditions.append(column == value)
+    if query.resource_id is not None:
+        # 模型/资源按子串模糊匹配（管理员输入的常是模型名片段）。
+        conditions.append(
+            CreditLedger.resource_id.ilike(
+                _like_contains(query.resource_id), escape=_LIKE_ESCAPE
+            )
+        )
+    if query.user_query is not None:
+        # 用户检索：命中用户表的当前用户名/邮箱（覆盖改名前的全部流水），
+        # 或流水上的历史用户快照（覆盖已删除用户）。两者取并集。
+        pattern = _like_contains(query.user_query)
+        conditions.append(
+            or_(
+                CreditLedger.user_id.in_(
+                    select(User.id).where(
+                        or_(
+                            User.name.ilike(pattern, escape=_LIKE_ESCAPE),
+                            User.email.ilike(pattern, escape=_LIKE_ESCAPE),
+                        )
+                    )
+                ),
+                CreditLedger.user_name_snapshot.ilike(pattern, escape=_LIKE_ESCAPE),
+                CreditLedger.user_email_snapshot.ilike(pattern, escape=_LIKE_ESCAPE),
+            )
+        )
 
     statement = (
         select(CreditLedger, CreditUsage.status)

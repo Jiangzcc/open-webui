@@ -92,7 +92,7 @@ export type LedgerQuery = {
 };
 
 export type AdminLedgerQuery = {
-	user_id?: string;
+	user_query?: string;
 	entry_type?: 'consumption' | 'admin_adjustment' | 'system_adjustment';
 	reason_code?: LedgerReason;
 	service_type?: string;
@@ -383,7 +383,9 @@ const buildUrl = (path: string, query?: Query) => {
 
 	const searchParams = new URLSearchParams();
 	for (const [key, value] of Object.entries(query)) {
-		if (value !== undefined && value !== null) {
+		// 空字符串筛选一律不下发：后端字符串参数均为 min_length=1，传空串必得 422
+		// （管理员清空搜索框后点“应用筛选”曾触发此错误）。
+		if (value !== undefined && value !== null && value !== '') {
 			searchParams.set(key, String(value));
 		}
 	}

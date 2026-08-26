@@ -93,6 +93,8 @@ async def add_ledger(
     resource_id: str | None = None,
     action: str | None = None,
     metadata_snapshot: dict[str, object] | None = None,
+    user_name_snapshot: str | None = None,
+    user_email_snapshot: str | None = None,
 ) -> None:
     async with sessions() as session, session.begin():
         account = await session.scalar(select(CreditAccount).where(CreditAccount.user_id == user_id))
@@ -122,6 +124,8 @@ async def add_ledger(
                 resource_id=resource_id,
                 action=action,
                 metadata_snapshot=metadata_snapshot,
+                user_name_snapshot=user_name_snapshot,
+                user_email_snapshot=user_email_snapshot,
                 created_at=created_at,
             )
         )
@@ -645,7 +649,7 @@ async def test_admin_ledger_query_supports_permanent_filters_and_date_range(serv
         page = await list_admin_ledger(
             session,
             AdminLedgerQuery(
-                user_id='user-1',
+                user_query='user-1',
                 entry_type='admin_adjustment',
                 reason_code='promotion_gift',
                 service_type='image',
@@ -658,6 +662,81 @@ async def test_admin_ledger_query_supports_permanent_filters_and_date_range(serv
 
     assert [item.id for item in page.items] == ['matched']
     assert page.total == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_ledger_user_query_matches_name_email_and_snapshot(service_database) -> None:
+    """管理员按用户名/邮箱模糊检索：命中用户表（改名前流水也可查）或流水快照（已删用户）。"""
+    await create_user(service_database, 'user-1', name='Alice Zhang', email='alice@example.test')
+    await create_user(service_database, 'user-2', name='Bob', email='bob@example.test')
+    now = int(time.time())
+    await add_ledger(service_database, user_id='user-1', entry_id='by-name', created_at=now - 3)
+    await add_ledger(service_database, user_id='user-2', entry_id='by-email', created_at=now - 2)
+    # ghost 用户已不在用户表，仅流水快照留有身份信息。
+    await add_ledger(
+        service_database,
+        user_id='ghost',
+        entry_id='by-snapshot',
+        created_at=now - 1,
+        user_name_snapshot='Ghost User',
+        user_email_snapshot='ghost@example.test',
+    )
+
+    async with service_database() as session:
+        by_name = await list_admin_ledger(session, AdminLedgerQuery(user_query='lice Zh'))
+        by_email = await list_admin_ledger(session, AdminLedgerQuery(user_query='bob@example'))
+        by_snapshot = await list_admin_ledger(session, AdminLedgerQuery(user_query='Ghost'))
+        no_match = await list_admin_ledger(session, AdminLedgerQuery(user_query='carol'))
+
+    assert [item.id for item in by_name.items] == ['by-name']
+    assert [item.id for item in by_email.items] == ['by-email']
+    assert [item.id for item in by_snapshot.items] == ['by-snapshot']
+    assert no_match.items == ()
+    assert no_match.total == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_ledger_resource_id_fuzzy_match_escapes_like_wildcards(service_database) -> None:
+    """模型/资源按子串模糊匹配，且 % _ \ 按字面匹配而非通配符。"""
+    await create_user(service_database, 'user-1')
+    now = int(time.time())
+    await add_ledger(
+        service_database,
+        user_id='user-1',
+        entry_id='flux-entry',
+        created_at=now - 3,
+        resource_id='fal-ai/flux-1/dev',
+    )
+    await add_ledger(
+        service_database,
+        user_id='user-1',
+        entry_id='literal-entry',
+        created_at=now - 2,
+        resource_id='model-100%',
+    )
+    await add_ledger(
+        service_database,
+        user_id='user-1',
+        entry_id='wildcard-entry',
+        created_at=now - 1,
+        resource_id='model-100x',
+    )
+
+    async with service_database() as session:
+        partial = await list_admin_ledger(session, AdminLedgerQuery(resource_id='flux-1'))
+        literal = await list_admin_ledger(session, AdminLedgerQuery(resource_id='100%'))
+
+    assert [item.id for item in partial.items] == ['flux-entry']
+    # '100%' 中的 % 是字面字符：不应把 'model-100x' 一并匹配进来。
+    assert [item.id for item in literal.items] == ['literal-entry']
+
+
+def test_admin_ledger_query_rejects_blank_user_query() -> None:
+    """前端清空筛选后不应再传空串；即便传了也必须被 422 拒绝而非落库查询。"""
+    with pytest.raises(ValidationError):
+        AdminLedgerQuery(user_query='')
+    with pytest.raises(ValidationError):
+        AdminLedgerQuery(resource_id='')
 
 
 @pytest.mark.asyncio

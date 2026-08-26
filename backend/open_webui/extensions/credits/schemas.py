@@ -274,7 +274,9 @@ class UserLedgerQuery(LedgerQuery):
 
 
 class AdminLedgerQuery(LedgerQuery):
-    user_id: str | None = Field(default=None, min_length=1, max_length=128)
+    # 管理员按用户名或邮箱模糊检索流水（命中用户表或流水上的用户快照），
+    # 不再暴露内部 user_id 直查；resource_id 同样按子串模糊匹配模型/资源。
+    user_query: str | None = Field(default=None, min_length=1, max_length=MAX_USER_EMAIL_LENGTH)
     entry_type: Literal['consumption', 'admin_adjustment', 'system_adjustment'] | None = None
     reason_code: LedgerReason | None = None
     service_type: str | None = Field(default=None, min_length=1, max_length=64)
