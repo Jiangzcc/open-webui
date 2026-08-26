@@ -89,11 +89,30 @@ def test_payload_ratio_models_map_aspect_ratio_to_image_size():
     assert data['image_size'] == {'width': 1024, 'height': 768}
 
 
-def test_payload_seedream_scales_resolution_tier_over_baseline():
-    base = 'bytedance/seedream/v5/pro/text-to-image'
-    data_1k = build_fal_image_payload(_form(aspect_ratio='4:3', resolution='1K'), base)
-    data_2k = build_fal_image_payload(_form(aspect_ratio='4:3', resolution='2K'), base)
-    data_4k = build_fal_image_payload(_form(aspect_ratio='16:9', resolution='4K'), base)
+def test_payload_resolution_tier_scales_ratio_baseline(monkeypatch):
+    """档位（1K/2K/4K）按比例基线 × 倍率放大。
+
+    目录中暂无该形态的真实模型（seedream v5 曾这样误配，已按 fal 官方
+    schema 修正为 custom_size 型），用注入模型锁定通用逻辑。
+    """
+    import open_webui.extensions.fal_images.client as fal
+
+    monkeypatch.setattr(
+        fal,
+        'FAL_IMAGE_MODELS',
+        [
+            {
+                'id': 'tiered/t2i',
+                'custom_size_field': 'image_size',
+                'aspect_ratios': ['4:3', '16:9'],
+                'aspect_ratio_sizes': {'4:3': '1024x768', '16:9': '1280x720'},
+                'resolution_multipliers': {'2K': 2, '4K': 4},
+            }
+        ],
+    )
+    data_1k = build_fal_image_payload(_form(aspect_ratio='4:3', resolution='1K'), 'tiered/t2i')
+    data_2k = build_fal_image_payload(_form(aspect_ratio='4:3', resolution='2K'), 'tiered/t2i')
+    data_4k = build_fal_image_payload(_form(aspect_ratio='16:9', resolution='4K'), 'tiered/t2i')
     assert data_1k['image_size'] == {'width': 1024, 'height': 768}
     assert data_2k['image_size'] == {'width': 2048, 'height': 1536}
     assert data_4k['image_size'] == {'width': 5120, 'height': 2880}
@@ -162,6 +181,46 @@ def test_payload_wan_v22_does_not_send_count():
 def test_payload_wan_v27_supports_five_images():
     data = build_fal_image_payload(_form(n=5), 'fal-ai/wan/v2.7/text-to-image')
     assert data['num_images'] == 5
+
+
+def test_payload_wan_v22_5b_maps_output_format_to_image_format():
+    data = build_fal_image_payload(_form(output_format='png'), 'fal-ai/wan/v2.2-5b/text-to-image')
+    assert data['image_format'] == 'png'
+    assert 'output_format' not in data
+    assert 'sync_mode' not in data
+
+
+def test_payload_wan_v22_a14b_text_to_image_has_no_format_field():
+    data = build_fal_image_payload(
+        _form(output_format='png'), 'fal-ai/wan/v2.2-a14b/text-to-image'
+    )
+    assert 'output_format' not in data
+    assert 'image_format' not in data
+    assert 'sync_mode' not in data
+
+
+def test_payload_flux_edit_has_no_image_size_and_enforces_schema_steps_min():
+    data = build_fal_image_payload(
+        _form(steps=5), 'fal-ai/flux-1/dev/image-to-image', ['https://example.test/in.png']
+    )
+    assert 'image_size' not in data
+    assert 'num_inference_steps' not in data
+
+    data = build_fal_image_payload(
+        _form(steps=20), 'fal-ai/flux-1/dev/image-to-image', ['https://example.test/in.png']
+    )
+    assert data['num_inference_steps'] == 20
+
+
+def test_payload_qwen_image_drops_steps_below_schema_min():
+    data = build_fal_image_payload(_form(steps=1), 'fal-ai/qwen-image')
+    assert 'num_inference_steps' not in data
+
+
+def test_payload_fixed_count_models_do_not_send_count_field():
+    for model in ('fal-ai/luma-photon', 'fal-ai/recraft/v4/text-to-image'):
+        data = build_fal_image_payload(_form(n=1), model)
+        assert 'num_images' not in data, model
 
 
 def test_payload_qwen2_has_no_guidance_or_steps():

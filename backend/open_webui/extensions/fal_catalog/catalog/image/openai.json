@@ -59,11 +59,13 @@
     ],
     "hosting": "proxy",
     "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
+      "multiple_of": 16,
+      "max_width": 3840,
+      "max_height": 3840,
+      "min_pixels": 655360,
+      "max_pixels": 8294400,
+      "aspect_ratio_min": 0.3333,
+      "aspect_ratio_max": 3
     }
   },
   {
@@ -135,11 +137,13 @@
     "image_input_max_count": 16,
     "hosting": "proxy",
     "custom_size": {
-      "min_width": 256,
-      "max_width": 1024,
-      "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
+      "multiple_of": 16,
+      "max_width": 3840,
+      "max_height": 3840,
+      "min_pixels": 655360,
+      "max_pixels": 8294400,
+      "aspect_ratio_min": 0.3333,
+      "aspect_ratio_max": 3
     }
   },
   {

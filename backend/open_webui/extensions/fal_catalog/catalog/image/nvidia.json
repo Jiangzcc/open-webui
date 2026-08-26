@@ -74,10 +74,10 @@
     ],
     "custom_size": {
       "min_width": 256,
-      "max_width": 1024,
+      "max_width": 4096,
       "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
+      "max_height": 4096,
+      "max_pixels": 16777216
     }
   },
   {
@@ -155,10 +155,10 @@
     ],
     "custom_size": {
       "min_width": 256,
-      "max_width": 1024,
+      "max_width": 4096,
       "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
+      "max_height": 4096,
+      "max_pixels": 16777216
     }
   },
   {
@@ -236,10 +236,10 @@
     ],
     "custom_size": {
       "min_width": 256,
-      "max_width": 1024,
+      "max_width": 4096,
       "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
+      "max_height": 4096,
+      "max_pixels": 16777216
     }
   },
   {
@@ -317,10 +317,10 @@
     ],
     "custom_size": {
       "min_width": 256,
-      "max_width": 1024,
+      "max_width": 4096,
       "min_height": 256,
-      "max_height": 1024,
-      "max_pixels": 1048576
+      "max_height": 4096,
+      "max_pixels": 16777216
     }
   },
   {

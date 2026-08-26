@@ -53,7 +53,7 @@ EXPECTED_NEW_MODELS = [
     ('wan/v2.6/text-to-image', 'proxy', 'max_images', [1, 2, 3, 4, 5]),
     ('fal-ai/wan/v2.7/text-to-image', 'proxy', 'num_images', [1, 2, 3, 4, 5]),
     ('fal-ai/wan/v2.7/pro/text-to-image', 'proxy', 'num_images', [1, 2, 3, 4, 5]),
-    ('fal-ai/wan-v2.5/text-to-image', 'proxy', 'num_images', [1, 2, 3, 4]),
+    ('fal-ai/wan-25-preview/text-to-image', 'proxy', 'num_images', [1, 2, 3, 4]),
 ]
 
 
@@ -95,7 +95,7 @@ INTERNAL_TO_PUBLIC = {
     'wan/v2.6/text-to-image': 'wan-2.6',
     'fal-ai/wan/v2.7/text-to-image': 'wan-2.7',
     'fal-ai/wan/v2.7/pro/text-to-image': 'wan-2.7-pro',
-    'fal-ai/wan-v2.5/text-to-image': 'wan-2.5-preview',
+    'fal-ai/wan-25-preview/text-to-image': 'wan-2.5-preview',
 }
 
 
@@ -135,7 +135,7 @@ ALIBABA_I2I_PAIRS = [
     ('wan/v2.6/text-to-image', 'wan/v2.6/image-to-image', 'image_urls'),
     ('fal-ai/wan/v2.7/text-to-image', 'fal-ai/wan/v2.7/edit', 'image_urls'),
     ('fal-ai/wan/v2.7/pro/text-to-image', 'fal-ai/wan/v2.7/pro/edit', 'image_urls'),
-    ('fal-ai/wan-v2.5/text-to-image', 'fal-ai/wan-25-preview/image-to-image', 'image_urls'),
+    ('fal-ai/wan-25-preview/text-to-image', 'fal-ai/wan-25-preview/image-to-image', 'image_urls'),
 ]
 
 # 多图派 i2i 端点参考图上限,取自 fal 文档("1-3 images required" 等)。

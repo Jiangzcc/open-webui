@@ -78,22 +78,11 @@
     "integer_fields": [
       {
         "field": "seed"
-      },
-      {
-        "field": "steps_num",
-        "source": "steps",
-        "min": 4,
-        "max": 30
       }
     ],
     "boolean_fields": [
       {
         "field": "sync_mode"
-      }
-    ],
-    "text_fields": [
-      {
-        "field": "negative_prompt"
       }
     ]
   },

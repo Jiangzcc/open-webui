@@ -499,7 +499,9 @@ def _build_known_model_payload(
     _set_known_model_size(data, form_data, model_info)
     _set_option(
         data,
-        'output_format' if model_info.get('output_formats') else None,
+        (model_info.get('output_format_field') or 'output_format')
+        if model_info.get('output_formats')
+        else None,
         getattr(form_data, 'output_format', None),
         model_info.get('output_formats', []),
         model_info.get('default_output_format'),

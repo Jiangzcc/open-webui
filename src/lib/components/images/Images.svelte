@@ -196,9 +196,16 @@
 		(strengthField && getAdvancedNumberError(strengthInput, strengthField))
 	);
 	$: hasImageSizingOptions = aspectRatioOptions.length > 0 || resolutionOptions.length > 0;
+	// custom_size 模型的比例基线尺寸（合成默认值，见 synthesizeCustomSizeDefaults）：
+	// 摘要与自定义尺寸预填都基于它，用户能直接看到所选比例对应的默认分辨率。
+	$: selectedRatioSize = supportsCustomSize
+		? selectedModelCapability.aspectRatioSizes[selectedAspectRatio]
+		: undefined;
 	$: selectedImageSizeLabel = hasImageSizingOptions
 		? aspectRatioOptions.length > 0
-			? getAspectRatioLabel(selectedAspectRatio)
+			? [getAspectRatioLabel(selectedAspectRatio), customSizeValue ?? selectedRatioSize]
+					.filter(Boolean)
+					.join(' · ')
 			: selectedResolution
 				? getResolutionLabel(selectedResolution)
 				: $i18n.t('Resolution')
@@ -286,6 +293,14 @@
 		useCustomSize = false;
 		customWidth = null;
 		customHeight = null;
+	}
+	// 勾选自定义尺寸时用当前比例的基线尺寸预填宽高，减少从零手输。
+	$: if (loaded && useCustomSize && customWidth === null && customHeight === null) {
+		const match = selectedRatioSize?.match(/^(\d+)x(\d+)$/);
+		if (match) {
+			customWidth = Number(match[1]);
+			customHeight = Number(match[2]);
+		}
 	}
 	$: if (loaded && selectedResolution) {
 		const match = selectedResolution.match(/^(\d+)x(\d+)$/);

@@ -29,6 +29,9 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = [
 
 export const DEFAULT_IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
+/** 文生图/图生图可选的最大图片数量：目录 JSON 不动，代码层统一截断。 */
+export const MAX_SELECTABLE_IMAGE_COUNT = 4 as const;
+
 export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number];
 
 export type ImageGenerationPayload = {

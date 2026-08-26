@@ -368,6 +368,16 @@ async def test_pixel_count_resolves_from_catalog_ratio_mapping(monkeypatch) -> N
         'get_runtime_image_config',
         AsyncMock(return_value=config(IMAGE_GENERATION_ENGINE='fal', IMAGE_GENERATION_MODEL='')),
     )
+    # 目录中已无档位 × 倍率形态的真实模型（seedream v5 曾这样误配，已按 fal 官方
+    # schema 修正为 custom_size 型）；注入旧档位字段锁定乘数折算的通用逻辑。
+    import open_webui.extensions.fal_images.models as fal_models
+
+    patched = []
+    for m in fal_models.FAL_IMAGE_MODELS:
+        if m.get('id') == 'bytedance/seedream/v5/pro/text-to-image':
+            m = {**m, 'aspect_ratio_sizes': {'4:3': '1024x768'}, 'resolution_multipliers': {'2K': 2}}
+        patched.append(m)
+    monkeypatch.setattr(fal_models, 'FAL_IMAGE_MODELS', patched)
 
     ratio_only = await adapter.prepare_generation_call(
         request(),
@@ -497,6 +507,8 @@ async def test_action_channel_and_reference_bytes_change_hash(monkeypatch) -> No
         ({'quality': 'q' * 129}, 'invalid_quality'),
         ({'image_count': True}, 'invalid_image_count'),
         ({'image_count': 0}, 'invalid_image_count'),
+        # 运营上限 4：超过即拒绝（101 之外补 5 的紧邻边界）。
+        ({'image_count': 5}, 'invalid_image_count'),
         ({'image_count': 101}, 'invalid_image_count'),
         ({'extra': {'bad': float('inf')}}, 'invalid_extra'),
         ({'extra': {'bad': float('nan')}}, 'invalid_extra'),

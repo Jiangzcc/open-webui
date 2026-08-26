@@ -8,6 +8,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -87,6 +88,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -215,6 +217,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "number_fields": [
       {
@@ -341,6 +344,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -375,6 +379,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -409,6 +414,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -443,6 +449,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -477,6 +484,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -511,6 +519,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -545,6 +554,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -579,6 +589,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -613,6 +624,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
@@ -647,6 +659,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",

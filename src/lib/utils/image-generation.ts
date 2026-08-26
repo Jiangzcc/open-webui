@@ -7,6 +7,7 @@ import {
 	DEFAULT_IMAGE_ASPECT_RATIO,
 	DEFAULT_IMAGE_COUNT_OPTIONS,
 	IMAGE_ASPECT_RATIO_OPTIONS,
+	MAX_SELECTABLE_IMAGE_COUNT,
 	type FileLike,
 	type GeneratedImage,
 	type ImageAspectRatio,
@@ -18,10 +19,13 @@ import {
 	type ImagePayloadInput,
 	type RejectedImageFile
 } from './image-generation-types';
+import { synthesizeCustomSizeDefaults } from './image-generation-custom-size';
 import {
 	DALL_E_3_ASPECT_RATIO_SIZES,
 	DEFAULT_IMAGE_ASPECT_RATIO_SIZES,
 	DEFAULT_MODEL_CAPABILITY,
+	getImageCountsFromMax,
+	getModelPresetCapability,
 	GPT_IMAGE_ASPECT_RATIO_SIZES
 } from './image-generation-presets';
 
@@ -153,99 +157,6 @@ const hasOwn = (value: object, key: string) => {
 	return Object.prototype.hasOwnProperty.call(value, key);
 };
 
-const getImageCountsFromMax = (maxImages?: number) => {
-	if (!isPositiveInteger(maxImages)) {
-		return [];
-	}
-
-	const max = Math.min(Number(maxImages), 10);
-	return Array.from({ length: max }, (_, index) => index + 1);
-};
-
-const getModelPresetCapability = (
-	model?: ImageGenerationModel | string | null
-): Partial<ImageModelCapability> => {
-	const id = getModelId(model)?.toLowerCase() ?? '';
-
-	if (/dall[\s-_]?e[\s-_]?2/.test(id)) {
-		return {
-			aspectRatios: ['1:1'],
-			resolutions: ['256x256', '512x512', '1024x1024'],
-			imageCounts: getImageCountsFromMax(10),
-			defaultAspectRatio: '1:1',
-			aspectRatioSizes: {
-				'1:1': '1024x1024'
-			}
-		};
-	}
-
-	if (/dall[\s-_]?e[\s-_]?3/.test(id)) {
-		return {
-			aspectRatios: ['1:1', '16:9', '9:16'],
-			resolutions: [],
-			imageCounts: [1],
-			defaultAspectRatio: '1:1',
-			aspectRatioSizes: DALL_E_3_ASPECT_RATIO_SIZES
-		};
-	}
-
-	if (/nano[\s-_]?banana[\s-_]?pro|gemini[\s-_]?3[\s-_.]?pro[\s-_]?image/.test(id)) {
-		return {
-			aspectRatios: [
-				DEFAULT_IMAGE_ASPECT_RATIO,
-				'16:9',
-				'9:16',
-				'1:1',
-				'2:3',
-				'3:2',
-				'4:3',
-				'3:4',
-				'21:9'
-			],
-			resolutions: ['1K', '2K', '4K'],
-			imageCounts: [...DEFAULT_IMAGE_COUNT_OPTIONS],
-			defaultAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
-			defaultResolution: '1K',
-			aspectRatioSizes: GPT_IMAGE_ASPECT_RATIO_SIZES
-		};
-	}
-
-	if (
-		/nano[\s-_]?banana|gemini[\s-_]?(25|2[\s-_.]?5|3[\s-_.]?1)[\s-_]?flash[\s-_]?image/.test(id)
-	) {
-		return {
-			aspectRatios: ['1:1', '16:9', '9:16'],
-			resolutions: [],
-			imageCounts: [...DEFAULT_IMAGE_COUNT_OPTIONS],
-			defaultAspectRatio: '1:1',
-			aspectRatioSizes: DALL_E_3_ASPECT_RATIO_SIZES
-		};
-	}
-
-	if (/gpt[\s-_]?image/.test(id)) {
-		return {
-			aspectRatios: [DEFAULT_IMAGE_ASPECT_RATIO, '1:1', '3:2', '2:3'],
-			resolutions: ['auto', '1024x1024', '1536x1024', '1024x1536'],
-			imageCounts: getImageCountsFromMax(10),
-			defaultAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
-			defaultResolution: 'auto',
-			aspectRatioSizes: GPT_IMAGE_ASPECT_RATIO_SIZES
-		};
-	}
-
-	if (/imagen|gemini/.test(id)) {
-		return {
-			aspectRatios: [DEFAULT_IMAGE_ASPECT_RATIO, '1:1', '16:9', '9:16', '3:4', '4:3'],
-			resolutions: [],
-			imageCounts: [...DEFAULT_IMAGE_COUNT_OPTIONS],
-			defaultAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
-			aspectRatioSizes: DEFAULT_IMAGE_ASPECT_RATIO_SIZES
-		};
-	}
-
-	return {};
-};
-
 const getExplicitModelCapability = (model?: ImageGenerationModel | string | null) => {
 	if (!model || typeof model === 'string') {
 		return {};
@@ -296,18 +207,31 @@ export const getImageModelCapability = (
 			model.resolutions !== undefined ||
 			model.sizeField !== undefined ||
 			model.supportsAspectRatioField !== undefined);
-	const aspectRatios = hasExplicitAspectRatios
-		? (explicit.aspectRatios ?? [])
-		: preset.aspectRatios?.length
-			? preset.aspectRatios
-			: usesExplicitCapability
-				? []
-				: DEFAULT_MODEL_CAPABILITY.aspectRatios;
 	const resolutions = hasExplicitResolutions
 		? (explicit.resolutions ?? [])
 		: preset.resolutions?.length
 			? preset.resolutions
 			: DEFAULT_MODEL_CAPABILITY.resolutions;
+	// custom_size 模型目录未声明比例/档位/尺寸表时，基于约束合成默认比例与基线尺寸
+	// （目录 JSON 不动，代码层补默认）。基线保证落在 custom_size 约束内，payload 以
+	// size 下发（sizeField=image_size 直接生效），与后端 validate_fal_image_size 校验同源。
+	// 已声明比例的模型（如 gpt-image-2）沿用其比例列表，只为它们补基线尺寸。
+	const preferredRatios = explicit.aspectRatios?.length ? explicit.aspectRatios : undefined;
+	const customSizeDefaults =
+		explicit.customSize &&
+		resolutions.length === 0 &&
+		!Object.keys(explicit.aspectRatioSizes ?? {}).length
+			? synthesizeCustomSizeDefaults(explicit.customSize, preferredRatios)
+			: undefined;
+	const aspectRatios =
+		customSizeDefaults?.aspectRatios ??
+		(hasExplicitAspectRatios
+			? (explicit.aspectRatios ?? [])
+			: preset.aspectRatios?.length
+				? preset.aspectRatios
+				: usesExplicitCapability
+					? []
+					: DEFAULT_MODEL_CAPABILITY.aspectRatios);
 	const imageCounts = explicit.imageCounts?.length
 		? explicit.imageCounts
 		: preset.imageCounts?.length
@@ -327,6 +251,7 @@ export const getImageModelCapability = (
 			: resolutions[0];
 
 	const aspectRatioSizes =
+		customSizeDefaults?.aspectRatioSizes ??
 		explicit.aspectRatioSizes ??
 		(!usesExplicitCapability ? preset.aspectRatioSizes : undefined) ??
 		(!usesExplicitCapability ? DEFAULT_MODEL_CAPABILITY.aspectRatioSizes : {});
@@ -460,9 +385,10 @@ export const normalizeImageGenerationModels = (items: unknown): ImageGenerationM
 			aspectRatioKey ? model[aspectRatioKey] : undefined
 		);
 		const resolutions = normalizeResolutionList(resolutionKey ? model[resolutionKey] : undefined);
+		// 目录 JSON 的 image_counts 可能包含更大的数量；模型配置不动，代码层截断到上限。
 		const imageCounts = normalizeNumberList(
 			model.imageCounts ?? model.image_counts ?? model.counts
-		);
+		).filter((count) => count <= MAX_SELECTABLE_IMAGE_COUNT);
 		const maxImages = Number(model.maxImages ?? model.max_images ?? model.max_n);
 		const imageInputMaxCountRaw = Number(model.imageInputMaxCount ?? model.image_input_max_count);
 		const imageInputMaxCount = isPositiveInteger(imageInputMaxCountRaw)

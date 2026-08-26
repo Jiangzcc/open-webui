@@ -100,7 +100,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 10,
         "max": 50
       }
     ],
@@ -118,7 +118,6 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolution_field": "image_size",
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -240,7 +239,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 10,
         "max": 50
       }
     ],
@@ -258,7 +257,6 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolution_field": "image_size",
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -456,7 +454,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 10,
         "max": 50
       }
     ],
@@ -474,7 +472,6 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolution_field": "image_size",
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -908,7 +905,7 @@
     "default_output_format": "jpeg",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_input_field": "image_url",
+    "image_input_field": "image_urls",
     "image_input_max_count": 1,
     "number_fields": [
       {
@@ -1626,7 +1623,7 @@
     "default_output_format": "jpeg",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_input_field": "image_url",
+    "image_input_field": "image_urls",
     "image_input_max_count": 1,
     "option_fields": [
       {
@@ -1752,7 +1749,7 @@
     "default_output_format": "jpeg",
     "resolution_field": "image_size",
     "custom_size_field": "image_size",
-    "image_input_field": "image_url",
+    "image_input_field": "image_urls",
     "image_input_max_count": 1,
     "option_fields": [
       {
@@ -2016,7 +2013,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 10,
         "max": 50
       }
     ],
@@ -2034,7 +2031,6 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolution_field": "image_size",
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -2156,7 +2152,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 10,
         "max": 50
       }
     ],
@@ -2174,7 +2170,6 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolution_field": "image_size",
     "number_fields": [
       {
         "field": "guidance_scale",
@@ -2823,7 +2818,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 10,
         "max": 50
       }
     ],
@@ -2841,7 +2836,6 @@
       "png"
     ],
     "default_output_format": "jpeg",
-    "resolution_field": "image_size",
     "number_fields": [
       {
         "field": "guidance_scale",

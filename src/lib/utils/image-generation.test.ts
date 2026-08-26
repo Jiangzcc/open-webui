@@ -142,6 +142,19 @@ describe('image generation utils', () => {
 		]);
 	});
 
+	test('caps selectable image counts at 4 regardless of catalog config', () => {
+		// 目录 JSON 的 image_counts / max_n 可以配置更大的数量；
+		// 运营上限在代码层截断，模型配置保持原样。
+		const [explicit] = normalizeImageGenerationModels([
+			{ id: 'catalog-model', image_counts: [1, 2, 4, 6, 8] }
+		]);
+		expect(explicit).toMatchObject({ imageCounts: [1, 2, 4] });
+
+		const [fromMax] = normalizeImageGenerationModels([{ id: 'max-model', max_n: 10 }]);
+		// maxImages 在能力装配层推导为可选项；同样截断到 4。
+		expect(getImageModelCapability(fromMax)).toMatchObject({ imageCounts: [1, 2, 3, 4] });
+	});
+
 	test('normalizes only allowlisted advanced image fields and their ranges', () => {
 		const [model] = normalizeImageGenerationModels([
 			{
@@ -555,7 +568,8 @@ describe('image generation utils', () => {
 		);
 	});
 
-	test('builds image-to-image payload with one or many reference images', () => {		expect(
+	test('builds image-to-image payload with one or many reference images', () => {
+		expect(
 			buildImageEditPayload({
 				prompt: 'turn it into ink art',
 				referenceImages: ['data:image/png;base64,aaa'],
@@ -623,7 +637,6 @@ describe('image generation utils', () => {
 			{ file: extra, reason: 'too_many' }
 		]);
 	});
-
 
 	test('lifts backend quality options onto the normalized model and capability', () => {
 		const [withQuality, withoutQuality] = normalizeImageGenerationModels([
@@ -868,9 +881,7 @@ describe('custom size constraints', () => {
 			'Dimensions must be a multiple of {{multipleOf}}'
 		);
 		expect(validateCustomSize(513, 1024, cs)?.messageParams).toEqual({ multipleOf: 16 });
-		expect(validateCustomSize(512, 512, cs)?.message).toBe(
-			'Total pixels must be at least {{min}}'
-		);
+		expect(validateCustomSize(512, 512, cs)?.message).toBe('Total pixels must be at least {{min}}');
 		// 2064×2048 = 4_227_072 > maxPixels; both dims are multiples of 16, ratio in range.
 		expect(validateCustomSize(2064, 2048, cs)?.message).toBe(
 			'Total pixels must be at most {{max}}'
@@ -902,5 +913,157 @@ describe('custom size constraints', () => {
 		expect(validateCustomSize(1024, 1024, cs)).toBeNull();
 		expect(validateCustomSize(2048, 512, cs)?.field).toBe('aspect'); // ratio 4 > 2
 		expect(validateCustomSize(512, 2048, cs)?.field).toBe('aspect'); // ratio 0.25 < 0.5
+	});
+});
+
+describe('custom size default ratios and sizes', () => {
+	const parseSize = (size: string): [number, number] => {
+		const match = /^(\d+)x(\d+)$/.exec(size);
+		if (!match) {
+			throw new Error(`bad size ${size}`);
+		}
+		return [Number(match[1]), Number(match[2])];
+	};
+
+	test('synthesizes default ratios with baseline sizes inside constraints', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'fal-ai/hidream-i1-dev',
+				custom_size_field: 'image_size',
+				custom_size: {
+					min_width: 256,
+					max_width: 1024,
+					min_height: 256,
+					max_height: 1024,
+					max_pixels: 1_048_576
+				}
+			}
+		]);
+		const capability = getImageModelCapability(model);
+		expect(capability.aspectRatios).toEqual(['1:1', '4:3', '3:4', '16:9', '9:16']);
+		expect(capability.defaultAspectRatio).toBe('1:1');
+		for (const ratio of capability.aspectRatios) {
+			const size = capability.aspectRatioSizes[ratio];
+			expect(size, ratio).toBeDefined();
+			const [width, height] = parseSize(size!);
+			expect(validateCustomSize(width, height, capability.customSize)).toBeNull();
+		}
+		// 宽边受 max_width=1024 限制时按比例收短边，而不是破坏比例。
+		expect(capability.aspectRatioSizes['16:9']).toBe('1024x576');
+		expect(capability.aspectRatioSizes['1:1']).toBe('1024x1024');
+	});
+
+	test('respects min_pixels floor and multiple_of alignment', () => {
+		const [seedream] = normalizeImageGenerationModels([
+			{
+				id: 'fal-ai/bytedance/seedream/v4.5/text-to-image',
+				custom_size_field: 'image_size',
+				custom_size: {
+					min_width: 256,
+					max_width: 4096,
+					min_height: 256,
+					max_height: 4096,
+					min_pixels: 3_686_400,
+					max_pixels: 16_777_216
+				}
+			}
+		]);
+		const { aspectRatioSizes, customSize } = getImageModelCapability(seedream);
+		const oneToOne = aspectRatioSizes['1:1'];
+		expect(oneToOne).toBeDefined();
+		const [width, height] = parseSize(oneToOne!);
+		expect(width * height).toBeGreaterThanOrEqual(3_686_400);
+		expect(width * height).toBeLessThanOrEqual(16_777_216);
+		expect(validateCustomSize(width, height, customSize)).toBeNull();
+
+		const [hidreamO1] = normalizeImageGenerationModels([
+			{
+				id: 'fal-ai/hidream-o1-image',
+				custom_size_field: 'image_size',
+				custom_size: {
+					min_width: 256,
+					max_width: 2048,
+					min_height: 256,
+					max_height: 2048,
+					multiple_of: 32
+				}
+			}
+		]);
+		const o1Sizes = getImageModelCapability(hidreamO1).aspectRatioSizes;
+		for (const size of Object.values(o1Sizes)) {
+			const [w, h] = parseSize(size!);
+			expect(w % 32).toBe(0);
+			expect(h % 32).toBe(0);
+		}
+	});
+
+	test('drops ratios with no feasible size under the constraints', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'tight-model',
+				custom_size_field: 'image_size',
+				custom_size: {
+					min_width: 256,
+					max_width: 512,
+					min_height: 256,
+					max_height: 512,
+					min_pixels: 200_000,
+					max_pixels: 262_144
+				}
+			}
+		]);
+		const capability = getImageModelCapability(model);
+		// 只有 1:1 能在 min_pixels 与 512 上限之间落脚。
+		expect(capability.aspectRatios).toEqual(['1:1']);
+		expect(capability.aspectRatioSizes['1:1']).toBe('480x480');
+	});
+
+	test('keeps declared ratios and only synthesizes their baseline sizes', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'openai/gpt-image-2',
+				custom_size_field: 'image_size',
+				custom_size: {
+					min_width: 256,
+					max_width: 1024,
+					min_height: 256,
+					max_height: 1024,
+					max_pixels: 1_048_576
+				},
+				aspect_ratios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
+				resolutions: []
+			}
+		]);
+		const capability = getImageModelCapability(model);
+		expect(capability.aspectRatios).toEqual(['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3']);
+		for (const ratio of capability.aspectRatios) {
+			expect(capability.aspectRatioSizes[ratio], ratio).toBeDefined();
+			const [width, height] = parseSize(capability.aspectRatioSizes[ratio]!);
+			expect(validateCustomSize(width, height, capability.customSize)).toBeNull();
+		}
+	});
+
+	test('payload sends the synthesized size without aspect_ratio or resolution', () => {
+		const [model] = normalizeImageGenerationModels([
+			{
+				id: 'fal-ai/hidream-i1-dev',
+				custom_size_field: 'image_size',
+				custom_size: {
+					min_width: 256,
+					max_width: 1024,
+					min_height: 256,
+					max_height: 1024,
+					max_pixels: 1_048_576
+				}
+			}
+		]);
+		const payload = buildImageGenerationPayload({
+			prompt: 'p',
+			model,
+			aspectRatio: '16:9'
+		});
+		expect(payload.size).toBe('1024x576');
+		expect(payload.aspect_ratio).toBeUndefined();
+		expect(payload.resolution).toBeUndefined();
 	});
 });

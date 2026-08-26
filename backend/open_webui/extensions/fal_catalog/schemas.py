@@ -146,6 +146,9 @@ class FalImageModelDefinition(_StrictModel):
     image_size_whitelist: dict[str, str] | None = None
     output_formats: list[str] | None = None
     default_output_format: str | None = None
+    # 输出格式对应的请求字段名。绝大多数模型是 ``output_format``，个别模型
+    # （如 wan v2.2 的 ``image_format``）使用不同字段名，由目录显式声明。
+    output_format_field: str | None = Field(default=None, min_length=1)
     image_input_field: str | None = Field(default=None, min_length=1)
     image_input_max_count: int | None = Field(default=None, ge=1)
     option_fields: list[OptionField] | None = None

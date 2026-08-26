@@ -701,8 +701,7 @@
     ],
     "output_formats": [
       "jpeg",
-      "png",
-      "webp"
+      "png"
     ],
     "default_output_format": "png",
     "custom_size_field": "image_size",
@@ -725,7 +724,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 2,
         "max": 250
       }
     ],
@@ -775,8 +774,7 @@
     ],
     "output_formats": [
       "jpeg",
-      "png",
-      "webp"
+      "png"
     ],
     "default_output_format": "png",
     "custom_size_field": "image_size",
@@ -799,7 +797,7 @@
       {
         "field": "num_inference_steps",
         "source": "steps",
-        "min": 1,
+        "min": 2,
         "max": 250
       }
     ],
@@ -842,9 +840,6 @@
     ],
     "count_field": "num_images",
     "boolean_fields": [
-      {
-        "field": "sync_mode"
-      },
       {
         "field": "enable_safety_checker",
         "default": false
@@ -899,9 +894,6 @@
     ],
     "count_field": "num_images",
     "boolean_fields": [
-      {
-        "field": "sync_mode"
-      },
       {
         "field": "enable_safety_checker",
         "default": false
@@ -960,9 +952,6 @@
     "count_field": "num_images",
     "boolean_fields": [
       {
-        "field": "sync_mode"
-      },
-      {
         "field": "enable_safety_checker",
         "default": false
       }
@@ -1016,9 +1005,6 @@
     ],
     "count_field": "num_images",
     "boolean_fields": [
-      {
-        "field": "sync_mode"
-      },
       {
         "field": "enable_safety_checker",
         "default": false
@@ -1077,15 +1063,8 @@
     "count_field": "max_images",
     "boolean_fields": [
       {
-        "field": "sync_mode"
-      },
-      {
         "field": "enable_safety_checker",
         "default": false
-      },
-      {
-        "field": "enable_prompt_expansion",
-        "default": true
       }
     ],
     "output_formats": [],
@@ -1131,11 +1110,8 @@
       3,
       4
     ],
-    "count_field": "max_images",
+    "count_field": "num_images",
     "boolean_fields": [
-      {
-        "field": "sync_mode"
-      },
       {
         "field": "enable_safety_checker",
         "default": false
@@ -1173,7 +1149,7 @@
     "default_aspect_ratio": "1:1"
   },
   {
-    "id": "fal-ai/wan-v2.5/text-to-image",
+    "id": "fal-ai/wan-25-preview/text-to-image",
     "public_id": "wan-2.5-preview",
     "name": "Alibaba / Wan 2.5 Preview",
     "provider": "alibaba",
@@ -1187,9 +1163,6 @@
     ],
     "count_field": "num_images",
     "boolean_fields": [
-      {
-        "field": "sync_mode"
-      },
       {
         "field": "enable_safety_checker",
         "default": false
@@ -1222,7 +1195,13 @@
       "3:4": "768x1024",
       "1:1": "1024x1024"
     },
-    "default_aspect_ratio": "1:1"
+    "default_aspect_ratio": "1:1",
+    "custom_size": {
+      "min_pixels": 589824,
+      "max_pixels": 2073600,
+      "aspect_ratio_min": 0.25,
+      "aspect_ratio_max": 4
+    }
   },
   {
     "id": "fal-ai/wan-25-preview/image-to-image",
@@ -1235,7 +1214,7 @@
         "field": "negative_prompt"
       }
     ],
-    "generation_model": "fal-ai/wan-v2.5/text-to-image",
+    "generation_model": "fal-ai/wan-25-preview/text-to-image",
     "image_counts": [
       1,
       2,
@@ -1245,15 +1224,8 @@
     "count_field": "num_images",
     "boolean_fields": [
       {
-        "field": "sync_mode"
-      },
-      {
         "field": "enable_safety_checker",
         "default": false
-      },
-      {
-        "field": "enable_prompt_expansion",
-        "default": true
       }
     ],
     "output_formats": [],
@@ -1301,9 +1273,6 @@
     "count_field": null,
     "boolean_fields": [
       {
-        "field": "sync_mode"
-      },
-      {
         "field": "enable_safety_checker",
         "default": false
       },
@@ -1316,11 +1285,6 @@
         "default": true
       }
     ],
-    "output_formats": [
-      "jpeg",
-      "png"
-    ],
-    "default_output_format": "jpeg",
     "custom_size_field": "image_size",
     "hosting": "serverless",
     "integer_fields": [
@@ -1362,9 +1326,6 @@
     "count_field": null,
     "boolean_fields": [
       {
-        "field": "sync_mode"
-      },
-      {
         "field": "enable_safety_checker",
         "default": false
       },
@@ -1398,7 +1359,8 @@
       "9:16"
     ],
     "aspect_ratio_field": "aspect_ratio",
-    "default_aspect_ratio": "auto"
+    "default_aspect_ratio": "auto",
+    "output_format_field": "image_format"
   },
   {
     "id": "fal-ai/wan/v2.2-5b/text-to-image",
@@ -1416,9 +1378,6 @@
     ],
     "count_field": null,
     "boolean_fields": [
-      {
-        "field": "sync_mode"
-      },
       {
         "field": "enable_safety_checker",
         "default": false
@@ -1458,6 +1417,7 @@
       "3:4": "768x1024",
       "1:1": "1024x1024"
     },
-    "default_aspect_ratio": "1:1"
+    "default_aspect_ratio": "1:1",
+    "output_format_field": "image_format"
   }
 ]

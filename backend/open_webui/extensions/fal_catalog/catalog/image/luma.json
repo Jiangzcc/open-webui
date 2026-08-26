@@ -8,6 +8,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "output_formats": [
       "png",
@@ -37,6 +38,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "aspect_ratios": [
       "3:1",
@@ -82,6 +84,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "output_formats": [
       "png",
@@ -111,6 +114,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "aspect_ratios": [
       "3:1",
@@ -156,6 +160,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "aspect_ratios": [
       "16:9",
@@ -179,6 +184,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "aspect_ratios": [
       "1:1",
@@ -211,6 +217,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "aspect_ratios": [
       "16:9",
@@ -234,6 +241,7 @@
     "image_counts": [
       1
     ],
+    "count_field": null,
     "hosting": "serverless",
     "aspect_ratios": [
       "1:1",
