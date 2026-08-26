@@ -137,7 +137,7 @@ async def test_prepaid_restoration_guards_and_fail_transition(monkeypatch) -> No
 
 def test_reconciliation_filters_and_validation_cover_all_options() -> None:
     refund = SimpleNamespace(id=SimpleNamespace(is_not=lambda _value: 'not-null', is_=lambda _value: 'null'))
-    query = ReconciliationQuery(status='failed', compensated=True, user_id='user')
+    query = ReconciliationQuery(status='failed', compensated=True, user_query='user')
     assert len(service._reconciliation_conditions(query, refund)) == 7
     query = ReconciliationQuery(compensated=False)
     assert len(service._reconciliation_conditions(query, refund)) == 5

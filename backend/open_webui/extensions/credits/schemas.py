@@ -287,7 +287,8 @@ class AdminLedgerQuery(LedgerQuery):
 class ReconciliationQuery(PaginationParams):
     status: Literal['failed', 'unknown'] | None = None
     compensated: bool | None = None
-    user_id: str | None = Field(default=None, min_length=1, max_length=128)
+    # 与流水检索一致：按用户名/邮箱模糊匹配（用户表或 usage 快照），不再暴露内部 user_id。
+    user_query: str | None = Field(default=None, min_length=1, max_length=MAX_USER_EMAIL_LENGTH)
     skip: int = Field(default=0, ge=0)
 
 

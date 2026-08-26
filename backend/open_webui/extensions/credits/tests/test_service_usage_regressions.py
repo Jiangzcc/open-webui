@@ -192,6 +192,60 @@ async def test_state_machine_prevents_terminal_regression_and_marks_stale_withou
 
 
 @pytest.mark.asyncio
+async def test_reconciliation_user_query_matches_name_email_and_snapshot(service_database) -> None:
+    """管理员按用户名/邮箱模糊检索对账案件：命中用户表或 usage 用户快照。"""
+    await create_user(service_database, 'user-1', name='Alice Zhang', email='alice@example.test')
+    now = int(time.time())
+
+    async def add_failed_usage(
+        usage_id: str,
+        *,
+        user_id: str,
+        name_snapshot: str | None = None,
+        email_snapshot: str | None = None,
+    ) -> None:
+        async with service_database() as session, session.begin():
+            session.add(
+                CreditUsage(
+                    id=usage_id,
+                    user_id=user_id,
+                    user_name_snapshot=name_snapshot,
+                    user_email_snapshot=email_snapshot,
+                    idempotency_key=f'key-{usage_id}',
+                    request_hash='hash',
+                    service_type='image',
+                    resource_id='model-a',
+                    action='text-to-image',
+                    channel='web',
+                    status='failed',
+                    exempt=False,
+                    charged_credits=1,
+                    ledger_id=f'ledger-{usage_id}',
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+    await add_failed_usage('by-name', user_id='user-1')
+    # ghost 用户已不在用户表，仅 usage 快照留有身份信息。
+    await add_failed_usage(
+        'by-snapshot', user_id='ghost', name_snapshot='Ghost User', email_snapshot='ghost@example.test'
+    )
+
+    async with service_database() as session:
+        by_name = await list_reconciliation_cases(session, ReconciliationQuery(user_query='lice Zh'))
+        by_snapshot = await list_reconciliation_cases(
+            session, ReconciliationQuery(user_query='ghost@')
+        )
+        no_match = await list_reconciliation_cases(session, ReconciliationQuery(user_query='carol'))
+
+    assert [item.usage_id for item in by_name.items] == ['by-name']
+    assert [item.usage_id for item in by_snapshot.items] == ['by-snapshot']
+    assert no_match.items == ()
+    assert no_match.total == 0
+
+
+@pytest.mark.asyncio
 async def test_reconciliation_recognizes_automatic_refund_and_mock_mode(service_database, monkeypatch) -> None:
     user = await create_user(service_database, 'mock-refund-user')
     await credit_user(service_database, user)

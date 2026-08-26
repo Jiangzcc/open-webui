@@ -8,7 +8,7 @@ from typing import Literal, Protocol
 from uuid import uuid4
 
 from open_webui.models.users import User
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -23,11 +23,13 @@ from .metrics import credit_metrics
 from .models import CreditAccount, CreditLedger, CreditPrice, CreditUsage
 from .pricing import PriceQuote, compute_price
 from .repository import (
+    LIKE_ESCAPE,
     claim_usage_placeholder,
     get_enabled_price,
     get_or_create_account,
     get_usage_by_idempotency_key,
     insert_ledger,
+    like_contains,
     list_admin_ledger_page,
     list_credit_prices,
     list_ledger,
@@ -616,8 +618,20 @@ def _reconciliation_conditions(query: ReconciliationQuery, refund) -> list:
         conditions.append(refund.id.is_not(None))
     elif query.compensated is False:
         conditions.append(refund.id.is_(None))
-    if query.user_id is not None:
-        conditions.append(CreditUsage.user_id == query.user_id)
+    if query.user_query is not None:
+        # 与流水检索一致的三路模糊：用户表当前用户名/邮箱 + usage 上的用户快照。
+        pattern = like_contains(query.user_query)
+        conditions.append(
+            or_(
+                CreditUsage.user_id.in_(
+                    select(User.id).where(
+                        or_(User.name.ilike(pattern, escape=LIKE_ESCAPE), User.email.ilike(pattern, escape=LIKE_ESCAPE))
+                    )
+                ),
+                CreditUsage.user_name_snapshot.ilike(pattern, escape=LIKE_ESCAPE),
+                CreditUsage.user_email_snapshot.ilike(pattern, escape=LIKE_ESCAPE),
+            )
+        )
     return conditions
 
 

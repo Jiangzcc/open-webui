@@ -24,7 +24,7 @@
 	let error = '';
 	let status: ReconciliationStatus | '' = '';
 	let compensated: '' | 'true' | 'false' = '';
-	let userId = '';
+	let userQuery = '';
 	let pending = new Set<string>();
 	let notes: Record<string, string> = {};
 	let mounted = false;
@@ -38,7 +38,7 @@
 			const result = await getCreditReconciliationCases(localStorage.token, {
 				status: status || undefined,
 				compensated: compensated === '' ? undefined : compensated === 'true',
-				user_id: userId.trim() || undefined,
+				user_query: userQuery.trim() || undefined,
 				skip: (page - 1) * pageSize,
 				limit: pageSize
 			});
@@ -117,8 +117,8 @@
 	<div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_12rem_12rem_auto]">
 		<input
 			class="min-h-10 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700"
-			bind:value={userId}
-			placeholder={$i18n.t('credits.admin.userId')}
+			bind:value={userQuery}
+			placeholder={$i18n.t('credits.admin.userQuery')}
 		/>
 		<Select
 			value={status}

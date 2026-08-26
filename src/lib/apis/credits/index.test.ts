@@ -225,7 +225,7 @@ describe('credit API client', () => {
 		await expect(
 			getCreditReconciliationCases('token', {
 				status: 'failed',
-				user_id: 'user-1',
+				user_query: 'user-1',
 				skip: 25,
 				limit: 25
 			})
@@ -235,7 +235,7 @@ describe('credit API client', () => {
 		).resolves.toEqual({ ledger_id: 'refund-1', created: true, amount: 12 });
 
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			'/api/v1/credits/admin/reconciliation?status=failed&user_id=user-1&skip=25&limit=25'
+			'/api/v1/credits/admin/reconciliation?status=failed&user_query=user-1&skip=25&limit=25'
 		);
 		expect(fetchMock.mock.calls[1][0]).toBe(
 			'/api/v1/credits/admin/reconciliation/usage-1/compensate'

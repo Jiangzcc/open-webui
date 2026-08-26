@@ -21,6 +21,8 @@ from open_webui.extensions.credits.repository import get_or_create_account, upda
 from open_webui.extensions.credits.schemas import (
     AdjustmentRequest,
     AdminLedgerQuery,
+    CreditPriceQuery,
+    ReconciliationQuery,
     RequestAuditContext,
     UserLedgerQuery,
     UserSnapshot,
@@ -78,7 +80,7 @@ def adjustment(
     return AdjustmentRequest(direction=direction, amount=amount, reason_code=reason_code, note=note)
 
 
-from .service_test_support import create_user
+from .service_test_support import add_price, create_user
 
 
 async def add_ledger(
@@ -737,6 +739,35 @@ def test_admin_ledger_query_rejects_blank_user_query() -> None:
         AdminLedgerQuery(user_query='')
     with pytest.raises(ValidationError):
         AdminLedgerQuery(resource_id='')
+    with pytest.raises(ValidationError):
+        ReconciliationQuery(user_query='')
+    with pytest.raises(ValidationError):
+        CreditPriceQuery(resource_id='')
+
+
+@pytest.mark.asyncio
+async def test_credit_price_resource_id_fuzzy_match(service_database) -> None:
+    """积分价格列表的模型/资源筛选按子串模糊匹配。"""
+    await add_price(service_database, resource_id='fal-ai/flux-1/dev')
+    await add_price(service_database, resource_id='openai/gpt-image-1')
+
+    async with service_database() as session:
+        items, total = await credit_repository.list_credit_prices(
+            session, CreditPriceQuery(resource_id='flux')
+        )
+        exact_items, exact_total = await credit_repository.list_credit_prices(
+            session, CreditPriceQuery(resource_id='openai/gpt-image-1')
+        )
+        no_match = await credit_repository.list_credit_prices(
+            session, CreditPriceQuery(resource_id='midjourney')
+        )
+
+    assert [price.id for price in items] == ['price-fal-ai/flux-1/dev']
+    assert total == 1
+    assert [price.id for price in exact_items] == ['price-openai/gpt-image-1']
+    assert exact_total == 1
+    assert no_match[0] == []
+    assert no_match[1] == 0
 
 
 @pytest.mark.asyncio

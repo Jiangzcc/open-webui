@@ -29,6 +29,14 @@
 		'admin_adjustment',
 		'system_adjustment'
 	];
+	// 计费记录的固定操作类型（定价维度之一），与 credits.actions.* 翻译一一对应。
+	const ledgerActions: NonNullable<AdminLedgerQuery['action']>[] = [
+		'text-to-image',
+		'image-to-image',
+		'text-to-video',
+		'image-to-video',
+		'video-to-video'
+	];
 
 	let entries: LedgerItem[] = [];
 	let total = 0;
@@ -55,7 +63,6 @@
 				// 文本筛选 trim 后为空则整体不下发，避免清空搜索框后触发 422。
 				user_query: filters.user_query?.trim() || undefined,
 				resource_id: filters.resource_id?.trim() || undefined,
-				action: filters.action?.trim() || undefined,
 				skip: (page - 1) * pageSize,
 				limit: pageSize
 			});
@@ -140,10 +147,20 @@
 			bind:value={filters.resource_id}
 			placeholder={$i18n.t('credits.admin.modelOrResource')}
 		/>
-		<input
-			class="rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm outline-hidden dark:border-gray-700"
-			bind:value={filters.action}
-			placeholder={$i18n.t('credits.common.action')}
+		<Select
+			value={filters.action ?? ''}
+			items={[
+				{ value: '', label: $i18n.t('credits.admin.allActions') },
+				...ledgerActions.map((action) => ({
+					value: action,
+					label: $i18n.t(`credits.actions.${action}`)
+				}))
+			]}
+			ariaLabel={$i18n.t('credits.admin.allActions')}
+			triggerClass="flex items-center rounded-xl border border-gray-200 bg-transparent px-3 py-2 text-sm dark:border-gray-700"
+			onChange={(value) => {
+				filters.action = ledgerActions.find((action) => action === value);
+			}}
 		/>
 		<button
 			class="rounded-3xl bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900"

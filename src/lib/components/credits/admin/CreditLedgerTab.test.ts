@@ -19,6 +19,16 @@ describe('CreditLedgerTab', () => {
 		// 后端字符串参数均 min_length=1，空串会触发 422。
 		expect(tabSource).toContain('user_query: filters.user_query?.trim() || undefined');
 		expect(tabSource).toContain('resource_id: filters.resource_id?.trim() || undefined');
-		expect(tabSource).toContain('action: filters.action?.trim() || undefined');
+	});
+
+	test('filters action with a fixed dropdown instead of free-text input', () => {
+		// 操作是计费记录的固定枚举（文生图/图生图/文生视频/图生视频/视频生视频），
+		// 用下拉选择避免手输英文枚举值不命中。
+		expect(tabSource).toContain('const ledgerActions');
+		expect(tabSource).toContain("'text-to-image'");
+		expect(tabSource).toContain("'video-to-video'");
+		expect(tabSource).toContain("$i18n.t('credits.admin.allActions')");
+		expect(tabSource).toContain('$i18n.t(`credits.actions.${action}`)');
+		expect(tabSource).not.toContain('bind:value={filters.action}');
 	});
 });

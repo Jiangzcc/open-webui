@@ -225,7 +225,7 @@ export type ReconciliationItem = {
 export type ReconciliationQuery = {
 	status?: ReconciliationStatus;
 	compensated?: boolean;
-	user_id?: string;
+	user_query?: string;
 	skip?: number;
 	limit?: number;
 };
