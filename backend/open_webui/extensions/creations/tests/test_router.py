@@ -41,6 +41,9 @@ def _seed_item(
     created_at: int = 100,
     soft_deleted: bool = False,
     reference_file_ids: list[str] | None = None,
+    clarity_tier: str | None = None,
+    aspect_ratio: str | None = None,
+    params_json: dict | None = None,
 ):
     item = CreationMediaItem(
         id=cid,
@@ -53,7 +56,9 @@ def _seed_item(
         model_id='z-image-turbo',
         model_name_snapshot='Z Image Turbo',
         task='text-to-image',
-        params_json={'image_count': 1},
+        params_json=params_json if params_json is not None else {'image_count': 1},
+        clarity_tier=clarity_tier,
+        aspect_ratio=aspect_ratio,
         reference_file_ids_json=list(reference_file_ids) if reference_file_ids else None,
         source='web',
         batch_id='batch-1',
@@ -149,11 +154,13 @@ def test_admin_global_list_includes_deleted_owner_and_supports_management(
     _seed_item(creation_sessions, cid='orphaned-creation', user_id='ghost', file_id='fg', created_at=20)
     monkeypatch.setattr(service, 'Files', _FakeFiles([_file('fu', 'user-1'), _file('fg', 'ghost')]))
     monkeypatch.setattr(service, 'Users', _FakeUsers([_user('user-1')]))
-    monkeypatch.setattr(
-        discovery_service,
-        'Files',
-        _FakeFiles([_file('fu', 'user-1'), _file('fg', 'ghost')]),
-    )
+    discovery_files = {file.id: file for file in [_file('fu', 'user-1'), _file('fg', 'ghost')]}
+
+    async def load_discovery_files(session, ids):
+        del session
+        return {file_id: discovery_files[file_id] for file_id in ids if file_id in discovery_files}
+
+    monkeypatch.setattr(discovery_service, '_load_files', load_discovery_files)
 
     response = client.get('/api/v1/creations/admin/media')
     assert response.status_code == 200
@@ -208,6 +215,48 @@ def test_limit_bounds_are_validated(app_and_client, user_override) -> None:
     user_override(id='user-1', role='user')
     assert client.get('/api/v1/creations/media?limit=0').status_code == 422
     assert client.get('/api/v1/creations/media?limit=101').status_code == 422
+
+
+def test_media_filters_by_time_clarity_and_aspect_ratio(app_and_client, user_override, creation_sessions) -> None:
+    user_override(id='u1')
+    now = 1_000_000
+    _seed_item(
+        creation_sessions,
+        cid='c-new-2k',
+        user_id='u1',
+        file_id='f1',
+        created_at=now - 10,
+        clarity_tier='2k',
+        aspect_ratio='16:9',
+    )
+    _seed_item(
+        creation_sessions,
+        cid='c-old-sd',
+        user_id='u1',
+        file_id='f2',
+        created_at=now - 100_000,
+        clarity_tier='sd',
+        aspect_ratio='1:1',
+    )
+    _, client = app_and_client
+
+    def ids(query: str) -> list[str]:
+        return [item['id'] for item in client.get(f'/api/v1/creations/media{query}').json()['items']]
+
+    assert ids('?sort=oldest') == ['c-old-sd', 'c-new-2k']
+    assert ids(f'?since={now - 1_000}') == ['c-new-2k']
+    assert ids('?clarity=sd') == ['c-old-sd']
+    assert ids('?clarity=2k&aspect_ratio=16:9') == ['c-new-2k']
+    assert ids('?clarity=4k') == []
+    assert ids('?aspect_ratio=1:1') == ['c-old-sd']
+
+
+def test_media_rejects_unknown_clarity_and_ratio_values(app_and_client, user_override) -> None:
+    _, client = app_and_client
+    user_override(id='user-1', role='user')
+    assert client.get('/api/v1/creations/media?clarity=8k').status_code == 422
+    assert client.get('/api/v1/creations/media?aspect_ratio=5:4').status_code == 422
+    assert client.get('/api/v1/creations/media?since=-1').status_code == 422
 
 
 def test_personal_detail_returns_404_for_stranger(app_and_client, user_override, creation_sessions) -> None:

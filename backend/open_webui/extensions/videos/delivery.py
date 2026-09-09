@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from fastapi import Request
 from open_webui.extensions.creations.file_cleanup import cleanup_uploaded_files as _cleanup_generated_files
+from open_webui.extensions.creations.media_attributes import derive_media_attributes
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.videos.executor import VideoExecutionError, VideoExecutionOutput
 from open_webui.extensions.videos.pexels_mock import (
@@ -171,6 +172,7 @@ async def _persist_mock_creation(
 ) -> dict[str, object]:
     creation_id = uuid4().hex
     created_at = int(getattr(video_file, 'created_at', None) or _now())
+    clarity_tier, aspect_ratio = derive_media_attributes(task.params)
     try:
         session.add(
             CreationMediaItem(
@@ -187,6 +189,8 @@ async def _persist_mock_creation(
                 model_name_snapshot=None,
                 task=task.task,
                 params_json=dict(task.params),
+                clarity_tier=clarity_tier,
+                aspect_ratio=aspect_ratio,
                 reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
                 source='web',
                 batch_id=task.id,
@@ -333,6 +337,7 @@ def _real_video_creation(
 ) -> tuple[CreationMediaItem, int]:
     created_at = int(video_file.created_at or _now())
     duration = output.duration_seconds or _duration_seconds(task.params)
+    clarity_tier, aspect_ratio = derive_media_attributes(task.params)
     return CreationMediaItem(
         id=uuid4().hex,
         user_id=getattr(user, 'id'),
@@ -347,6 +352,8 @@ def _real_video_creation(
         model_name_snapshot=None,
         task=task.task,
         params_json=dict(task.params),
+        clarity_tier=clarity_tier,
+        aspect_ratio=aspect_ratio,
         reference_file_ids_json=[asset.file_id for asset in task.assets] or None,
         source='web',
         batch_id=task.id,

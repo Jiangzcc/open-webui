@@ -92,6 +92,7 @@
 	import Photo from '../icons/Photo.svelte';
 	import Camera from '../icons/Camera.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
+	import ArchiveBox from '../icons/ArchiveBox.svelte';
 	import { slide } from 'svelte/transition';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 	import Dropdown from '../common/Dropdown.svelte';
@@ -185,6 +186,8 @@
 				return $user?.role === 'admin' || $user?.role === 'user';
 			case 'videos':
 				return $user?.role === 'admin' || $user?.role === 'user';
+			case 'assets':
+				return $user?.role === 'admin' || $user?.role === 'user';
 			case 'discover':
 				return $user?.role === 'admin' || $user?.role === 'user';
 			case 'playground':
@@ -202,6 +205,7 @@
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },
 			images: { label: 'Images', href: '/images', iconType: 'images' },
 			videos: { label: 'Videos', href: '/videos', iconType: 'videos' },
+			assets: { label: 'Assets', href: '/assets', iconType: 'assets' },
 			discover: { label: 'Discover', href: '/discover', iconType: 'discover' },
 			playground: { label: 'Playground', href: '/playground', iconType: 'playground' }
 		};
@@ -214,6 +218,7 @@
 		calendar: '/calendar',
 		automations: '/automations',
 		videos: '/videos',
+		assets: '/assets',
 		playground: '/playground'
 	};
 
@@ -1077,6 +1082,8 @@
 											<Camera className="size-4.5" strokeWidth="1.5" />
 										{:else if itemId === 'discover'}
 											<Sparkles className="size-4.5" strokeWidth="1.5" />
+										{:else if itemId === 'assets'}
+											<ArchiveBox className="size-4.5" strokeWidth="1.5" />
 										{:else if itemId === 'playground'}
 											<CodeIcon className="size-4" strokeWidth="1.5" />
 										{/if}
@@ -1293,6 +1300,8 @@
 												<Camera className="size-4.5" strokeWidth="2" />
 											{:else if itemId === 'discover'}
 												<Sparkles className="size-4.5" strokeWidth="2" />
+											{:else if itemId === 'assets'}
+												<ArchiveBox className="size-4.5" strokeWidth="2" />
 											{:else if itemId === 'playground'}
 												<CodeIcon className="size-4" strokeWidth="1.5" />
 											{/if}

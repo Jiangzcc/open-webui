@@ -62,22 +62,39 @@ def discovery_client(creation_sessions, monkeypatch):
             yield session
 
     app.dependency_overrides[get_creation_session] = session_override
-    monkeypatch.setattr(
-        discovery_service,
-        'Files',
-        FakeFiles(
-            [
-                SimpleNamespace(
-                    id='file-1',
-                    user_id='author-1',
-                    path='unused.png',
-                    filename='image.png',
-                    meta={'content_type': 'image/png'},
-                )
-            ]
-        ),
+    files = FakeFiles(
+        [
+            SimpleNamespace(
+                id='file-1',
+                user_id='author-1',
+                path='unused.png',
+                filename='image.png',
+                meta={'content_type': 'image/png'},
+            )
+        ]
     )
-    monkeypatch.setattr(discovery_service, 'Users', FakeUsers())
+    users = FakeUsers()
+
+    async def load_files(session, ids):
+        del session
+        found = await files.get_files_by_ids(ids)
+        return {file.id: file for file in found}
+
+    async def public_owners(session, ids):
+        del session
+        found = {user.id: user for user in await users.get_users_by_ids(list(dict.fromkeys(ids)))}
+        return {
+            user_id: discovery_service.PublicOwner(
+                user_id=user_id,
+                name=getattr(found.get(user_id), 'name', None),
+                profile_image_url=getattr(found.get(user_id), 'profile_image_url', None),
+                deleted=found.get(user_id) is None,
+            )
+            for user_id in found
+        }
+
+    monkeypatch.setattr(discovery_service, '_load_files', load_files)
+    monkeypatch.setattr(discovery_service, '_public_owners', public_owners)
     with TestClient(app) as client:
         yield app, client
 

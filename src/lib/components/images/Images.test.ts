@@ -10,10 +10,8 @@ const read = (relative: string) =>
 const source = read('./Images.svelte');
 const form = read('./ImagePromptForm.svelte');
 const card = read('./ImageBatchCard.svelte');
-const navigation = read('./ImagePageNavigation.svelte');
-const commonNavigation = read('../common/GenerationPageNavigation.svelte');
+const mobileHeader = read('../common/MobileSidebarHeader.svelte');
 const results = read('./ImageGenerationResults.svelte');
-const library = read('./ImageLibraryPanel.svelte');
 const pageState = read('./imagePageState.ts');
 const draftState = read('./imageDraftState.ts');
 const taskHistory = read('./imageTaskHistory.ts');
@@ -24,10 +22,8 @@ const all = [
 	source,
 	form,
 	card,
-	navigation,
-	commonNavigation,
+	mobileHeader,
 	results,
-	library,
 	pageState,
 	draftState,
 	taskHistory,
@@ -113,16 +109,15 @@ describe('images page controls', () => {
 		expect(all).not.toContain('selectedModelConfig?.maintenanceMessage');
 	});
 
-	test('mobile page header carries the sidebar toggle and the tabs together', () => {
-		// 移动端：侧栏图标与创作/我的作品 tab 同处顶部 nav 一行，顶到页面最上面，
-		// 不再让 tab 浮在侧栏图标下方单独一行。桌面端 tab 仍浮动在内容区顶部、不进 nav。
-		const navStart = commonNavigation.indexOf('<nav');
-		const navEnd = commonNavigation.indexOf('</nav>', navStart);
-		const nav = commonNavigation.slice(navStart, navEnd);
-
-		expect(nav).toContain('SidebarIcon');
-		expect(nav).toContain('{@render pageTabs()}');
-		expect(all).not.toContain('bind:this={modelSelectorElement}');
+	test('mobile page header carries the sidebar toggle without page tabs', () => {
+		// 创作页不再有「我的作品/全部作品」tab：移动端顶部只保留侧栏开关
+		// （与发现页一致）；桌面端无浮动页签，内容直接从顶部开始。
+		expect(mobileHeader).toContain('SidebarIcon');
+		expect(mobileHeader).toContain('sidebar-toggle-button');
+		expect(mobileHeader).toContain('{#if $mobile}');
+		expect(source).toContain('<MobileSidebarHeader />');
+		expect(all).not.toContain('ImagePageNavigation');
+		expect(all).not.toContain('role="tablist"');
 	});
 
 	test('quotes the selected or default model before a prompt is entered', () => {
@@ -209,19 +204,20 @@ describe('images page controls', () => {
 		expect(badgeSource).not.toContain("$i18n.t('credits.common.loading')");
 	});
 
-	test('uses accessible generate and library tabs without unmounting page state', () => {
-		expect(source).toContain("let selection: 'generate' | 'mine' | 'all' = 'generate';");
-		expect(commonNavigation).toContain('role="tablist"');
-		expect(commonNavigation).toContain('role="tab"');
-		expect(commonNavigation).toContain('aria-selected={selection ===');
-		expect(commonNavigation).toContain('on:keydown={handleKeydown}');
-		expect(source).toContain('aria-labelledby="images-generate-tab"');
-		expect(source).toContain(
-			"labelledBy={selection === 'all' ? 'images-admin-tab' : 'images-library-tab'}"
-		);
-		expect(library).toContain('id="images-library-panel"');
-		expect(library).toContain('hidden={!active}');
+	test('keeps the generation panel as the only page content without tabpanel semantics', () => {
+		expect(source).toContain('id="images-generate-panel"');
+		expect(source).not.toContain("let selection: 'generate' | 'mine' | 'all'");
+		expect(source).not.toContain('role="tabpanel"');
+		expect(source).not.toContain('ImageLibraryPanel');
+		expect(source).not.toContain('libraryRevision');
 		expect(source).not.toContain('{#if canUseImages}');
+	});
+
+	test('routes the older-creations link to the assets page', () => {
+		// 7 天窗口外的成功作品统一到资产页查找；生成中/失败任务仍留在创作页。
+		expect(source).toContain("import { goto } from '$app/navigation';");
+		expect(source).toContain("onViewOlder={() => void goto('/assets')}");
+		expect(results).toContain("$i18n.t('View older creations in Assets')");
 	});
 
 	test('sizes completed result cards as fixed square thumbnails in a 4/2 column grid', () => {
@@ -255,47 +251,19 @@ describe('images page controls', () => {
 		expect(card).not.toContain('{#each getBatchMetaPills(batch) as pill (pill)}');
 	});
 
-	test('lifts the three-segment pill out of flow so the library tops out', () => {
-		expect(commonNavigation).toContain('pointer-events-none absolute inset-x-0');
-		expect(commonNavigation).toContain('pointer-events-auto');
-		expect(navigation).toContain("label: 'My creations'");
-		expect(navigation).toContain("id: 'all'");
-		expect(navigation).toContain("elementId: 'images-admin-tab'");
-		expect(navigation).toContain("label: 'All creations'");
-		expect(source).toContain(
-			'<ImagePageNavigation {selection} {isAdmin} onSelect={selectSelection} />'
-		);
+	test('tops the task list at a compact padding now that floating tabs are gone', () => {
+		expect(results).toContain('pb-6 pt-4 sm:pt-8');
+		expect(results).not.toContain('sm:pt-18');
 	});
 
-	test('lets the library scroller hug the viewport edge', () => {
-		const panelStart = library.indexOf('id="images-library-panel"');
-		const panelDecl = library.slice(panelStart, panelStart + 280);
-		expect(panelDecl).toContain('overflow-y-auto');
-		expect(panelDecl).not.toContain('px-3');
-		expect(panelDecl).not.toContain('md:px-6');
-	});
-
-	test('styles image tabs as a centered floating pill while preserving accessibility', () => {
-		expect(commonNavigation).toContain('rounded-full border border-gray-200/80');
-		expect(commonNavigation).toContain('bg-white/80');
-		expect(commonNavigation).toContain('backdrop-blur-xl');
-		expect(commonNavigation).toContain('shadow-lg shadow-black/10');
-		expect(commonNavigation).toContain('aria-selected={selection ===');
-		expect(commonNavigation).toContain('on:keydown={handleKeydown}');
-	});
-
-	test('derives view and library scope from the unified selection', () => {
-		expect(source).toContain("$: view = selection === 'generate' ? 'generate' : 'library';");
-		expect(source).toContain("$: libraryScope = selection === 'all' ? 'all' : 'mine';");
-		expect(source).toMatch(/hidden=\{view !== 'generate'\}|hidden=\{view === 'library'\}/);
-	});
-
-	test('increments library revision after a successful generation', () => {
-		// 成功判定从旧的同步 generatedImages 路径迁到 pollGenerationTasks 轮询：
-		// 任务转 succeeded 时自增 libraryRevision，触发作品库刷新。
+	test('toasts when a polled task completes without maintaining a library revision', () => {
+		// 作品库已移到资产页：任务完成只提示，不再维护 libraryRevision。
 		expect(taskHistory).toContain("task.status === 'succeeded'");
 		expect(taskHistory).toContain("previous?.status !== 'succeeded'");
-		expect(source).toContain('libraryRevision += result.completed;');
+		expect(source).toContain(
+			"if (result.completed) toast.success($i18n.t('Image generation completed'))"
+		);
+		expect(source).not.toContain('libraryRevision');
 	});
 
 	test('drops the canUseImagesPage import and reactive gate', () => {
@@ -459,5 +427,21 @@ describe('images page controls', () => {
 		expect(source).toContain('referenceImages.length > effectiveMaxReferenceImages');
 		expect(source).toContain('referenceImages.slice(0, effectiveMaxReferenceImages)');
 		expect(source).toContain("'Trimmed to {{count}} reference image(s) for this model.'");
+	});
+
+	test('gives batch card buttons press feedback like the video task card', () => {
+		// 图片结果卡操作行对齐 VideoTaskCard 的按压语言。
+		expect(card).toContain('active:scale-[0.98]');
+		expect(card).toContain('active:scale-90');
+		expect(card).toContain('active:scale-[0.97]');
+	});
+
+	test('replaces batch card inline SVGs with shared icon components', () => {
+		// 手绘内联 SVG 跨平台渲染不一致，统一走仓库图标组件（与全应用一致）。
+		expect(card).not.toContain('<svg');
+		expect(card).toContain("import Download from '$lib/components/icons/Download.svelte'");
+		expect(card).toContain("import EditPencil from '$lib/components/icons/EditPencil.svelte'");
+		expect(card).toContain("import Refresh from '$lib/components/icons/Refresh.svelte'");
+		expect(card).toContain("import Trash from '$lib/components/icons/Trash.svelte'");
 	});
 });

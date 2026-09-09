@@ -5,6 +5,10 @@
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
+	import Download from '$lib/components/icons/Download.svelte';
+	import InfoCircle from '$lib/components/icons/InfoCircle.svelte';
+	import Refresh from '$lib/components/icons/Refresh.svelte';
+	import Trash from '$lib/components/icons/Trash.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
 	import type { VideoGenerationTask, VideoModel, VideoTask } from '$lib/apis/videos';
 	import {
@@ -218,26 +222,17 @@
 	<div class="flex flex-wrap items-center gap-1.5">
 		<button
 			type="button"
-			class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+			class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition active:scale-[0.97] hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 			on:click={() => onRegenerate(record)}
 			aria-label={$i18n.t('Regenerate')}
 		>
-			<svg
-				class="size-3.5"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
-			>
+			<Refresh className="size-3.5" strokeWidth="2" />
 			{$i18n.t('Regenerate')}
 		</button>
 		{#if record.result?.url}
 			<button
 				type="button"
-				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition active:scale-[0.97] hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onDownload(record)}
 				disabled={downloading}
 				aria-label={$i18n.t('Download')}
@@ -245,16 +240,7 @@
 				{#if downloading}
 					<Spinner className="size-3.5" />
 				{:else}
-					<svg
-						class="size-3.5"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
-					>
+					<Download className="size-3.5" strokeWidth="2" />
 				{/if}
 				{$i18n.t('Download')}
 			</button>
@@ -264,26 +250,17 @@
 			     creation_id，渲染按钮只会打开空白弹窗。 -->
 			<button
 				type="button"
-				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition active:scale-[0.97] hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onViewDetails(record)}
 				aria-label={$i18n.t('View details')}
 			>
-				<svg
-					class="size-3.5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg
-				>
+				<InfoCircle className="size-3.5" strokeWidth="2" />
 				{$i18n.t('View details')}
 			</button>
 		{/if}
 		<button
 			type="button"
-			class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+			class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition active:scale-[0.97] hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 			on:click={() => onRemove(record)}
 			disabled={deleting}
 			aria-label={$i18n.t('Remove record')}
@@ -291,16 +268,7 @@
 			{#if deleting}
 				<Spinner className="size-3.5" />
 			{:else}
-				<svg
-					class="size-3.5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
-				>
+				<Trash className="size-3.5" strokeWidth="2" />
 			{/if}
 			{$i18n.t('Remove')}
 		</button>

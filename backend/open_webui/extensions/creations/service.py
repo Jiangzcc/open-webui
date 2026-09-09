@@ -248,6 +248,9 @@ def _apply_personal_filters(
     task: str | None,
     publication_status: str | None,
     kind: str | None,
+    since: int | None,
+    clarity: str | None,
+    aspect_ratio: str | None,
 ):
     if kind is not None:
         stmt = stmt.where(CreationMediaItem.kind == kind)
@@ -264,6 +267,12 @@ def _apply_personal_filters(
         )
     if task:
         stmt = stmt.where(CreationMediaItem.task == task)
+    if since is not None:
+        stmt = stmt.where(CreationMediaItem.created_at >= since)
+    if clarity:
+        stmt = stmt.where(CreationMediaItem.clarity_tier == clarity)
+    if aspect_ratio:
+        stmt = stmt.where(CreationMediaItem.aspect_ratio == aspect_ratio)
     if publication_status == 'published':
         return stmt.where(CreationPost.status == 'published')
     if publication_status == 'unpublished':
@@ -281,6 +290,9 @@ async def list_personal_creations(
     publication_status: str | None = None,
     sort: str = 'newest',
     kind: str | None = None,
+    since: int | None = None,
+    clarity: str | None = None,
+    aspect_ratio: str | None = None,
 ) -> CreationListResponse:
     stmt = (
         select(CreationMediaItem, CreationPost.status)
@@ -297,6 +309,9 @@ async def list_personal_creations(
         task=task,
         publication_status=publication_status,
         kind=kind,
+        since=since,
+        clarity=clarity,
+        aspect_ratio=aspect_ratio,
     )
     ordering = (
         (asc(CreationMediaItem.created_at), asc(CreationMediaItem.id))

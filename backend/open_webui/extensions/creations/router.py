@@ -41,6 +41,8 @@ from open_webui.extensions.creations.schemas import (
     BulkCreationDeleteForm,
     BulkCreationDeleteResponse,
     CaptionUpdateForm,
+    CreationAspectRatio,
+    CreationClarityTier,
     CreationDetail,
     CreationKind,
     CreationListResponse,
@@ -288,6 +290,9 @@ async def list_media(
     publication_status: CreationPublicationFilter | None = None,
     sort: CreationListSort = 'newest',
     kind: CreationKind | None = None,
+    since: Annotated[int | None, Query(ge=0)] = None,
+    clarity: CreationClarityTier | None = None,
+    aspect_ratio: CreationAspectRatio | None = None,
     user=Depends(get_verified_user),
     session: AsyncSession = Depends(get_creation_session),
 ):
@@ -302,6 +307,9 @@ async def list_media(
             publication_status=publication_status,
             sort=sort,
             kind=kind,
+            since=since,
+            clarity=clarity,
+            aspect_ratio=aspect_ratio,
         )
     except ValueError:
         return _invalid_cursor_response()

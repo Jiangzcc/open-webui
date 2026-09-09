@@ -7,6 +7,9 @@ const post = (id: string) => ({
 	title: null,
 	description: null,
 	content_url: `/content/${id}`,
+	poster_url: null,
+	kind: 'image' as const,
+	duration_seconds: null,
 	availability: 'available' as const,
 	mime_type: 'image/png',
 	prompt_preview: null,
@@ -16,7 +19,10 @@ const post = (id: string) => ({
 	favorite_count: 0,
 	liked: false,
 	favorited: false,
-	published_at: 10
+	published_at: 10,
+	category: 'other',
+	featured: false,
+	featured_rank: 0
 });
 
 describe('discovery feed state', () => {

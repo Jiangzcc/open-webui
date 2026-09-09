@@ -26,18 +26,39 @@ export type CreationSummary = {
 	updated_at: number;
 };
 
+// 与后端 media_attributes 的归一化取值域保持一致。
+export type CreationClarityTier = 'sd' | 'hd' | 'fhd' | '2k' | '4k';
+export type CreationAspectRatio = '1:1' | '4:3' | '3:4' | '3:2' | '2:3' | '16:9' | '9:16' | '21:9';
+
+export const CREATION_CLARITY_TIERS: readonly CreationClarityTier[] = [
+	'sd',
+	'hd',
+	'fhd',
+	'2k',
+	'4k'
+];
+export const CREATION_ASPECT_RATIOS: readonly CreationAspectRatio[] = [
+	'1:1',
+	'4:3',
+	'3:4',
+	'3:2',
+	'2:3',
+	'16:9',
+	'9:16',
+	'21:9'
+];
+
 export type CreationListFilters = {
 	kind?: '' | 'image' | 'video';
 	search?: string;
 	task?:
-		| ''
-		| 'text-to-image'
-		| 'image-to-image'
-		| 'text-to-video'
-		| 'image-to-video'
-		| 'video-to-video';
+		'' | 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'video-to-video';
 	publicationStatus?: '' | 'published' | 'unpublished';
 	sort?: 'newest' | 'oldest';
+	// 时间窗口以 UI 键存储，请求时换算成 since 秒级时间戳。
+	since?: '' | '24h' | '7d' | '30d';
+	clarity?: '' | CreationClarityTier;
+	aspectRatio?: '' | CreationAspectRatio;
 };
 
 export type CreationPublication = {

@@ -426,7 +426,7 @@
 			<div class="grid grid-cols-2 gap-2">
 				<button
 					type="button"
-					class="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 text-sm font-medium text-white transition hover:bg-gray-800 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
+					class="col-span-2 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 text-sm font-medium text-white transition hover:bg-gray-800 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
 					on:click={() => reuseCreation(false)}
 				>
 					<Sparkles className="size-4" strokeWidth="1.8" />
@@ -435,14 +435,14 @@
 				{#if detail.content_url && detail.kind === 'image'}
 					<button
 						type="button"
-						class="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+						class="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 active:scale-[0.98] dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 						on:click={() => reuseCreation(true)}
 					>
 						{$i18n.t('Use as reference')}
 					</button>
 					<button
 						type="button"
-						class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+						class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 active:scale-[0.98] dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
 						on:click={downloadCreation}
 					>
 						<Download className="size-4" strokeWidth="1.8" />
@@ -463,7 +463,7 @@
 						</h3>
 						<button
 							type="button"
-							class="-mr-1 -mt-1 inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-1.5 text-gray-400 hover:bg-gray-200/70 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+							class="-mr-1 -mt-1 inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-1.5 text-gray-400 transition hover:bg-gray-200/70 hover:text-gray-700 active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-200"
 							disabled={!detail.prompt || copyingPrompt}
 							on:click={copyPrompt}
 							aria-label={$i18n.t('Copy')}
@@ -547,7 +547,7 @@
 									>
 									<button
 										type="button"
-										class="min-h-11 rounded-lg bg-gray-950 px-4 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-gray-950"
+										class="min-h-11 rounded-lg bg-gray-950 px-4 text-sm font-medium text-white transition hover:bg-gray-800 active:scale-[0.98] disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
 										disabled={publishing}
 										on:click={savePublication}
 										>{publishing ? $i18n.t('Publishing...') : $i18n.t('Publish')}</button
@@ -586,7 +586,7 @@
 								{#if isAdminScope()}
 									<button
 										type="button"
-										class="min-h-11 w-full rounded-lg bg-gray-950 px-4 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
+										class="min-h-11 w-full rounded-lg bg-gray-950 px-4 text-sm font-medium text-white transition hover:bg-gray-800 active:scale-[0.98] dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
 										on:click={beginPublicationEdit}
 									>
 										{$i18n.t('Publish to Discover')}
@@ -596,7 +596,7 @@
 						{:else}
 							<button
 								type="button"
-								class="min-h-11 w-full rounded-lg bg-gray-950 px-4 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
+								class="min-h-11 w-full rounded-lg bg-gray-950 px-4 text-sm font-medium text-white transition hover:bg-gray-800 active:scale-[0.98] dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100"
 								on:click={beginPublicationEdit}
 							>
 								{$i18n.t('Publish to Discover')}
@@ -713,7 +713,7 @@
 								</button>
 								<button
 									type="button"
-									class="min-h-11 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+									class="min-h-11 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-700 active:scale-[0.98] disabled:opacity-50"
 									disabled={removing}
 									on:click={removeCreation}
 								>
@@ -724,7 +724,7 @@
 					{:else}
 						<button
 							type="button"
-							class="min-h-11 w-full rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950"
+							class="min-h-11 w-full rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50 active:scale-[0.98] dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950"
 							on:click={() => (confirmRemove = true)}
 						>
 							{$i18n.t('Remove from library')}

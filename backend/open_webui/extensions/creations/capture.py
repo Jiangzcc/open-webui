@@ -10,6 +10,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from open_webui.extensions.creations.file_cleanup import cleanup_uploaded_files
+from open_webui.extensions.creations.media_attributes import derive_media_attributes
 from open_webui.extensions.creations.metrics import creation_metrics
 from open_webui.extensions.creations.models import CreationMediaItem
 from open_webui.extensions.creations.schemas import (
@@ -279,6 +280,7 @@ async def _insert_creation(
     result: CapturedImageResult,
     reference_ids: list[str],
 ) -> CreationMediaItem:
+    clarity_tier, aspect_ratio = derive_media_attributes(context.params)
     item = CreationMediaItem(
         id=uuid.uuid4().hex,
         user_id=context.user_id,
@@ -291,6 +293,8 @@ async def _insert_creation(
         model_name_snapshot=context.model_name_snapshot,
         task=context.task,
         params_json=dict(context.params),
+        clarity_tier=clarity_tier,
+        aspect_ratio=aspect_ratio,
         reference_file_ids_json=list(reference_ids) or None,
         source=context.source,
         batch_id=context.batch_id,

@@ -54,16 +54,25 @@ async def _seed_creation(
 
 
 def _bind_repositories(monkeypatch, *, files, users) -> None:
-    class FakeFiles:
-        async def get_files_by_ids(self, ids):
-            return [file for file in files if file.id in ids]
+    async def load_files(session, ids):
+        del session
+        return {file.id: file for file in files if file.id in ids}
 
-    class FakeUsers:
-        async def get_users_by_ids(self, ids):
-            return [user for user in users if user.id in ids]
+    async def public_owners(session, ids):
+        del session
+        found = {user.id: user for user in users}
+        return {
+            user_id: discovery_service.PublicOwner(
+                user_id=user_id,
+                name=getattr(found.get(user_id), 'name', None),
+                profile_image_url=getattr(found.get(user_id), 'profile_image_url', None),
+                deleted=found.get(user_id) is None,
+            )
+            for user_id in dict.fromkeys(ids)
+        }
 
-    monkeypatch.setattr(discovery_service, 'Files', FakeFiles())
-    monkeypatch.setattr(discovery_service, 'Users', FakeUsers())
+    monkeypatch.setattr(discovery_service, '_load_files', load_files)
+    monkeypatch.setattr(discovery_service, '_public_owners', public_owners)
 
 
 @pytest.mark.asyncio

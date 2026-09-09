@@ -69,6 +69,10 @@ class CreationMediaItem(CreationBase):
     model_name_snapshot = Column(String(256), nullable=True)
     task = Column(String(32), nullable=False)
     params_json = Column(JSONField, nullable=True)
+    # 写入时由 media_attributes 归一化的筛选列：providers 的尺寸方言
+    # （hd/1k/1080p/1024x1024…）统一成档位与画幅标签，列表筛选走等值匹配。
+    clarity_tier = Column(String(8), nullable=True)
+    aspect_ratio = Column(String(8), nullable=True)
     reference_file_ids_json = Column(JSONField, nullable=True)
     source = Column(String(16), nullable=False)
     batch_id = Column(String(128), nullable=False)

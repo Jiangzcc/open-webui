@@ -1,19 +1,24 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { getContext, onMount, tick } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import type { i18n as I18n } from 'i18next';
+	import type { Writable } from 'svelte/store';
 
 	import {
+		getDiscoveryPost,
 		listDiscoveryCategories,
 		listDiscoveryPosts,
 		listFavoritePosts,
 		setDiscoveryReaction
 	} from '$lib/apis/discovery';
-	import { mobile, showSidebar, WEBUI_NAME } from '$lib/stores';
+	import { showSidebar, WEBUI_NAME } from '$lib/stores';
 	import {
+		buildCreationDraft,
 		storePendingCreationDraft,
 		type ImageCreationDraft
 	} from '$lib/utils/image-generation-batches';
+	import { playMutedPreview, stopPreview as stopVideoPreview } from '$lib/utils/video-preview';
 	import {
 		applyDiscoveryPage,
 		applyReactionState,
@@ -30,14 +35,21 @@
 	import Bookmark from '$lib/components/icons/Bookmark.svelte';
 	import Heart from '$lib/components/icons/Heart.svelte';
 	import Loader from '$lib/components/common/Loader.svelte';
+	import MediaGalleryHeader from '$lib/components/common/MediaGalleryHeader.svelte';
+	import MediaGallerySurface from '$lib/components/common/MediaGallerySurface.svelte';
+	import MobileSidebarHeader from '$lib/components/common/MobileSidebarHeader.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
-	import SidebarIcon from '$lib/components/icons/Sidebar.svelte';
+	import Play from '$lib/components/icons/Play.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import DiscoveryDetailsModal from './DiscoveryDetailsModal.svelte';
 
-	const i18n: any = getContext('i18n');
+	const i18n = getContext<Writable<I18n>>('i18n');
 	const PAGE_SIZE = 24;
+	const SKELETON_IDS = Array.from({ length: 10 }, (_, index) => index);
+
+	// Vidu 发现区的紧凑媒体墙为原型；本项目在不降低可点击性的前提下
+	// 把间距放大到 8px、媒体圆角收敛到 12px，头像 16px、正文/计数 14px。
+	// 瀑布流列数断点：移动 2 列、sm 3 列、lg 4 列。
 
 	let activeFeed: DiscoveryFeed = 'latest';
 	let activeCategory: DiscoveryCategory | null = null;
@@ -51,11 +63,95 @@
 	let detailsShow = false;
 	let detailsPostId: string | null = null;
 	let pendingReactions = new Set<string>();
+	let pendingReuse = new Set<string>();
 	let categories: DiscoveryCategoryItem[] = [
 		{ id: 'other', display_name: $i18n.t('Other'), enabled: true, sort_order: 999 }
 	];
+	let masonryColumnCount = 2;
+	let masonryWidth = 0;
+	let contentElement: HTMLElement | null = null;
+	let hoverCapable = false;
+	// 注意用普通对象而非 Map：bind:this={previewVideos[item.id]} 编译为属性赋值，
+	// Map 的话会写到实例属性而非条目，.get() 永远取不到。
+	const previewVideos: Record<string, HTMLVideoElement | null> = {};
 
 	$: state = feeds[activeFeed];
+	$: feedNavigationItems = [
+		{ value: 'featured', label: $i18n.t('Featured') },
+		{ value: 'latest', label: $i18n.t('Latest') },
+		{ value: 'popular', label: $i18n.t('Popular') },
+		{ value: 'favorites', label: $i18n.t('My favorites') }
+	];
+	// vidu 瀑布流：最短列优先的均衡分布（列高尽量一致），而非轮转分列——
+	// 轮转会造成某列明显偏长。用后端 aspect_ratio（无比例按 kind 兜底）在渲染前确定性估算卡片
+	// 高度，布局稳定不闪动；无比例时按媒体类型兜底。
+	$: masonryColumns = balanceMasonry(state.items, masonryColumnCount, masonryWidth);
+
+	const CARD_COLUMN_GAP = 12;
+	const FILTER_ACTIVE =
+		'border border-[#5b6ee1]/25 bg-[#5b6ee1]/10 font-medium text-[#4051bd] shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] dark:border-[#8290ed]/30 dark:bg-[#5b6ee1]/20 dark:text-[#c4caff]';
+	const FILTER_IDLE =
+		'border border-transparent text-slate-500 hover:border-white/60 hover:bg-white/45 hover:text-slate-950 dark:text-slate-400 dark:hover:border-white/[0.06] dark:hover:bg-white/[0.06] dark:hover:text-slate-100';
+	// 兜底比例（W/H）：图竖版 3:4、视频横版 16:9。
+	const FALLBACK_ASPECT: Record<'image' | 'video', { width: number; height: number }> = {
+		image: { width: 3, height: 4 },
+		video: { width: 16, height: 9 }
+	};
+
+	// 后端归一化比例（"W:H"）解析；无比例（实测多为视频）按 kind 兜底。
+	function aspectParts(item: DiscoveryPostSummary): { width: number; height: number } {
+		const match = /^(\d+(?:\.\d+)?)[:x](\d+(?:\.\d+)?)$/.exec(item.aspect_ratio ?? '');
+		if (match) {
+			const width = Number(match[1]);
+			const height = Number(match[2]);
+			if (width > 0 && height > 0) return { width, height };
+		}
+		return FALLBACK_ASPECT[item.kind];
+	}
+
+	function parseAspect(item: DiscoveryPostSummary): number {
+		const { width, height } = aspectParts(item);
+		return height / width;
+	}
+
+	// 卡片容器强制比例（用户拍板 P1：前端兜底）：渲染高度与瀑布流估算完全一致，
+	// 列高必然均衡且图片加载前后无重排（零 CLS）；无比例视频的海报按兜底比例裁切。
+	function cardAspectRatioStyle(item: DiscoveryPostSummary): string {
+		const { width, height } = aspectParts(item);
+		return `aspect-ratio: ${width} / ${height};`;
+	}
+
+	function balanceMasonry(
+		items: DiscoveryPostSummary[],
+		columnCount: number,
+		containerWidth: number
+	): DiscoveryPostSummary[][] {
+		const columnWidth =
+			containerWidth > 0 ? (containerWidth - (columnCount - 1) * CARD_COLUMN_GAP) / columnCount : 0;
+		const heights = new Array<number>(columnCount).fill(0);
+		const columns: DiscoveryPostSummary[][] = Array.from({ length: columnCount }, () => []);
+		for (const item of items) {
+			let shortest = 0;
+			for (let column = 1; column < columnCount; column++) {
+				if (heights[column] < heights[shortest]) shortest = column;
+			}
+			columns[shortest].push(item);
+			heights[shortest] +=
+				(columnWidth > 0 ? columnWidth * parseAspect(item) : 0) + CARD_COLUMN_GAP;
+		}
+		return columns;
+	}
+
+	// vidu 交互：视频卡片 hover 自动静音播放，移出即停并回封面。
+	// 仅在支持 hover 的指针设备上启用，触屏保持封面 + 播放角标。
+	// reduced-motion 只关闭 CSS 缩放/渐变；用户主动悬浮仍应启动静音预览。
+	const playPreview = (id: string) => {
+		void playMutedPreview(previewVideos[id], hoverCapable);
+	};
+
+	const stopPreview = (id: string) => {
+		stopVideoPreview(previewVideos[id]);
+	};
 
 	const loadPage = async (feed: DiscoveryFeed, first: boolean) => {
 		const target = feeds[feed];
@@ -87,48 +183,34 @@
 		}
 	};
 
+	const resetFeeds = () => {
+		feeds = {
+			featured: createDiscoveryFeedState(),
+			latest: createDiscoveryFeedState(),
+			popular: createDiscoveryFeedState(),
+			favorites: createDiscoveryFeedState()
+		};
+	};
+
 	const selectCategory = (category: DiscoveryCategory | null) => {
 		if (activeCategory === category) return;
 		activeCategory = category;
-		feeds = {
-			featured: createDiscoveryFeedState(),
-			latest: createDiscoveryFeedState(),
-			popular: createDiscoveryFeedState(),
-			favorites: createDiscoveryFeedState()
-		};
+		resetFeeds();
 		void loadPage(activeFeed, true);
 	};
 
-	const selectMediaKind = (mediaKind: 'all' | 'image' | 'video') => {
-		if (activeMediaKind === mediaKind) return;
-		activeMediaKind = mediaKind;
-		feeds = {
-			featured: createDiscoveryFeedState(),
-			latest: createDiscoveryFeedState(),
-			popular: createDiscoveryFeedState(),
-			favorites: createDiscoveryFeedState()
-		};
+	const selectMediaKind = (mediaKind: 'image' | 'video') => {
+		// 无「全部」按钮：点击已选中的类型即取消，回到全部（vidu 单行子筛选的紧凑形态）。
+		const next: 'all' | 'image' | 'video' = activeMediaKind === mediaKind ? 'all' : mediaKind;
+		if (activeMediaKind === next) return;
+		activeMediaKind = next;
+		resetFeeds();
 		void loadPage(activeFeed, true);
 	};
 
 	const selectFeed = (feed: DiscoveryFeed) => {
 		activeFeed = feed;
 		if (!feeds[feed].loaded && !feeds[feed].loading) void loadPage(feed, true);
-	};
-
-	// 发现页 feed tabs 键盘导航：对齐 Images.svelte 的 handleTabKeydown（WAI-ARIA Tab 模式）。
-	// ←/→ 在 featured/latest/popular/favorites 之间循环，焦点跟随选中 tab（roving tabindex）。
-	const handleFeedTabKeydown = (event: KeyboardEvent) => {
-		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-		const order: DiscoveryFeed[] = ['featured', 'latest', 'popular', 'favorites'];
-		const idx = order.indexOf(activeFeed);
-		if (idx === -1) return;
-		event.preventDefault();
-		const dir = event.key === 'ArrowRight' ? 1 : -1;
-		const next = order[(idx + dir + order.length) % order.length];
-		selectFeed(next);
-		void tick();
-		document.getElementById(`discovery-feed-tab-${next}`)?.focus();
 	};
 
 	onMount(() => {
@@ -144,6 +226,30 @@
 				});
 			await Promise.all([categoryPromise, loadPage('latest', true)]);
 		})();
+
+		const lgQuery = window.matchMedia('(min-width: 1024px)');
+		const xlQuery = window.matchMedia('(min-width: 1280px)');
+		const smQuery = window.matchMedia('(min-width: 640px)');
+		const updateColumnCount = () => {
+			masonryColumnCount = xlQuery.matches ? 5 : lgQuery.matches ? 4 : smQuery.matches ? 3 : 2;
+		};
+		updateColumnCount();
+		lgQuery.addEventListener('change', updateColumnCount);
+		xlQuery.addEventListener('change', updateColumnCount);
+		smQuery.addEventListener('change', updateColumnCount);
+
+		hoverCapable = window.matchMedia('(hover: hover)').matches;
+		// 列宽随侧边栏开合/窗口缩放变化，用 ResizeObserver 跟踪以重算均衡布局。
+		const resizeObserver = new ResizeObserver((entries) => {
+			masonryWidth = entries[0]?.contentRect.width ?? 0;
+		});
+		if (contentElement) resizeObserver.observe(contentElement);
+		return () => {
+			lgQuery.removeEventListener('change', updateColumnCount);
+			xlQuery.removeEventListener('change', updateColumnCount);
+			smQuery.removeEventListener('change', updateColumnCount);
+			resizeObserver.disconnect();
+		};
 	});
 
 	const openDetails = (item: DiscoveryPostSummary) => {
@@ -157,6 +263,43 @@
 			await goto('/images');
 		} catch {
 			toast.error($i18n.t('Failed to load creation settings'));
+		}
+	};
+
+	// 卡片悬浮「做同款」（vidu 签名交互）：拉取详情后走与详情弹窗一致的复用链路。
+	const reuseFromCard = async (item: DiscoveryPostSummary) => {
+		if (pendingReuse.has(item.id)) return;
+		pendingReuse.add(item.id);
+		pendingReuse = new Set(pendingReuse);
+		try {
+			const detail = await getDiscoveryPost(localStorage.token, item.id);
+			if (detail.kind === 'video') {
+				localStorage.setItem(
+					'video-creation-draft',
+					JSON.stringify({
+						task: detail.task,
+						prompt: detail.prompt ?? '',
+						model: detail.model_id,
+						params: detail.params
+					})
+				);
+				await goto('/videos');
+				return;
+			}
+			await reuseCreation(
+				buildCreationDraft({
+					prompt: detail.prompt ?? '',
+					model_id: detail.model_id,
+					params: detail.params,
+					content_url: detail.content_url,
+					useAsReference: false
+				})
+			);
+		} catch {
+			toast.error($i18n.t('Failed to load creation settings'));
+		} finally {
+			pendingReuse.delete(item.id);
+			pendingReuse = new Set(pendingReuse);
 		}
 	};
 
@@ -197,101 +340,42 @@
 		? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 		: ''}"
 >
-	{#if $mobile}
-		<nav class="relative z-40 shrink-0 px-3 pb-2 pt-2 backdrop-blur-xl drag-region select-none">
-			<div class="flex flex-none items-center">
-				<Tooltip
-					content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
-					interactive={true}
-				>
-					<button
-						id="sidebar-toggle-button"
-						type="button"
-						class="flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-lg transition hover:bg-gray-100 dark:hover:bg-gray-850"
-						on:click={() => showSidebar.set(!$showSidebar)}
-						aria-label={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}
-					>
-						<div class="self-center">
-							<SidebarIcon />
-						</div>
-					</button>
-				</Tooltip>
-			</div>
-		</nav>
-	{/if}
+	<MobileSidebarHeader />
 
-	<div class="min-h-0 min-w-0 flex-1 overflow-y-auto bg-stone-50/60 dark:bg-gray-950">
-		<div class="mx-auto w-full max-w-[96rem] px-3 pb-10 pt-4 sm:px-5 sm:pt-8 lg:px-8">
-			<header class="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-end sm:justify-between">
-				<div>
-					<p class="mb-1 text-xs font-medium uppercase tracking-[0.22em] text-gray-400">
-						{$i18n.t('Community creations')}
-					</p>
-					<h1
-						class="text-3xl font-semibold tracking-tight text-gray-950 dark:text-white sm:text-4xl"
-					>
-						{$i18n.t('Discover')}
-					</h1>
-					<p class="mt-2 max-w-xl text-sm leading-6 text-gray-500 dark:text-gray-400">
-						{$i18n.t('Find inspiration in images and videos shared by the community.')}
-					</p>
-				</div>
-
-				<div
-					class="grid min-h-11 grid-cols-4 rounded-full border border-gray-200/80 bg-white/80 p-1 shadow-sm backdrop-blur dark:border-gray-800 dark:bg-gray-900/80"
-					role="tablist"
-					tabindex="-1"
-					aria-label={$i18n.t('Discovery feed')}
-					on:keydown={handleFeedTabKeydown}
-				>
-					{#each [['featured', $i18n.t('Featured')], ['latest', $i18n.t('Latest')], ['popular', $i18n.t('Popular')], ['favorites', $i18n.t('My favorites')]] as tab}
-						<button
-							type="button"
-							class="min-h-9 rounded-full px-3 text-xs font-medium transition sm:px-4 {activeFeed ===
-							tab[0]
-								? 'bg-gray-950 text-white shadow-sm dark:bg-white dark:text-gray-950'
-								: 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'}"
-							on:click={() => selectFeed(tab[0] as DiscoveryFeed)}
-							role="tab"
-							id="discovery-feed-tab-{tab[0]}"
-							tabindex={activeFeed === tab[0] ? 0 : -1}
-							aria-selected={activeFeed === tab[0]}
-						>
-							{tab[1]}
-						</button>
-					{/each}
-				</div>
-			</header>
-
+	<MediaGallerySurface>
+		<MediaGalleryHeader
+			title={$i18n.t('Discover')}
+			items={feedNavigationItems}
+			selected={activeFeed}
+			ariaLabel={$i18n.t('Discovery feed')}
+			idPrefix="discovery-feed-tab"
+			onSelect={(value) => selectFeed(value as DiscoveryFeed)}
+		>
 			<div
-				class="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none"
-				aria-label={$i18n.t('Media type')}
+				class="flex min-h-11 items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none sm:min-h-9"
+				aria-label={$i18n.t('Filters')}
 			>
-				{#each [['all', 'All'], ['image', 'Images'], ['video', 'Videos']] as option}
+				{#each [['image', 'Images'], ['video', 'Videos']] as option}
 					<button
 						type="button"
-						class="min-h-8 shrink-0 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition {activeMediaKind ===
+						class="min-h-11 shrink-0 whitespace-nowrap rounded-[10px] px-3.5 text-sm transition duration-200 active:scale-[0.98] sm:min-h-9 {activeMediaKind ===
 						option[0]
-							? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950'
-							: 'border-gray-200 bg-white text-gray-600 hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'}"
+							? FILTER_ACTIVE
+							: FILTER_IDLE}"
 						aria-pressed={activeMediaKind === option[0]}
-						on:click={() => selectMediaKind(option[0] as 'all' | 'image' | 'video')}
+						on:click={() => selectMediaKind(option[0] as 'image' | 'video')}
 					>
 						{$i18n.t(option[1])}
 					</button>
 				{/each}
-			</div>
-
-			<div
-				class="mb-5 flex gap-2 overflow-x-auto pb-1 scrollbar-none"
-				aria-label={$i18n.t('Creation categories')}
-			>
+				<span class="mx-1 h-4 w-px shrink-0 bg-slate-300/70 dark:bg-white/10" aria-hidden="true"
+				></span>
 				<button
 					type="button"
-					class="min-h-8 shrink-0 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition {activeCategory ===
+					class="min-h-11 shrink-0 whitespace-nowrap rounded-[10px] px-3.5 text-sm transition duration-200 active:scale-[0.98] sm:min-h-9 {activeCategory ===
 					null
-						? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950'
-						: 'border-gray-200 bg-white text-gray-600 hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'}"
+						? FILTER_ACTIVE
+						: FILTER_IDLE}"
 					aria-pressed={activeCategory === null}
 					on:click={() => selectCategory(null)}
 				>
@@ -300,10 +384,10 @@
 				{#each categories as category (category.id)}
 					<button
 						type="button"
-						class="min-h-8 shrink-0 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition {activeCategory ===
+						class="min-h-11 shrink-0 whitespace-nowrap rounded-[10px] px-3.5 text-sm transition duration-200 active:scale-[0.98] sm:min-h-9 {activeCategory ===
 						category.id
-							? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-950'
-							: 'border-gray-200 bg-white text-gray-600 hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300'}"
+							? FILTER_ACTIVE
+							: FILTER_IDLE}"
 						aria-pressed={activeCategory === category.id}
 						on:click={() => selectCategory(category.id)}
 					>
@@ -311,171 +395,201 @@
 					</button>
 				{/each}
 			</div>
+		</MediaGalleryHeader>
 
+		<div
+			bind:this={contentElement}
+			class="mx-auto w-full max-w-[96rem] px-4 pb-12 pt-5 sm:px-6 lg:px-8"
+		>
 			<div role="tabpanel" aria-label={$i18n.t('Discovery feed')} aria-live="polite">
 				{#if state.loading && !state.loaded}
-					<!-- 首次加载骨架屏：与图片页生成中占位一致的 animate-pulse shimmer，
-					     避免长时间空 Spinners 带来"卡住"观感。 -->
+					<!-- 首次加载骨架屏：animate-pulse shimmer，避免长时间空 Spinners 带来"卡住"观感。 -->
 					<div
-						class="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5"
+						class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
 						aria-hidden="true"
 					>
-						{#each Array(10) as _, index (index)}
-							<div class="aspect-[3/4] overflow-hidden rounded-xl bg-stone-100 dark:bg-gray-900/40">
+						{#each SKELETON_IDS as index (index)}
+							<div
+								class="aspect-[3/4] overflow-hidden rounded-[14px] bg-gray-200/70 dark:bg-white/[0.06]"
+							>
 								<div
-									class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.02]"
+									class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.03]"
 								></div>
 							</div>
 						{/each}
 					</div>
 				{:else if state.error && state.items.length === 0}
 					<div class="flex min-h-64 flex-col items-center justify-center gap-3 text-center">
-						<p class="text-sm text-red-500">{$i18n.t('Failed to load discovery feed')}</p>
+						<p class="text-sm text-red-500 dark:text-red-400">
+							{$i18n.t('Failed to load discovery feed')}
+						</p>
 						<button
 							type="button"
-							class="min-h-11 rounded-xl bg-gray-950 px-4 text-sm font-medium text-white dark:bg-white dark:text-gray-950"
+							class="min-h-11 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white transition hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
 							on:click={() => loadPage(activeFeed, true)}>{$i18n.t('Retry')}</button
 						>
 					</div>
 				{:else if state.items.length === 0}
 					<div
-						class="flex min-h-64 flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-gray-200 bg-white/50 text-center dark:border-gray-800 dark:bg-gray-900/30"
+						class="flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-center dark:border-white/10 dark:bg-white/[0.02]"
 					>
-						<Photo className="size-8 text-gray-400" strokeWidth="1.5" />
-						<p class="text-sm text-gray-600 dark:text-gray-300">
+						<Photo className="size-8 text-gray-400 dark:text-white/40" strokeWidth="1.5" />
+						<p class="text-sm text-gray-500 dark:text-white/60">
 							{activeFeed === 'favorites'
 								? $i18n.t('Your favorite creations will appear here.')
 								: $i18n.t('No creations have been shared yet.')}
 						</p>
 					</div>
 				{:else}
-					<div class="columns-2 gap-2 sm:columns-3 sm:gap-3 lg:columns-4 xl:columns-5">
-						{#each state.items as item (item.id)}
-							<article
-								class="group mb-2 break-inside-avoid overflow-hidden rounded-2xl border border-gray-200/70 bg-white shadow-[0_1px_0_rgba(0,0,0,0.02)] transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 sm:mb-3 dark:border-gray-800 dark:bg-gray-900 dark:hover:shadow-black/25"
-							>
-								<button
-									type="button"
-									class="block w-full overflow-hidden bg-stone-100 text-left focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-gray-800"
-									on:click={() => openDetails(item)}
-									aria-label={item.title ?? $i18n.t('View creation')}
-								>
-									{#if item.content_url}
-										<div class="relative">
-											<img
-												src={item.kind === 'video'
-													? (item.poster_url ?? item.content_url)
-													: item.content_url}
-												alt={item.title ?? item.prompt_preview ?? $i18n.t('Artwork')}
-												loading="lazy"
-												decoding="async"
-												class="h-auto w-full transition duration-500 group-hover:scale-[1.015]"
-											/>
-											{#if item.kind === 'video'}
-												<span class="absolute inset-0 flex items-center justify-center bg-black/10"
-													><span
-														class="flex size-10 items-center justify-center rounded-full bg-black/65 text-sm text-white shadow"
-														>▶</span
-													></span
-												>
-												{#if item.duration_seconds}<span
-														class="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white"
-														>{item.duration_seconds}s</span
-													>{/if}
-											{/if}
-										</div>
-									{:else}
+					<div class="flex items-start gap-3">
+						{#each masonryColumns as column, columnIndex (columnIndex)}
+							<div class="flex min-w-0 flex-1 flex-col gap-3">
+								{#each column as item, itemIndex (item.id)}
+									<!-- vidu 式纯图卡：无框、无边线装饰，图片即卡片，卡片高度只有图片本身。
+									     标题/分类/精选信息收进详情弹窗；作者与计数、做同款全部浮在图片上。 -->
+									<article
+										class="gallery-reveal group min-w-0"
+										style={`--gallery-index: ${Math.min(columnIndex + itemIndex * masonryColumnCount, 12)}`}
+										on:mouseenter={() => playPreview(item.id)}
+										on:mouseleave={() => stopPreview(item.id)}
+									>
 										<div
-											class="flex min-h-36 items-center justify-center p-4 text-xs text-gray-400"
+											class="relative overflow-hidden rounded-[14px] bg-slate-200/70 ring-1 ring-slate-900/[0.045] transition-[transform,box-shadow] duration-300 ease-out group-hover:-translate-y-0.5 group-hover:shadow-[0_18px_38px_-22px_rgba(66,79,111,0.42)] dark:bg-white/[0.055] dark:ring-white/[0.075] dark:group-hover:shadow-[0_20px_40px_-24px_rgba(1,4,12,0.92)]"
 										>
-											{$i18n.t('Source file unavailable')}
-										</div>
-									{/if}
-								</button>
-
-								<div class="p-2.5 sm:p-3">
-									<div class="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium">
-										{#if item.featured}
-											<span
-												class="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-												>{$i18n.t('Featured')}</span
-											>
-										{/if}
-										<span class="text-gray-400">
-											{$i18n.t(
-												categories.find((category) => category.id === item.category)
-													?.display_name ?? 'Other'
-											)}
-										</span>
-									</div>
-									{#if item.title}
-										<h2 class="line-clamp-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-											{item.title}
-										</h2>
-									{/if}
-									<div class="mt-1.5 flex min-w-0 items-center justify-between gap-2">
-										<div class="flex min-w-0 items-center gap-1.5">
-											{#if item.owner.profile_image_url}
-												<img
-													src={item.owner.profile_image_url}
-													alt=""
-													class="size-5 shrink-0 rounded-full object-cover"
-												/>
-											{/if}
-											<span class="truncate text-xs text-gray-500 dark:text-gray-400">
-												{item.owner.deleted
-													? $i18n.t('Deleted user')
-													: (item.owner.name ?? $i18n.t('Creator'))}
-											</span>
-										</div>
-
-										<div class="flex shrink-0 items-center gap-0.5">
 											<button
 												type="button"
-												class="inline-flex min-h-9 min-w-9 items-center justify-center gap-1 rounded-full px-1.5 text-xs transition {item.liked
-													? 'text-rose-600 dark:text-rose-300'
-													: 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'}"
-												disabled={pendingReactions.has(`${item.id}:like`)}
-												on:click={() => toggleReaction(item, 'like')}
-												aria-label={$i18n.t('Like')}
-												aria-pressed={item.liked}
+												class="block w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2"
+												on:click={() => openDetails(item)}
+												aria-label={item.title ?? $i18n.t('View creation')}
 											>
-												<Heart className="size-4" strokeWidth="2" />
-												{item.like_count}
+												{#if item.content_url}
+													<div class="relative" style={cardAspectRatioStyle(item)}>
+														<img
+															src={item.kind === 'video'
+																? (item.poster_url ?? item.content_url)
+																: item.content_url}
+															alt={item.title ?? item.prompt_preview ?? $i18n.t('Artwork')}
+															loading="lazy"
+															decoding="async"
+															class="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-[1.025] motion-reduce:transition-none"
+														/>
+														{#if item.kind === 'video'}
+															<!-- vidu 交互：hover 时静音自动播放，移出即停并回封面。 -->
+															<video
+																bind:this={previewVideos[item.id]}
+																src={item.content_url}
+																muted
+																playsinline
+																preload="metadata"
+																aria-hidden="true"
+																class="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-0 transition duration-300 group-hover:opacity-100"
+															></video>
+															<span
+																class="absolute inset-0 flex items-center justify-center bg-black/10 transition group-hover:opacity-0"
+																><span
+																	class="flex size-10 items-center justify-center rounded-full bg-black/65 text-white shadow"
+																	><Play className="size-4" strokeWidth="2" /></span
+																></span
+															>
+															{#if item.duration_seconds}<span
+																	class="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white"
+																	>{item.duration_seconds}s</span
+																>{/if}
+														{/if}
+													</div>
+												{:else}
+													<div
+														class="flex min-h-36 items-center justify-center p-4 text-xs text-gray-400 dark:text-white/40"
+													>
+														{$i18n.t('Source file unavailable')}
+													</div>
+												{/if}
 											</button>
+
+											<!-- vidu 交互：作者与计数浮在图片底部（渐变遮罩），默认隐藏、
+											     hover 卡片浮现——绝对定位不占卡片高度，纯图墙更紧凑。
+											     触屏无 hover 即隐藏（用户拍板），点赞/收藏走详情弹窗。 -->
 											<button
 												type="button"
-												class="inline-flex min-h-9 min-w-9 items-center justify-center gap-1 rounded-full px-1.5 text-xs transition {item.favorited
-													? 'text-amber-700 dark:text-amber-300'
-													: 'text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200'}"
-												disabled={pendingReactions.has(`${item.id}:favorite`)}
-												on:click={() => toggleReaction(item, 'favorite')}
-												aria-label={$i18n.t('Favorite')}
-												aria-pressed={item.favorited}
+												class="pointer-events-none absolute right-2 top-2 z-10 min-h-9 -translate-y-1 rounded-lg bg-black/55 px-3 text-xs font-medium text-white opacity-0 backdrop-blur-md transition duration-200 hover:bg-black/70 focus-visible:outline-2 focus-visible:outline-offset-2 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 motion-reduce:transition-none disabled:opacity-50"
+												disabled={pendingReuse.has(item.id)}
+												on:click={() => reuseFromCard(item)}
 											>
-												<Bookmark className="size-4" strokeWidth="2" />
-												{item.favorite_count}
+												{$i18n.t('Make similar')}
 											</button>
+
+											<div
+												class="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-1.5 pt-7 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none"
+											>
+												<div class="flex min-w-0 items-center gap-1.5">
+													{#if item.owner.profile_image_url}
+														<img
+															src={item.owner.profile_image_url}
+															alt=""
+															class="size-4 shrink-0 rounded-full object-cover"
+														/>
+													{/if}
+													<span class="truncate text-sm text-white/80">
+														{item.owner.deleted
+															? $i18n.t('Deleted user')
+															: (item.owner.name ?? $i18n.t('Creator'))}
+													</span>
+												</div>
+
+												<div class="flex shrink-0 items-center gap-0.5">
+													<button
+														type="button"
+														class="pointer-events-none inline-flex min-h-9 min-w-9 items-center justify-center gap-1 rounded-full px-1 text-sm transition group-focus-within:pointer-events-auto group-hover:pointer-events-auto motion-reduce:transition-none active:scale-90 {item.liked
+															? 'text-rose-300'
+															: 'text-white/70 hover:bg-white/10 hover:text-white'}"
+														disabled={pendingReactions.has(`${item.id}:like`)}
+														on:click={() => toggleReaction(item, 'like')}
+														aria-label={$i18n.t('Like')}
+														aria-pressed={item.liked}
+													>
+														<Heart className="size-3.5" strokeWidth="2" />
+														{item.like_count}
+													</button>
+													<button
+														type="button"
+														class="pointer-events-none inline-flex min-h-9 min-w-9 items-center justify-center gap-1 rounded-full px-1 text-sm transition group-focus-within:pointer-events-auto group-hover:pointer-events-auto motion-reduce:transition-none active:scale-90 {item.favorited
+															? 'text-amber-200'
+															: 'text-white/70 hover:bg-white/10 hover:text-white'}"
+														disabled={pendingReactions.has(`${item.id}:favorite`)}
+														on:click={() => toggleReaction(item, 'favorite')}
+														aria-label={$i18n.t('Favorite')}
+														aria-pressed={item.favorited}
+													>
+														<Bookmark className="size-3.5" strokeWidth="2" />
+														{item.favorite_count}
+													</button>
+												</div>
+											</div>
 										</div>
-									</div>
-								</div>
-							</article>
+									</article>
+								{/each}
+							</div>
 						{/each}
 					</div>
 
 					{#if state.nextCursor}
 						<div class="flex justify-center py-8">
 							{#if state.loading}
-								<Spinner className="size-5" />
+								<Spinner className="size-5 text-gray-900 dark:text-white" />
 							{:else}
 								<Loader on:visible={() => loadPage(activeFeed, false)} />
 							{/if}
 						</div>
 					{/if}
+					{#if !state.nextCursor && !state.loading && state.loaded}
+						<p class="py-8 text-center text-xs text-gray-400 dark:text-white/40">
+							{$i18n.t('All creations loaded.')}
+						</p>
+					{/if}
 				{/if}
 			</div>
 		</div>
-	</div>
+	</MediaGallerySurface>
 </div>
 
 <DiscoveryDetailsModal
@@ -484,3 +598,23 @@
 	onReaction={updateEveryCopy}
 	onReuse={reuseCreation}
 />
+
+<style>
+	@media (prefers-reduced-motion: no-preference) {
+		.gallery-reveal {
+			animation: gallery-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+			animation-delay: calc(var(--gallery-index) * 38ms);
+		}
+	}
+
+	@keyframes gallery-reveal {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+</style>

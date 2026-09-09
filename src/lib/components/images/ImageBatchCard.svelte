@@ -5,6 +5,11 @@
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import VendorLogo from '$lib/components/common/VendorLogo.svelte';
+	import Download from '$lib/components/icons/Download.svelte';
+	import EditPencil from '$lib/components/icons/EditPencil.svelte';
+	import Photo from '$lib/components/icons/Photo.svelte';
+	import Refresh from '$lib/components/icons/Refresh.svelte';
+	import Trash from '$lib/components/icons/Trash.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
 	import {
 		generationElapsedSeconds,
@@ -61,7 +66,7 @@
 
 	// 图框：1px 浅边 + 圆角 8px；aspect-square 占满格，高度统一。
 	const getGeneratedImageFrameClass = () =>
-		'relative flex items-center justify-center overflow-hidden rounded-lg border border-gray-200/80 bg-stone-50 aspect-square w-full dark:border-gray-800/80 dark:bg-gray-900/40';
+		'relative flex items-center justify-center overflow-hidden rounded-lg border border-gray-200/80 bg-stone-50 aspect-square w-full transition active:scale-[0.98] dark:border-gray-800/80 dark:bg-gray-900/40';
 
 	const getGeneratedImageClass = () => 'block h-full w-full object-cover';
 
@@ -220,43 +225,20 @@
 						>
 							<button
 								type="button"
-								class="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-7 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
+								class="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-7 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
 								on:click|stopPropagation={() => onDownloadImage(image, index)}
 								aria-label={$i18n.t('Download')}
 							>
-								<svg
-									class="size-3.5"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
-								>
+								<Download className="size-3.5" strokeWidth="2" />
 							</button>
 							{#if supportsEditing}
 								<button
 									type="button"
-									class="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-7 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
+									class="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow backdrop-blur transition hover:bg-white active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 sm:size-7 dark:bg-gray-900/90 dark:text-gray-100 dark:hover:bg-gray-900"
 									on:click|stopPropagation={() => onReuseAsReference(batch, image)}
 									aria-label={$i18n.t('Use as reference')}
 								>
-									<svg
-										class="size-3.5"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										aria-hidden="true"
-										><rect x="3" y="3" width="18" height="18" rx="2" /><circle
-											cx="8.5"
-											cy="9"
-											r="1.5"
-										/><path d="M21 15l-5-5L5 21" /></svg
-									>
+									<Photo className="size-3.5" strokeWidth="2" />
 								</button>
 							{/if}
 						</div>
@@ -264,22 +246,13 @@
 						{#if image.prompt}
 							<button
 								type="button"
-								class="pointer-events-auto absolute bottom-1.5 left-1.5 inline-flex min-h-11 items-center gap-1 rounded-full bg-black/60 px-2 text-[10px] font-medium text-white backdrop-blur transition hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-6 sm:min-h-0 {canHover
+								class="pointer-events-auto absolute bottom-1.5 left-1.5 inline-flex min-h-11 items-center gap-1 rounded-full bg-black/60 px-2 text-[10px] font-medium text-white backdrop-blur transition hover:bg-black/75 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-6 sm:min-h-0 {canHover
 									? 'opacity-0 group-hover:opacity-100'
 									: 'opacity-100'}"
 								on:click|stopPropagation={() => onRemix(batch, image)}
 								aria-label={$i18n.t('Generate from this prompt')}
 							>
-								<svg
-									class="size-3"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
-								>
+								<Refresh className="size-3" strokeWidth="2" />
 								{$i18n.t('Remix')}
 							</button>
 						{/if}
@@ -327,68 +300,40 @@
 		{#if isGenerationTaskTerminal(batch.status)}
 			<button
 				type="button"
-				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onEditAgain(batch)}
 				disabled={batch.images.length === 0}
 			>
-				<svg
-					class="size-3.5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-					><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg
-				>
+				<EditPencil className="size-3.5" strokeWidth="2" />
 				{$i18n.t('Edit again')}
 			</button>
 			<button
 				type="button"
-				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 active:scale-[0.97] sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onRegenerate(batch)}
 			>
-				<svg
-					class="size-3.5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" /></svg
-				>
+				<Refresh className="size-3.5" strokeWidth="2" />
 				{$i18n.t('Regenerate')}
 			</button>
 			{#if batch.images.length > 1}
 				<!-- 本批批量下载：打包成 ZIP，复用 $lib/utils/download 的共享方案 -->
 				<button
 					type="button"
-					class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+					class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 					on:click={() => onDownloadBatch(batch)}
 					disabled={downloading}
 				>
 					{#if downloading}
 						<Spinner className="size-3.5" />
 					{:else}
-						<svg
-							class="size-3.5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" /></svg
-						>
+						<Download className="size-3.5" strokeWidth="2" />
 					{/if}
 					{$i18n.t('Download all ({{count}})', { count: batch.images.length })}
 				</button>
 			{/if}
 			<button
 				type="button"
-				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+				class="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-gray-100 px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-200 hover:text-gray-900 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400 disabled:cursor-not-allowed disabled:opacity-40 sm:h-7 sm:px-2.5 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
 				on:click={() => onRemove(batch)}
 				disabled={deleting}
 				aria-label={$i18n.t('Remove record')}
@@ -396,16 +341,7 @@
 				{#if deleting}
 					<Spinner className="size-3.5" />
 				{:else}
-					<svg
-						class="size-3.5"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6" /></svg
-					>
+					<Trash className="size-3.5" strokeWidth="2" />
 				{/if}
 				{$i18n.t('Remove')}
 			</button>

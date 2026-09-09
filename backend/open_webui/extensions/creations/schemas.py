@@ -19,6 +19,10 @@ VideoCreationTask = Literal['text-to-video', 'image-to-video', 'video-to-video']
 CreationTask = ImageCreationTask | VideoCreationTask
 CreationSource = Literal['web', 'api', 'chat', 'tool']
 CreationKind = Literal['image', 'video']
+
+# 归一化筛选列的取值域（见 media_attributes）；比例标签原样存列、原样匹配。
+CreationClarityTier = Literal['sd', 'hd', 'fhd', '2k', '4k']
+CreationAspectRatio = Literal['1:1', '4:3', '3:4', '3:2', '2:3', '16:9', '9:16', '21:9']
 CreationAvailability = Literal['available', 'missing']
 DiscoverySort = Literal['featured', 'latest', 'popular']
 DiscoveryCategory = Annotated[
@@ -253,6 +257,8 @@ class DiscoveryPostSummary(_StrictModel):
     poster_url: str | None = None
     kind: CreationKind = 'image'
     duration_seconds: int | None = Field(default=None, gt=0)
+    # 归一化比例（如 '16:9'）：前端瀑布流用它做渲染前的均衡分列。
+    aspect_ratio: str | None = None
     availability: CreationAvailability
     mime_type: str | None
     prompt_preview: str | None

@@ -3,6 +3,7 @@
 	import type { i18n as I18n } from 'i18next';
 	import type { Writable } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
+	import { goto } from '$app/navigation';
 
 	import { uploadFile } from '$lib/apis/files';
 	import { quoteVideoCredits, type VideoQuote } from '$lib/apis/credits';
@@ -19,11 +20,12 @@
 		type VideoModel,
 		type VideoTask
 	} from '$lib/apis/videos';
-	import { WEBUI_NAME, showSidebar, user } from '$lib/stores';
+	import { WEBUI_NAME, showSidebar } from '$lib/stores';
 	import CreationDetailsModal from '$lib/components/images/CreationDetailsModal.svelte';
-	import CreationsLibrary from '$lib/components/images/CreationsLibrary.svelte';
+	import MobileSidebarHeader from '$lib/components/common/MobileSidebarHeader.svelte';
 	import type { ImageQuoteState } from '$lib/components/credits/quote-state';
 	import Loader from '$lib/components/common/Loader.svelte';
+	import Play from '$lib/components/icons/Play.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { stripVendorFromName } from '$lib/utils/images-dropdown';
@@ -38,7 +40,6 @@
 	import { appendPromptText } from '$lib/components/prompt-tags/tagToggle';
 	import VideoTaskCard from './VideoTaskCard.svelte';
 	import VideoPromptForm from './VideoPromptForm.svelte';
-	import VideoPageNavigation from './VideoPageNavigation.svelte';
 	import {
 		defaultVideoParams,
 		imageQuoteStateFromVideoQuote,
@@ -103,9 +104,6 @@
 	let downloadingIds: Set<string> = new Set();
 	let deletingIds: Set<string> = new Set();
 	let selectedVendor = '';
-	let selection: 'generate' | 'mine' | 'all' = 'generate';
-	let creationRevision = 0;
-	$: isAdmin = $user?.role === 'admin';
 
 	$: taskModels = models.filter((item) => item.task === task && item.visible !== false);
 	$: selectedModel = taskModels.find((item) => item.id === modelId) ?? taskModels[0] ?? null;
@@ -344,7 +342,6 @@
 		const previous = history.find((item) => item.id === next.id);
 		history = [next, ...history.filter((item) => item.id !== next.id)];
 		if (next.status === 'succeeded' && previous?.status !== 'succeeded') {
-			creationRevision += 1;
 			toast.success($i18n.t('Video generated'));
 		} else if (next.status === 'failed' && previous?.status !== 'failed') {
 			toast.error(videoTaskErrorMessage(next));
@@ -493,7 +490,6 @@
 				});
 			}
 		}
-		selection = 'generate';
 		toast.success($i18n.t('Parameters loaded'));
 	};
 
@@ -532,7 +528,6 @@
 		try {
 			await deleteVideoTask(localStorage.token, record.id);
 			history = history.filter((item) => item.id !== record.id);
-			creationRevision += 1;
 			toast.success($i18n.t('Record removed'));
 		} catch {
 			toast.error($i18n.t('Failed to remove record'));
@@ -552,16 +547,9 @@
 		showCreationDetails = true;
 	};
 
-	// CreationDetailsModal 回调：创作更新或删除后同步 history 列表与 creationRevision。
-	const onCreationUpdated = () => {
-		// 视频任务列表不直接展示 caption/publication，仅刷新作品库。
-		creationRevision += 1;
-	};
-
+	// CreationDetailsModal 回调：创作被删除时，同步从创作页历史列表移除对应任务。
 	const onCreationRemoved = (creationId: string) => {
-		// 从创作页历史列表中移除被删除的创作对应的任务。
 		history = history.filter((item) => item.result?.creation_id !== creationId);
-		creationRevision += 1;
 	};
 </script>
 
@@ -574,26 +562,40 @@
 		? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 		: ''}"
 >
-	<VideoPageNavigation {selection} {isAdmin} onSelect={(next) => (selection = next)} />
+	<MobileSidebarHeader />
 
-	<!-- 两面板同时渲染，用 hidden 控制可见性，避免切换时 DOM 状态丢失（对齐 Images.svelte tabpanel 模式） -->
-	<!-- 面板自身必须是 flex-1 + min-h-0 的 flex 列，否则内部 <main class="overflow-y-auto">
+	<!-- 面板必须是 flex-1 + min-h-0 的 flex 列，否则内部 <main class="overflow-y-auto">
 	     的父级无有界高度，滚动容器失效，sticky 输入框会被推到内容最底部（需滚到页底才可见）。
 	     对齐 Images.svelte 的 #images-generate-panel 高度链。 -->
-	<div
-		id="videos-generate-panel"
-		class="flex min-h-0 flex-1 flex-col"
-		role="tabpanel"
-		aria-labelledby="videos-tab-generate"
-		hidden={selection !== 'generate'}
-	>
+	<div class="flex min-h-0 flex-1 flex-col">
 		{#if loading}
-			<div class="flex flex-1 items-center justify-center text-sm text-gray-500">
-				{$i18n.t('Loading...')}
-			</div>
+			<!-- 首载骨架屏：任务卡（头行 + 16:9 播放器）+ 底部表单的页面形状，
+			     与发现页/作品库同一 shimmer 模式，替代纯文字 Loading 的「卡住」观感。 -->
+			<main class="flex-1 px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8" aria-hidden="true">
+				<div class="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-3 sm:px-2">
+					{#each Array(2) as _, index (index)}
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center gap-2">
+								<div class="size-5 rounded-full bg-gray-100 dark:bg-white/5"></div>
+								<div class="h-3 w-28 rounded bg-gray-100 dark:bg-white/5"></div>
+							</div>
+							<div class="aspect-video overflow-hidden rounded-2xl bg-gray-100 dark:bg-white/5">
+								<div
+									class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.03]"
+								></div>
+							</div>
+						</div>
+					{/each}
+					<div class="h-48 overflow-hidden rounded-2xl bg-gray-100 dark:bg-white/5">
+						<div
+							class="h-full w-full animate-pulse bg-gradient-to-br from-transparent via-black/[0.03] to-transparent dark:via-white/[0.03]"
+						></div>
+					</div>
+				</div>
+			</main>
 		{:else}
 			<div class="flex min-h-0 flex-1 flex-col">
-				<main class="flex-1 min-h-0 overflow-y-auto px-4 pt-4 sm:px-6 lg:px-8 sm:pt-20">
+				<main class="flex-1 min-h-0 overflow-y-auto px-4 pt-4 sm:px-6 sm:pt-8 lg:px-8">
 					<div class="mx-auto w-full max-w-5xl min-h-full flex flex-col sm:px-2">
 						{#if history.length === 0}
 							<!-- flex-1 占满剩余高度把表单推到容器底（min-h 硬算在视口/表单高度变化时留残差），对齐 Images.svelte 空态结构 -->
@@ -604,15 +606,7 @@
 									<div
 										class="mx-auto mb-4 flex aspect-video w-56 items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
 									>
-										<svg
-											class="size-10 text-gray-300 dark:text-gray-600"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="1.5"
-											><path
-												d="M15 10l4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14M4 6h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"
-											/></svg
+										<Play className="size-10 text-gray-300 dark:text-gray-600" strokeWidth="1.5" />
 										>
 									</div>
 									<h2 class="font-medium">{$i18n.t('Start with a video idea')}</h2>
@@ -647,14 +641,14 @@
 										{/if}
 									</div>
 								{:else}
-									<!-- 已无可加载的更早任务（7 天窗口内全部展示完）；提示去「我的作品」查看更早记录 -->
+									<!-- 已无可加载的更早任务（7 天窗口内全部展示完）；提示去「资产」查看更早作品 -->
 									<div class="flex justify-center py-4">
 										<button
 											type="button"
-											class="text-xs text-gray-400 transition hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-											on:click={() => (selection = 'mine')}
+											class="min-h-11 text-xs text-gray-400 transition hover:text-gray-600 active:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
+											on:click={() => void goto('/assets')}
 										>
-											{$i18n.t('View older creations in My Creations')}
+											{$i18n.t('View older creations in Assets')}
 										</button>
 									</div>
 								{/if}
@@ -691,23 +685,6 @@
 			</div>
 		{/if}
 	</div>
-
-	<div
-		id="videos-library-panel"
-		class="flex min-h-0 flex-1 flex-col"
-		role="tabpanel"
-		aria-labelledby={selection === 'all' ? 'videos-tab-all' : 'videos-tab-mine'}
-		hidden={selection === 'generate'}
-	>
-		<div class="min-h-0 flex-1 overflow-y-auto pt-4 sm:pt-18">
-			<CreationsLibrary
-				active={selection !== 'generate'}
-				scope={selection === 'all' ? 'all' : 'mine'}
-				revision={creationRevision}
-				mediaKind="video"
-			/>
-		</div>
-	</div>
 </div>
 
 <CreationDetailsModal
@@ -715,7 +692,6 @@
 	creationId={detailsTask?.result?.creation_id ?? null}
 	scope="mine"
 	canManage
-	onUpdated={onCreationUpdated}
 	onRemoved={onCreationRemoved}
 />
 

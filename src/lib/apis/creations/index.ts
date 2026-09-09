@@ -15,6 +15,16 @@ const authHeaders = (token: string): HeadersInit => ({
 	...(token && { authorization: `Bearer ${token}` })
 });
 
+// 时间窗口 UI 键 → 秒数；since 在请求时换算，保证窗口随请求时刻滚动。
+const SINCE_WINDOW_SECONDS: Record<
+	Exclude<CreationListFilters['since'], '' | undefined>,
+	number
+> = {
+	'24h': 24 * 60 * 60,
+	'7d': 7 * 24 * 60 * 60,
+	'30d': 30 * 24 * 60 * 60
+};
+
 const throwIfNotOk = async (response: Response) => {
 	if (!response.ok) {
 		throw await response.json().catch(() => null);
@@ -37,6 +47,14 @@ const requestCreationList = async (
 	if (filters.task) params.set('task', filters.task);
 	if (filters.publicationStatus) params.set('publication_status', filters.publicationStatus);
 	if (filters.sort) params.set('sort', filters.sort);
+	if (filters.since) {
+		params.set(
+			'since',
+			String(Math.floor(Date.now() / 1000) - SINCE_WINDOW_SECONDS[filters.since])
+		);
+	}
+	if (filters.clarity) params.set('clarity', filters.clarity);
+	if (filters.aspectRatio) params.set('aspect_ratio', filters.aspectRatio);
 	const response = await fetch(`${WEBUI_API_BASE_URL}${path}?${params.toString()}`, {
 		headers: authHeaders(token)
 	});

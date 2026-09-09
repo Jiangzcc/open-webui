@@ -24,6 +24,7 @@
 
 	let detail: DiscoveryPostDetail | null = null;
 	let loading = false;
+	let loadError = false;
 	let requestGeneration = 0;
 	let reactionPending: ReactionKind | null = null;
 	let previousPostId: string | null = null;
@@ -33,11 +34,13 @@
 		const generation = ++requestGeneration;
 		loading = true;
 		detail = null;
+		loadError = false;
 		try {
 			const fetched = await getDiscoveryPost(localStorage.token, id);
 			if (generation === requestGeneration && show && postId === id) detail = fetched;
 		} catch {
-			if (generation === requestGeneration) toast.error($i18n.t('Failed to load post'));
+			// 失败在弹窗内呈现错误态（ArtworkViewerShell 的 error 分支），不再叠加 toast。
+			if (generation === requestGeneration) loadError = true;
 		} finally {
 			if (generation === requestGeneration) loading = false;
 		}
@@ -131,13 +134,23 @@
 		thinking_level: $i18n.t('Thinking level')
 	};
 	const paramLabel = (key: ParamTag['key']) => PARAM_LABELS[key] ?? key;
+
+	// 创作方式标签：此前三元只认 image-to-image，视频任务会被误标成「文生图」；
+	// 未识别的任务值不展示该 chip。
+	const TASK_LABELS: Record<string, string> = {
+		'text-to-image': $i18n.t('Text to Image'),
+		'image-to-image': $i18n.t('Image to Image'),
+		'text-to-video': $i18n.t('Text to Video'),
+		'image-to-video': $i18n.t('Image to Video'),
+		'video-to-video': $i18n.t('Video to Video')
+	};
 	$: paramTags = detail ? extractParamTags(detail.params) : [];
 </script>
 
 <ArtworkViewerShell
 	bind:show
 	{loading}
-	error={null}
+	error={loadError ? $i18n.t('Failed to load post') : null}
 	headerTitle={detail
 		? detail.owner.deleted
 			? $i18n.t('Deleted user')
@@ -192,7 +205,7 @@
 				{#if detail.prompt}
 					<button
 						type="button"
-						class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-950 px-3 text-sm font-medium text-white transition hover:bg-gray-800 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 {detail.content_url
+						class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gray-950 px-3 text-sm font-medium text-white transition hover:bg-gray-800 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 {detail.content_url
 							? ''
 							: 'col-span-2'}"
 						on:click={() => reuseCreation(false)}
@@ -204,7 +217,7 @@
 				{#if detail.content_url && detail.kind === 'image'}
 					<button
 						type="button"
-						class="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-200 px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 {detail.prompt
+						class="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-200 px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 {detail.prompt
 							? ''
 							: 'col-span-2'}"
 						on:click={() => reuseCreation(true)}
@@ -222,7 +235,7 @@
 						</h3>
 						<button
 							type="button"
-							class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-200/70 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+							class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-200/70 hover:text-gray-700 active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-gray-200"
 							disabled={copyingPrompt}
 							on:click={copyPrompt}
 							aria-label={$i18n.t('Copy')}
@@ -260,18 +273,16 @@
 						<span class="min-w-0 break-words">{detail.model_name ?? detail.model_id}</span>
 					</li>
 				{/if}
-				<li
-					class="inline-flex max-w-full items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-				>
-					<span class="mr-1 font-medium text-gray-500 dark:text-gray-400"
-						>{$i18n.t('Creation type')}:</span
+				{#if TASK_LABELS[detail.task]}
+					<li
+						class="inline-flex max-w-full items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200"
 					>
-					<span
-						>{detail.task === 'image-to-image'
-							? $i18n.t('Image to Image')
-							: $i18n.t('Text to Image')}</span
+						<span class="mr-1 font-medium text-gray-500 dark:text-gray-400"
+							>{$i18n.t('Creation type')}:</span
 					>
-				</li>
+						<span>{TASK_LABELS[detail.task]}</span>
+					</li>
+				{/if}
 				{#each paramTags as tag (tag.key)}
 					<li
 						class="inline-flex max-w-full items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200"
@@ -289,7 +300,7 @@
 			>
 				<button
 					type="button"
-					class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border transition {detail.liked
+					class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border transition active:scale-[0.98] {detail.liked
 						? 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300'
 						: 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}"
 					disabled={reactionPending !== null}
@@ -302,7 +313,7 @@
 				</button>
 				<button
 					type="button"
-					class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border transition {detail.favorited
+					class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border transition active:scale-[0.98] {detail.favorited
 						? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300'
 						: 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'}"
 					disabled={reactionPending !== null}

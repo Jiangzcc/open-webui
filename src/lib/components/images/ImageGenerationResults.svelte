@@ -109,7 +109,7 @@
 		</div>
 	</section>
 {:else}
-	<section class="space-y-4 pb-6 pt-4 sm:pt-18" aria-live="polite">
+	<section class="space-y-4 pb-6 pt-4 sm:pt-8" aria-live="polite">
 		{#each batches as batch (batch.id)}
 			<ImageBatchCard
 				{batch}
@@ -140,7 +140,7 @@
 					class="min-h-11 text-xs text-gray-400 transition hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
 					on:click={onViewOlder}
 				>
-					{$i18n.t('View older creations in My Creations')}
+					{$i18n.t('View older creations in Assets')}
 				</button>
 			{/if}
 		</div>

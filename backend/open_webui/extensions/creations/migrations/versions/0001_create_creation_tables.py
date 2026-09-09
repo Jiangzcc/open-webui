@@ -7,6 +7,10 @@ Revises:
 与按序应用全部旧版本一致——
 
 - ext_creation_media_item：媒体条目（0001）+ 视频扩展列与终态约束（0007）
+  + 清晰度/画幅归一化筛选列（2026-08-26：clarity_tier、aspect_ratio，
+    由 media_attributes 在写入时归一化；存量库处置——已建表的环境手工执行
+    ``ALTER TABLE ext_creation_media_item ADD COLUMN clarity_tier VARCHAR(8)``
+    与 ``ADD COLUMN aspect_ratio VARCHAR(8)``，空表直接加列即可）
 - ext_creation_post / post_media / post_reaction：发现页（0002）
   + 分类与精选运营列（0004；0006 移除的类别 CHECK 不再创建）
 - ext_creation_category：内置分类种子（0006）
@@ -51,6 +55,8 @@ def upgrade() -> None:
         sa.Column('model_name_snapshot', sa.String(256), nullable=True),
         sa.Column('task', sa.String(32), nullable=False),
         sa.Column('params_json', JSONField(), nullable=True),
+        sa.Column('clarity_tier', sa.String(8), nullable=True),
+        sa.Column('aspect_ratio', sa.String(8), nullable=True),
         sa.Column('reference_file_ids_json', JSONField(), nullable=True),
         sa.Column('source', sa.String(16), nullable=False),
         sa.Column('batch_id', sa.String(128), nullable=False),

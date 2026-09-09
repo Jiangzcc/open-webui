@@ -10,14 +10,11 @@ const read = (relative: string) =>
 const page = read('./Videos.svelte');
 const form = read('./VideoPromptForm.svelte');
 const card = read('./VideoTaskCard.svelte');
-const navigation = read('./VideoPageNavigation.svelte');
-const commonNavigation = read('../common/GenerationPageNavigation.svelte');
+const mobileHeader = read('../common/MobileSidebarHeader.svelte');
 const labels = read('./videoLabels.ts');
 const pageState = read('./videoPageState.ts');
 const idempotency = read('../../utils/submission-idempotency.ts');
-const all = [page, form, card, navigation, commonNavigation, labels, pageState, idempotency].join(
-	'\n'
-);
+const all = [page, form, card, mobileHeader, labels, pageState, idempotency].join('\n');
 
 describe('video creation page', () => {
 	test('uses a duration slider and the shared generation button', () => {
@@ -125,15 +122,18 @@ describe('video creation page', () => {
 		expect(card).toContain('VendorLogo');
 	});
 
-	test('provides creation and video-only library tabs', () => {
-		expect(page).toContain("let selection: 'generate' | 'mine' | 'all' = 'generate';");
-		expect(navigation).toContain("id: 'generate'");
-		expect(navigation).toContain("label: 'Create art'");
-		expect(navigation).toContain("id: 'mine'");
-		expect(navigation).toContain("label: 'My creations'");
-		expect(navigation).toContain("id: 'all'");
-		expect(commonNavigation).toContain("tab.id !== 'all' || isAdmin");
-		expect(page).toContain('mediaKind="video"');
+	test('keeps the creation page tab-free and routes older creations to assets', () => {
+		// 创作页只保留任务流：不再有「我的作品/全部作品」tab，也不内嵌作品库；
+		// 7 天窗口外的成功作品跳资产页，生成中/失败任务留在本页。
+		expect(page).not.toContain("let selection: 'generate' | 'mine' | 'all'");
+		expect(page).not.toContain('VideoPageNavigation');
+		expect(page).not.toContain('CreationsLibrary');
+		expect(page).not.toContain('role="tabpanel"');
+		expect(page).not.toContain('creationRevision');
+		expect(page).toContain('<MobileSidebarHeader />');
+		expect(page).toContain("on:click={() => void goto('/assets')}");
+		expect(page).toContain("$i18n.t('View older creations in Assets')");
+		expect(mobileHeader).toContain('sidebar-toggle-button');
 	});
 
 	test('maps CreditError codes to specific i18n messages instead of generic failure', () => {
@@ -168,5 +168,24 @@ describe('video creation page', () => {
 			'const idempotencyKey = await videoSubmissionIdempotency.idempotencyKeyFor(submission)'
 		);
 		expect(page).toContain('![408, 429].includes(error.status)');
+	});
+
+	test('shows a first-load skeleton and icon-based empty state instead of text', () => {
+		// 首载从纯文字 Loading 改为「任务卡 + 表单」形状的 shimmer 骨架；
+		// 空态图标换 Play 图标组件，替换手绘内联 SVG（跨平台渲染一致性）。
+		expect(page).toContain('animate-pulse');
+		expect(page).toContain('aspect-video overflow-hidden rounded-2xl');
+		expect(page).not.toContain("$i18n.t('Loading...')");
+		expect(page).not.toContain('<svg');
+		expect(page).toContain("import Play from '$lib/components/icons/Play.svelte'");
+		// 终态「去资产页看更早作品」链接的按压反馈。
+		expect(page).toContain('active:opacity-60');
+	});
+
+	test('replaces task card inline SVGs with shared icon components', () => {
+		expect(card).not.toContain('<svg');
+		expect(card).toContain("import Refresh from '$lib/components/icons/Refresh.svelte'");
+		expect(card).toContain("import InfoCircle from '$lib/components/icons/InfoCircle.svelte'");
+		expect(card).toContain("import Trash from '$lib/components/icons/Trash.svelte'");
 	});
 });

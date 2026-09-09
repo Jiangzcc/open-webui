@@ -34,10 +34,10 @@ def _post(**changes):
 
 
 def test_repository_binders_cursor_and_prompt_helpers(monkeypatch) -> None:
-    monkeypatch.setattr(service, 'Files', None)
-    monkeypatch.setattr(service, 'Users', None)
-    assert service._bind_files() is not None
-    assert service._bind_users() is not None
+    monkeypatch.setattr(service, 'FileRecord', None)
+    monkeypatch.setattr(service, 'UserRecord', None)
+    assert service._bind_file_record() is not None
+    assert service._bind_user_record() is not None
 
     item = SimpleNamespace(prompt='  a   long prompt  ')
     assert service._prompt_preview(item, False) is None
@@ -50,6 +50,41 @@ def test_repository_binders_cursor_and_prompt_helpers(monkeypatch) -> None:
     for invalid in ('not-json', service._encode_cursor(3, 4, 5)):
         with pytest.raises(ValueError, match='invalid discovery cursor'):
             service._decode_cursor(invalid)
+
+
+@pytest.mark.asyncio
+async def test_discovery_hydration_reuses_the_caller_session(monkeypatch) -> None:
+    from open_webui.models.files import File
+    from open_webui.models.users import User
+
+    file = SimpleNamespace(id='file-1', user_id='owner-1')
+    user = SimpleNamespace(id='owner-1', name='Owner', profile_image_url='/owner.png')
+    scalar_results = [SimpleNamespace(all=lambda: [file]), SimpleNamespace(all=lambda: [user])]
+    session = SimpleNamespace(scalars=AsyncMock(side_effect=scalar_results))
+    monkeypatch.setattr(service, 'FileRecord', File)
+    monkeypatch.setattr(service, 'UserRecord', User)
+
+    assert await service._load_files(session, []) == {}
+    assert await service._public_owners(session, []) == {}
+    files = await service._load_files(session, ['file-1', 'file-1'])
+    owners = await service._public_owners(session, ['owner-1', 'missing-owner', 'owner-1'])
+
+    assert files == {'file-1': file}
+    assert owners['owner-1'].name == 'Owner'
+    assert owners['missing-owner'].deleted is True
+    assert session.scalars.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_creation_publication_handles_missing_and_existing_posts() -> None:
+    result = SimpleNamespace(scalar_one_or_none=lambda: None)
+    session = SimpleNamespace(execute=AsyncMock(return_value=result))
+    assert await service.get_creation_publication(session, 'owner', 'missing') is None
+
+    result.scalar_one_or_none = lambda: _post()
+    publication = await service.get_creation_publication(session, 'user-1', 'creation-1')
+    assert publication is not None
+    assert publication.post_id == 'post-1'
 
 
 @pytest.mark.asyncio
@@ -227,3 +262,8 @@ async def test_category_deletion_and_published_file_boundaries(monkeypatch) -> N
     service._load_files.return_value = {'file': wrong_owner, 'poster': wrong_owner}
     assert await service.get_published_content_file(session, 'post') is None
     assert await service.get_published_poster_file(session, 'post') is None
+
+    owned_file = SimpleNamespace(user_id='owner')
+    service._load_files.return_value = {'file': owned_file, 'poster': owned_file}
+    assert await service.get_published_content_file(session, 'post') is owned_file
+    assert await service.get_published_poster_file(session, 'post') is owned_file

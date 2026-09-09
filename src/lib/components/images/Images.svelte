@@ -5,14 +5,14 @@
 	import { toast } from 'svelte-sonner';
 
 	import { quoteImageCredits, type ImageQuoteInput } from '$lib/apis/credits';
-	import type { CreationScope } from '$lib/utils/creations-library';
 	import {
 		createImageQuoteState,
 		isImageQuoteSubmittable,
 		type ImageQuoteState
 	} from '$lib/components/credits/quote-state';
 
-	import { config, showSidebar, user, WEBUI_NAME } from '$lib/stores';
+	import { goto } from '$app/navigation';
+	import { config, showSidebar, WEBUI_NAME } from '$lib/stores';
 	import { createGenerationEventStream } from '$lib/utils/generation-events';
 	import { createSubmissionIdempotency } from '$lib/utils/submission-idempotency';
 	import {
@@ -43,9 +43,8 @@
 
 	import { groupByVendor } from '$lib/utils/images-dropdown';
 	import ImagePromptForm from '$lib/components/images/ImagePromptForm.svelte';
-	import ImagePageNavigation from '$lib/components/images/ImagePageNavigation.svelte';
 	import ImageGenerationResults from '$lib/components/images/ImageGenerationResults.svelte';
-	import ImageLibraryPanel from '$lib/components/images/ImageLibraryPanel.svelte';
+	import MobileSidebarHeader from '$lib/components/common/MobileSidebarHeader.svelte';
 	import { imageResolutionLabelKey } from '$lib/components/images/imageLabels';
 	import { appendPromptText } from '$lib/components/prompt-tags/tagToggle';
 	import {
@@ -92,14 +91,6 @@
 		showModelSelector = false;
 	let selectedVendor = '';
 	let pendingCreationDraft: ImageCreationDraft | null = null;
-
-	let selection: 'generate' | 'mine' | 'all' = 'generate';
-	let libraryRevision = 0;
-	let libraryScope: CreationScope;
-
-	$: view = selection === 'generate' ? 'generate' : 'library';
-	$: libraryScope = selection === 'all' ? 'all' : 'mine';
-	$: isAdmin = $user?.role === 'admin';
 
 	let prompt = '';
 	let selectedAspectRatio: ImageAspectRatio = DEFAULT_IMAGE_ASPECT_RATIO;
@@ -459,19 +450,6 @@
 
 	const removeGenerationBatch = (batchId: string) => {
 		generationBatches = generationBatches.filter((item) => item.id !== batchId);
-		libraryRevision += 1;
-	};
-
-	const selectSelection = async (next: 'generate' | 'mine' | 'all') => {
-		selection = next;
-		await tick();
-		const tabId =
-			next === 'generate'
-				? 'images-generate-tab'
-				: next === 'all'
-					? 'images-admin-tab'
-					: 'images-library-tab';
-		document.getElementById(tabId)?.focus();
 	};
 
 	const applyCreationDraft = async (draft: ImageCreationDraft) => {
@@ -511,7 +489,6 @@
 		guidanceScaleInput = fields.guidanceScale;
 		strengthInput = fields.strength;
 		prompt = fields.prompt;
-		await selectSelection('generate');
 		await tick();
 		promptFormElement?.focusPromptEditor();
 		toast.success($i18n.t('Creation settings loaded'));
@@ -551,7 +528,6 @@
 		try {
 			const result = await pollActiveImageTasks(localStorage.token, generationBatches);
 			generationBatches = result.batches;
-			libraryRevision += result.completed;
 			if (result.completed) toast.success($i18n.t('Image generation completed'));
 		} catch {
 			// A temporary polling failure must not turn a running server task into a
@@ -565,7 +541,6 @@
 		const result = await refreshImageTask(localStorage.token, generationBatches, taskId);
 		generationBatches = result.batches;
 		if (result.completed) {
-			libraryRevision += 1;
 			toast.success($i18n.t('Image generation completed'));
 		}
 	};
@@ -676,15 +651,12 @@
 			? 'md:max-w-[calc(100%-var(--sidebar-width))]'
 			: ''} max-w-full"
 	>
-		<ImagePageNavigation {selection} {isAdmin} onSelect={selectSelection} />
+		<MobileSidebarHeader />
 
 		<div
 			id="images-generate-panel"
 			bind:this={generationPanelElement}
-			role="tabpanel"
-			aria-labelledby="images-generate-tab"
 			class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8"
-			hidden={view !== 'generate'}
 		>
 			<div class="mx-auto max-w-5xl min-h-full flex flex-col sm:px-2">
 				<div class="flex-1">
@@ -702,7 +674,7 @@
 						onRegenerate={reuseBatchGenerate}
 						onBatchRemoved={removeGenerationBatch}
 						onLoadMore={() => void loadMoreRecentTasks()}
-						onViewOlder={() => void selectSelection('mine')}
+						onViewOlder={() => void goto('/assets')}
 					/>
 				</div>
 
@@ -776,14 +748,5 @@
 				/>
 			</div>
 		</div>
-
-		<ImageLibraryPanel
-			active={view === 'library'}
-			scope={libraryScope}
-			revision={libraryRevision}
-			labelledBy={selection === 'all' ? 'images-admin-tab' : 'images-library-tab'}
-			onReuse={applyCreationDraft}
-			onStartCreating={() => void selectSelection('generate')}
-		/>
 	</div>
 {/if}

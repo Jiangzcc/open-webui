@@ -33,6 +33,8 @@ export type DiscoveryPostSummary = {
 	poster_url: string | null;
 	kind: 'image' | 'video';
 	duration_seconds: number | null;
+	// 归一化比例（如 '16:9'）：瀑布流用它做渲染前的均衡分列。
+	aspect_ratio?: string | null;
 	availability: 'available' | 'missing';
 	mime_type: string | null;
 	prompt_preview: string | null;

@@ -34,30 +34,30 @@ from sqlalchemy import and_, delete, desc, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-Files = None
-Users = None
+FileRecord = None
+UserRecord = None
 
 _PROMPT_PREVIEW_CHARS = 200
 _DISCOVERY_CONTENT_URL = '/api/v1/creations/discover/posts/{}/content'
 _DISCOVERY_POSTER_URL = '/api/v1/creations/discover/posts/{}/poster'
 
 
-def _bind_files() -> object:
-    global Files
-    if Files is None:
-        from open_webui.models.files import Files as upstream_files
+def _bind_file_record() -> object:
+    global FileRecord
+    if FileRecord is None:
+        from open_webui.models.files import File as upstream_file_record
 
-        Files = upstream_files
-    return Files
+        FileRecord = upstream_file_record
+    return FileRecord
 
 
-def _bind_users() -> object:
-    global Users
-    if Users is None:
-        from open_webui.models.users import Users as upstream_users
+def _bind_user_record() -> object:
+    global UserRecord
+    if UserRecord is None:
+        from open_webui.models.users import User as upstream_user_record
 
-        Users = upstream_users
-    return Users
+        UserRecord = upstream_user_record
+    return UserRecord
 
 
 def _now() -> int:
@@ -106,19 +106,21 @@ async def get_creation_publication(session: AsyncSession, user_id: str, creation
     return _publication(post) if post else None
 
 
-async def _load_files(file_ids: Iterable[str]) -> dict[str, object]:
+async def _load_files(session: AsyncSession, file_ids: Iterable[str]) -> dict[str, object]:
     ids = list(dict.fromkeys(file_ids))
     if not ids:
         return {}
-    files = await _bind_files().get_files_by_ids(ids)
+    file_record = _bind_file_record()
+    files = (await session.scalars(select(file_record).where(file_record.id.in_(ids)))).all()
     return {file.id: file for file in files}
 
 
-async def _public_owners(user_ids: Iterable[str]) -> dict[str, PublicOwner]:
+async def _public_owners(session: AsyncSession, user_ids: Iterable[str]) -> dict[str, PublicOwner]:
     ids = list(dict.fromkeys(user_ids))
     if not ids:
         return {}
-    users = await _bind_users().get_users_by_ids(ids)
+    user_record = _bind_user_record()
+    users = (await session.scalars(select(user_record).where(user_record.id.in_(ids)))).all()
     found = {user.id: user for user in users}
     return {
         user_id: PublicOwner(
@@ -147,7 +149,7 @@ async def _owned_publishable_item(
     )
     if item is None:
         return None
-    file = (await _load_files([item.file_id])).get(item.file_id)
+    file = (await _load_files(session, [item.file_id])).get(item.file_id)
     return item if file is not None and getattr(file, 'user_id', None) == user_id else None
 
 
@@ -335,9 +337,10 @@ async def _summaries(
     rows: list[tuple[CreationPost, CreationMediaItem]],
 ) -> tuple[DiscoveryPostSummary, ...]:
     files = await _load_files(
-        file_id for _, item in rows for file_id in (item.file_id, item.poster_file_id) if isinstance(file_id, str)
+        session,
+        (file_id for _, item in rows for file_id in (item.file_id, item.poster_file_id) if isinstance(file_id, str)),
     )
-    owners = await _public_owners(item.user_id for _, item in rows)
+    owners = await _public_owners(session, (item.user_id for _, item in rows))
     post_ids = [post.id for post, _ in rows]
     liked, favorited = await _reaction_sets(session, user_id, post_ids)
     summaries: list[DiscoveryPostSummary] = []
@@ -356,6 +359,7 @@ async def _summaries(
                 poster_url=(_DISCOVERY_POSTER_URL.format(post.id) if poster_available else None),
                 kind=item.kind,
                 duration_seconds=item.duration_seconds,
+                aspect_ratio=item.aspect_ratio,
                 availability='available' if available else 'missing',
                 mime_type=meta.get('content_type') if available and isinstance(meta, dict) else None,
                 prompt_preview=_prompt_preview(item, post.show_prompt),
@@ -754,7 +758,7 @@ async def get_published_content_file(session: AsyncSession, post_id: str) -> obj
     if row is None:
         return None
     _, item = row
-    file = (await _load_files([item.file_id])).get(item.file_id)
+    file = (await _load_files(session, [item.file_id])).get(item.file_id)
     if file is None or getattr(file, 'user_id', None) != item.user_id:
         return None
     return file
@@ -767,7 +771,7 @@ async def get_published_poster_file(session: AsyncSession, post_id: str) -> obje
     _, item = row
     if not isinstance(item.poster_file_id, str):
         return None
-    file = (await _load_files([item.poster_file_id])).get(item.poster_file_id)
+    file = (await _load_files(session, [item.poster_file_id])).get(item.poster_file_id)
     if file is None or getattr(file, 'user_id', None) != item.user_id:
         return None
     return file
